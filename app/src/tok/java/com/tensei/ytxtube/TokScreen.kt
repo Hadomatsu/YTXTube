@@ -280,7 +280,7 @@ private fun TokDiagStrip(state: TokState) {
             TokChip("Mode " + (if (state.modeHint) "on" else "off")) { state.dropModeRequest() }
         }
         Text(
-            state.nativeText + "\n" + (if (state.desktop) "desktop " else "mobile ") + state.diag +
+            state.nativeText + " " + state.remoteStatus + "\n" + (if (state.desktop) "desktop " else "mobile ") + state.diag +
                 (if (state.net.isNotEmpty()) "\nnet: " + state.net else "") +
                 (if (state.console.isNotEmpty()) "\njs: " + state.console else ""),
             color = Color.White.copy(alpha = 0.6f),

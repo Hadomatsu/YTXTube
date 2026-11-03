@@ -253,7 +253,7 @@ internal object TokWeb {
     const val DIAG_SCRIPT = "(window.__ytxDiag ? window.__ytxDiag() : 'no diag')"
 
     /** While this client is being tuned, a script from the repo is loaded at start so JS and CSS experiments need no rebuild. */
-    const val REMOTE_JS = "https://raw.githubusercontent.com/Hadomatsu/YTXTube/main/tok/inject.js"
+    const val REMOTE_JS = "https://api.github.com/repos/Hadomatsu/YTXTube/contents/tok/inject.js?ref=main"
 
     /** Stops every video, for when the app leaves the screen. */
     const val PAUSE_SCRIPT =
@@ -279,6 +279,7 @@ internal class TokState {
     var errorDetail by mutableStateOf("")
     var diag by mutableStateOf("")
     var nativeText by mutableStateOf("")
+    var remoteStatus by mutableStateOf("rj none")
     /** Switches for finding out why the page is only half drawn: how the WebView is layered, and what else is asking the screen for things. */
     var layerMode by mutableIntStateOf(0)
     var frameHint by mutableStateOf(true)
@@ -508,17 +509,28 @@ internal fun createTokWebView(context: Context, state: TokState): WebView {
     return web
 }
 
-/** Fetches the experiment script from the repo (see REMOTE_JS) and runs it on the page that is open. */
+/** Fetches the experiment script from the repo (see REMOTE_JS, one minute of cache at most) and runs it on the page that is open. */
 internal fun fetchRemoteScript(state: TokState) {
     Thread {
-        val text = runCatching {
-            val c = java.net.URL(TokWeb.REMOTE_JS + "?t=" + System.currentTimeMillis()).openConnection() as java.net.HttpURLConnection
+        var status: String
+        val text = try {
+            val c = java.net.URL(TokWeb.REMOTE_JS).openConnection() as java.net.HttpURLConnection
+            c.useCaches = false
             c.connectTimeout = 6000
             c.readTimeout = 6000
-            c.inputStream.bufferedReader().use { it.readText() }
-        }.getOrDefault("")
-        state.remoteJs = text
+            c.setRequestProperty("Accept", "application/vnd.github.raw+json")
+            c.setRequestProperty("User-Agent", "YTXTok")
+            c.setRequestProperty("Cache-Control", "no-cache")
+            val body = c.inputStream.bufferedReader().use { it.readText() }
+            status = "rj ok " + body.length + "b " + body.lineSequence().firstOrNull().orEmpty().take(24)
+            body
+        } catch (e: Exception) {
+            status = "rj fail " + (e.message ?: e.javaClass.simpleName).take(40)
+            ""
+        }
+        state.remoteStatus = status
         if (text.isNotEmpty()) {
+            state.remoteJs = text
             state.webView?.post { state.webView?.evaluateJavascript(text, null) }
         }
     }.start()
