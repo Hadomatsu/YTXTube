@@ -437,8 +437,10 @@ fun PlayerScreen(
                             }
                         }
                     } else {
+                        // Folded: the same full-width cards as the home feed, instead of a small
+                        // thumbnail next to the title.
                         items(related, key = { "rel-" + it.id }) { video ->
-                            Box(Modifier.padding(horizontal = 20.dp)) { VideoRow(video, onClick = { onOpen(video) }) }
+                            VideoCard(video, onClick = { onOpen(video) })
                         }
                     }
                 } else if (state.loading || state.relatedLoading) {
