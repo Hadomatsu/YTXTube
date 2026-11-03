@@ -161,8 +161,17 @@ class PlayerState(private val scope: CoroutineScope) {
 
 
 
-    val stageAspect: Float get() = if (AudioOnly.enabled) AudioStageAspect else {
-        min(videoAspect.coerceIn(StageMinAspect, StageMaxAspect), StageFrameAspect)
+    /**
+     * True on a wide screen (an unfolded foldable, a tablet). The video then always gets a 16:9
+     * stage across the full width: a tall stage for a vertical video would be taller than the
+     * screen, and the page below it (details, comments, more videos) needs the room.
+     */
+    var wideStage by mutableStateOf(false)
+
+    val stageAspect: Float get() = when {
+        AudioOnly.enabled -> AudioStageAspect
+        wideStage -> StageFrameAspect
+        else -> min(videoAspect.coerceIn(StageMinAspect, StageMaxAspect), StageFrameAspect)
     }
     var firstFrameRendered by mutableStateOf(false)
         private set

@@ -5,17 +5,21 @@ import kotlin.math.min
 import kotlin.math.roundToLong
 
 /**
- * Word-by-word captions.
+ * Word-by-word captions, laid out like YouTube's own subtitles.
  *
- * Instead of drawing a whole cue the moment it starts, the overlay only shows what has already
- * been said: words appear one after another, and the most recent words stay on screen so you can
- * glance back at what you just heard. Nothing from the future is ever shown.
+ * The captions are cut into display lines once, up front, and a line never changes after that:
+ * words are only ever added to the end of the line that is being spoken. At any moment there are
+ * two fixed slots on screen, the line before (top, complete) and the line being spoken (bottom,
+ * only the words already said). When the bottom line is full the next word starts a new line,
+ * the old bottom line moves up and the old top line disappears. Nothing already on screen moves
+ * sideways, and nothing from the future is ever shown.
  *
  * Word timing comes from two places:
  *  - YouTube's auto-generated (ASR) captions carry a timestamp in front of every word inside the
- *    WebVTT text (`word<00:00:01.760><c> next</c>`), so those are exact.
+ *    WebVTT text (`word<00:00:01.760><c> next</c>`), so those are exact, and their own line
+ *    breaks are used as the line breaks.
  *  - Human-written captions only have a start and end per cue, so the words are spread over the
- *    cue at roughly speaking pace.
+ *    cue at roughly speaking pace and wrapped to the line width.
  *
  * This file is plain Kotlin on purpose (no Android types) so it can be unit tested on a laptop.
  */
@@ -24,7 +28,7 @@ data class CaptionWord(
     /** When this word stops being the newest thing on screen (end of its cue / line). */
     val endMs: Long,
     val text: String,
-    /** First word of a source caption line; used to keep at most two lines of history. */
+    /** First word of a source caption line; always starts a new display line. */
     val lineStart: Boolean,
 )
 
@@ -33,24 +37,68 @@ object WordCaptionStyle {
     /** How long the last word lingers after its line ends. */
     const val HOLD_MS = 400L
 
-    /** Keep at most this many source lines (the current one plus the one before it). */
-    const val MAX_LINES = 2
+    /**
+     * Most characters on one display line. The plate is drawn [LINE_WIDTH_EM] wide so a line this
+     * long always fits, whatever the letters are.
+     */
+    const val MAX_LINE_CHARS = 32
+    const val LINE_WIDTH_EM = 21f
 
-    /** Hard cap on the visible text so it never grows past two wrapped lines. */
-    const val MAX_CHARS = 84
-    const val MAX_WORDS = 16
-
-    /** Words separated by more than this much silence are not shown together. */
+    /** A pause longer than this ends the line, and the line before it is not kept on screen. */
     const val MAX_GAP_MS = 1_500L
+}
+
+/**
+ * Splits the text of a caption into the two fixed slots of the plate. [text] holds the top line,
+ * a line break and the bottom line; the top line may be empty. Anything else (a cue that came
+ * from the player itself) is reduced to its last two lines.
+ */
+fun captionSlots(text: String): Pair<String, String> {
+    val lines = text.split('\n')
+    val bottom = lines.last()
+    val top = if (lines.size >= 2) lines[lines.size - 2] else ""
+    return top to bottom
 }
 
 class WordTimeline(words: List<CaptionWord>) {
     private val words: List<CaptionWord> = words.sortedBy { it.startMs }
 
+    /** Index of the first word of every display line. */
+    private val lineStarts: IntArray
+
+    /** Display line of every word. */
+    private val lineOf: IntArray
+
+    init {
+        val starts = ArrayList<Int>()
+        val owner = IntArray(this.words.size)
+        var chars = 0
+        for (i in this.words.indices) {
+            val w = this.words[i]
+            val newLine = i == 0 ||
+                w.lineStart ||
+                chars + 1 + w.text.length > WordCaptionStyle.MAX_LINE_CHARS ||
+                w.startMs - this.words[i - 1].endMs > WordCaptionStyle.MAX_GAP_MS
+            if (newLine) {
+                starts += i
+                chars = w.text.length
+            } else {
+                chars += 1 + w.text.length
+            }
+            owner[i] = starts.size - 1
+        }
+        lineStarts = starts.toIntArray()
+        lineOf = owner
+    }
+
     val isEmpty: Boolean get() = words.isEmpty()
     val size: Int get() = words.size
 
-    /** The text that should be on screen at [posMs], or null when nothing has been said yet. */
+    /**
+     * What should be on screen at [posMs]: the previous line, a line break and the line being
+     * spoken (the previous line is empty when there was a pause before this one). Null when
+     * nothing has been said yet or the speaker has gone quiet.
+     */
     fun textAt(posMs: Long): String? {
         if (words.isEmpty() || posMs < words[0].startMs) return null
 
@@ -73,30 +121,27 @@ class WordTimeline(words: List<CaptionWord>) {
         }
         if (anchor < 0) return null
 
-        var first = anchor
-        var chars = 0
-        var count = 0
-        var lines = 0
-        i = anchor
-        while (i >= 0) {
-            val w = words[i]
-            if (count > 0) {
-                val added = w.text.length + 1
-                if (chars + added > WordCaptionStyle.MAX_CHARS || count >= WordCaptionStyle.MAX_WORDS) break
-                if (words[i + 1].startMs - w.endMs > WordCaptionStyle.MAX_GAP_MS) break
-                chars += added
-            } else {
-                chars = w.text.length
-            }
-            count++
-            first = i
-            if (w.lineStart) {
-                lines++
-                if (lines >= WordCaptionStyle.MAX_LINES) break
-            }
-            i--
+        val line = lineOf[anchor]
+        val first = lineStarts[line]
+        val bottom = join(first, anchor)
+
+        var top = ""
+        if (line > 0) {
+            val previousFirst = lineStarts[line - 1]
+            val previousLast = first - 1
+            val silence = words[first].startMs - words[previousLast].endMs
+            if (silence <= WordCaptionStyle.MAX_GAP_MS) top = join(previousFirst, previousLast)
         }
-        return words.subList(first, anchor + 1).joinToString(" ") { it.text }
+        return top + "\n" + bottom
+    }
+
+    private fun join(from: Int, to: Int): String {
+        val sb = StringBuilder()
+        for (k in from..to) {
+            if (k > from) sb.append(' ')
+            sb.append(words[k].text)
+        }
+        return sb.toString()
     }
 
     private companion object {

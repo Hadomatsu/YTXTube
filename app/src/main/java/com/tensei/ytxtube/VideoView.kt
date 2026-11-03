@@ -174,6 +174,9 @@ fun VideoContent(
     onInactiveTap: () -> Unit = {},
 
     portraitEdgeScrub: Boolean = false,
+
+    /** The captions live in a bar under the video (see [CaptionStrip]) instead of on the picture. */
+    captionsBelow: Boolean = false,
 ) {
 
 
@@ -729,18 +732,19 @@ fun VideoContent(
         }
 
         val captionText = state.captionText
-        if (!scrubbing && captionText != null) {
+        if (!captionsBelow && !scrubbing && captionText != null) {
             val captionLift by animateDpAsState(
-                targetValue = if (controlsVisible) EdgeScrubTimeRowBottomPad + EdgeScrubTimeRowHeight + 10.dp else 20.dp,
+                targetValue = if (controlsVisible) EdgeScrubTimeRowBottomPad + EdgeScrubTimeRowHeight + 10.dp else 28.dp,
                 animationSpec = if (reduced) tween(0) else tween(200, easing = Motion.Emphasized),
                 label = "captionLift",
             )
-            CaptionOverlay(
+            CaptionLines(
                 text = captionText,
                 fontSize = if (fullscreen) 20.sp else 15.sp,
+                plates = true,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(horizontal = 24.dp)
+                    .padding(horizontal = 16.dp)
                     .padding(bottom = captionLift),
             )
         }
@@ -1369,26 +1373,76 @@ private fun GlassButton(
 
 private const val SeekStepMs = 10_000L
 
-/** YouTube-style caption plate: black rounded box, white centred text, no chrome. */
+/**
+ * The caption block, laid out like YouTube's: two fixed slots, the previous line on top and the
+ * line being spoken underneath. The block has a fixed width and the text is left aligned inside
+ * it, both slots are always reserved even when one is empty, so words are only ever added at the
+ * end of the bottom line and nothing already on screen moves.
+ *
+ * [plates] draws a dark rounded plate behind each line (over the picture); without it the text
+ * sits on whatever is behind it (the black [CaptionStrip]).
+ */
 @Composable
-private fun CaptionOverlay(text: String, fontSize: TextUnit, modifier: Modifier = Modifier) {
-    Box(
-        modifier = modifier
-            // Never wider than ~two lines of text, even in fullscreen on a big unfolded screen.
-            .widthIn(max = 720.dp)
-            .clip(RoundedCornerShape(7.dp))
-            .background(Color.Black.copy(alpha = 0.72f))
-            .padding(horizontal = 10.dp, vertical = 4.dp),
-        contentAlignment = Alignment.Center,
-    ) {
+internal fun CaptionLines(text: String, fontSize: TextUnit, plates: Boolean, modifier: Modifier = Modifier) {
+    val (top, bottom) = captionSlots(text)
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val lineHeight = fontSize * 1.33f
+    val slotHeight = with(density) { lineHeight.toDp() } + 4.dp
+    // Wide enough for the longest line the layout allows, whatever the letters are. It follows
+    // the system font scale, and shrinks to the screen if that is narrower.
+    val blockWidth = with(density) { (fontSize.toPx() * WordCaptionStyle.LINE_WIDTH_EM).toDp() }
+    Column(modifier = modifier.width(blockWidth), horizontalAlignment = Alignment.Start) {
+        CaptionSlot(top, fontSize, lineHeight, slotHeight, plates)
+        CaptionSlot(bottom, fontSize, lineHeight, slotHeight, plates)
+    }
+}
+
+@Composable
+private fun CaptionSlot(text: String, fontSize: TextUnit, lineHeight: TextUnit, height: Dp, plate: Boolean) {
+    Box(Modifier.fillMaxWidth().height(height), contentAlignment = Alignment.CenterStart) {
+        if (text.isEmpty()) return@Box
         Text(
             text = text,
             color = Color.White,
             fontSize = fontSize,
-            lineHeight = fontSize * 1.33f,
+            lineHeight = lineHeight,
             fontWeight = FontWeight.SemiBold,
-            textAlign = TextAlign.Center,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Clip,
+            modifier = if (plate) {
+                Modifier
+                    .clip(RoundedCornerShape(5.dp))
+                    .background(Color.Black.copy(alpha = 0.72f))
+                    .padding(horizontal = 6.dp, vertical = 1.dp)
+            } else {
+                Modifier.padding(horizontal = 6.dp)
+            },
         )
+    }
+}
+
+/**
+ * Captions for the wide (unfolded) layout: a black bar directly under the video, so the subtitles
+ * sit just below the picture instead of covering it. It is only there while captions are on, and
+ * always the height of two lines, so it does not change size while the words come in.
+ */
+@Composable
+fun CaptionStrip(state: PlayerState, modifier: Modifier = Modifier) {
+    androidx.compose.animation.AnimatedVisibility(
+        visible = state.selectedSubtitleLanguage != null,
+        enter = androidx.compose.animation.expandVertically(tween(180)) + androidx.compose.animation.fadeIn(tween(180)),
+        exit = androidx.compose.animation.shrinkVertically(tween(150)) + androidx.compose.animation.fadeOut(tween(150)),
+    ) {
+        Box(
+            modifier = modifier
+                .fillMaxWidth()
+                .background(Color.Black)
+                .padding(vertical = 8.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            CaptionLines(text = state.captionText ?: "\n", fontSize = 18.sp, plates = false)
+        }
     }
 }
 

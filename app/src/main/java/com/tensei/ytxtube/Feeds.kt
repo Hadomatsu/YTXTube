@@ -222,9 +222,9 @@ fun FeedList(
     channelAvatarSeed: Map<String, String?> = emptyMap(),
 
     /**
-     * Show videos side by side instead of one big card per row. How many per row follows the
-     * width the list actually gets (see [HomeGrid]), so a foldable shows 2 on the cover screen
-     * and more when unfolded.
+     * Show videos side by side on a wide screen. How many per row follows the width the list
+     * actually gets (see [HomeGrid]), so a foldable shows one big card per row on the cover
+     * screen and two side by side when unfolded.
      */
     grid: Boolean = false,
 ) {

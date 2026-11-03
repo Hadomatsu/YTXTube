@@ -337,7 +337,9 @@ fun PlayerScreen(
             }
         } else {
         val screenConfig = androidx.compose.ui.platform.LocalConfiguration.current
-        val isWide = TvMode.isTv || screenConfig.screenWidthDp >= 640
+        // Only a TV keeps the side-by-side layout. On a tablet or an unfolded foldable the video
+        // goes on top across the full width and the rest of the page sits underneath it.
+        val isWide = TvMode.isTv
         if (isWide) {
             Row(Modifier.fillMaxSize()) {
                 Column(
@@ -391,6 +393,11 @@ fun PlayerScreen(
             }
 
 
+            // Captions on a wide screen live in a black bar right under the picture.
+            if (state.wideStage) {
+                CaptionStrip(state, Modifier.graphicsLayer { alpha = ramp(morph.progress.value, DetailsFadeStart) })
+            }
+
             if (!showDetails) Spacer(Modifier.weight(1f)) else
             LazyColumn(
                 modifier = Modifier
@@ -415,8 +422,27 @@ fun PlayerScreen(
                 val related = details?.related.orEmpty()
                 if (related.isNotEmpty()) {
                     item(key = "moreTitle") { SectionTitle("More videos") }
-                    items(related, key = { "rel-" + it.id }) { video ->
-                        Box(Modifier.padding(horizontal = 20.dp)) { VideoRow(video, onClick = { onOpen(video) }) }
+                    val relatedColumns = HomeGrid.columns(screenConfig.screenWidthDp.toFloat())
+                    if (relatedColumns > 1) {
+                        // Wide screen: two videos side by side, same cards as the home feed.
+                        items(related.chunked(relatedColumns), key = { row -> "rel-row-" + row.first().id }) { row ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(start = HomeGrid.EDGE_DP.dp, end = HomeGrid.EDGE_DP.dp, bottom = 16.dp),
+                                horizontalArrangement = Arrangement.spacedBy(HomeGrid.GAP_DP.dp),
+                                verticalAlignment = Alignment.Top,
+                            ) {
+                                row.forEach { video ->
+                                    VideoCardGrid(video, onClick = { onOpen(video) }, modifier = Modifier.weight(1f))
+                                }
+                                repeat(relatedColumns - row.size) { Spacer(Modifier.weight(1f)) }
+                            }
+                        }
+                    } else {
+                        items(related, key = { "rel-" + it.id }) { video ->
+                            Box(Modifier.padding(horizontal = 20.dp)) { VideoRow(video, onClick = { onOpen(video) }) }
+                        }
                     }
                 } else if (state.loading) {
                     item(key = "loading") {
@@ -563,6 +589,7 @@ private fun VideoStage(state: PlayerState, morph: PlayerMorph, onCollapse: () ->
             onToggleFullscreen = onFullscreen,
             controlsAlpha = controlsAlpha,
             portraitEdgeScrub = true,
+            captionsBelow = state.wideStage,
             modifier = stage,
         )
     }

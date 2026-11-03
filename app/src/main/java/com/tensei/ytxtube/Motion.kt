@@ -40,6 +40,9 @@ object Motion {
 
     const val CollapseMs = 380
 
+    /** Entrance of the fullscreen player (swipe up or tap on the fullscreen button). */
+    const val FullscreenEnterMs = 320
+
     const val ControlsHideMs = 2_000L
 
     const val ScrubChromeMs = 220

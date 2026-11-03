@@ -1295,7 +1295,7 @@ private fun GeneralModificationContent(context: Context) {
 
         SettingsSwitchRow(
             title = I18n.t("home_grid", "Grid layout on Home"),
-            subtitle = I18n.t("home_grid_sub", "Several videos per row instead of one big video at a time. Adapts to the screen: 2 per row when folded, more when unfolded"),
+            subtitle = I18n.t("home_grid_sub", "Two videos side by side on a wide screen (unfolded). On a narrow screen (folded) it stays one video per row"),
             checked = HomeLayoutSettings.grid,
             onCheckedChange = { HomeLayoutSettings.set(it) },
         )

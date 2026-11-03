@@ -43,26 +43,27 @@ class WordCaptionsTest {
     @Test
     fun autoCaptions_wordsAppearOneByOne() {
         val t = WordCaptionParser.parseVtt(autoVtt)
-        assertEquals("hello", t.textAt(300))
-        assertEquals("hello everyone", t.textAt(700))
+        assertEquals("\nhello", t.textAt(300))
+        assertEquals("\nhello everyone", t.textAt(700))
         // "welcome" has not been said yet at 1.0 s, so it must not be shown.
-        assertEquals("hello everyone", t.textAt(1000))
-        assertEquals("hello everyone welcome back", t.textAt(1500))
+        assertEquals("\nhello everyone", t.textAt(1000))
+        assertEquals("\nhello everyone welcome back", t.textAt(1500))
     }
 
     @Test
     fun autoCaptions_keepsPreviousLineForLookingBack() {
         val t = WordCaptionParser.parseVtt(autoVtt)
-        assertEquals("hello everyone welcome back to the", t.textAt(2500))
-        assertEquals("hello everyone welcome back to the channel", t.textAt(3000))
+        // The finished line moves up, the new line grows underneath it.
+        assertEquals("hello everyone welcome back\nto the", t.textAt(2500))
+        assertEquals("hello everyone welcome back\nto the channel", t.textAt(3000))
     }
 
     @Test
     fun autoCaptions_dropsTheLineBeforeThePreviousOne() {
         val t = WordCaptionParser.parseVtt(autoVtt)
         // "going" only starts at 5.04 s, so at 4.9 s the newest word is still "we're".
-        assertEquals("to the channel today we're", t.textAt(4900))
-        assertEquals("to the channel today we're going", t.textAt(5100))
+        assertEquals("to the channel today\nwe're", t.textAt(4900))
+        assertEquals("to the channel today\nwe're going", t.textAt(5100))
     }
 
     @Test
@@ -86,7 +87,7 @@ class WordCaptionsTest {
     @Test
     fun autoCaptions_hidesAfterALongSilence() {
         val t = WordCaptionParser.parseVtt(autoVtt)
-        assertEquals("to the channel today we're going to talk", t.textAt(6000))
+        assertEquals("to the channel today\nwe're going to talk", t.textAt(6000))
         assertNull(t.textAt(8000))
     }
 
@@ -107,20 +108,21 @@ Okay.
     fun manualCaptions_wordsAreSpreadAcrossTheCue() {
         val t = WordCaptionParser.parseVtt(manualVtt)
         assertNull(t.textAt(900))
-        assertEquals("So", t.textAt(1000))
-        assertEquals("So what do we do", t.textAt(2000))
+        assertEquals("\nSo", t.textAt(1000))
+        assertEquals("\nSo what do we do", t.textAt(2000))
     }
 
     @Test
     fun manualCaptions_fullCueIsShownByItsEnd() {
         val t = WordCaptionParser.parseVtt(manualVtt)
-        assertEquals("So what do we do now? Let's find out.", t.textAt(3900))
+        // 37 characters do not fit one line, so the last word wraps onto a line of its own.
+        assertEquals("So what do we do now? Let's find\nout.", t.textAt(3900))
     }
 
     @Test
     fun manualCaptions_nextCueKeepsTheLastOneForContext() {
         val t = WordCaptionParser.parseVtt(manualVtt)
-        assertEquals("So what do we do now? Let's find out. Okay.", t.textAt(4600))
+        assertEquals("out.\nOkay.", t.textAt(4600))
     }
 
     @Test
@@ -136,7 +138,8 @@ Yes.
 """.trimIndent()
         val t = WordCaptionParser.parseVtt(vtt)
         assertEquals(2, t.size)
-        assertEquals("Yes.", t.textAt(7100))
+        // A long pause before it: nothing from the first "Yes." is kept above it.
+        assertEquals("\nYes.", t.textAt(7100))
     }
 
     @Test
@@ -148,7 +151,7 @@ WEBVTT
 <c.colorE5E5E5>don&#39;t</c> stop &amp; go
 """.trimIndent()
         val t = WordCaptionParser.parseVtt(vtt)
-        assertEquals("don't stop & go", t.textAt(2999))
+        assertEquals("\ndon't stop & go", t.textAt(2999))
     }
 
     @Test
@@ -156,6 +159,74 @@ WEBVTT
         assertEquals(true, WordCaptionParser.parseVtt("").isEmpty)
         assertEquals(true, WordCaptionParser.parseVtt("WEBVTT\n\nnot a cue").isEmpty)
         assertNull(WordCaptionParser.parseVtt("").textAt(1000))
+    }
+
+    @Test
+    fun layout_wordsOnlyEverAppendToTheBottomLine() {
+        // Walk through the auto-caption sample in 10 ms steps. Between two neighbouring frames
+        // either the bottom line grew by appending words (top line unchanged), or a new line
+        // started and the old bottom line moved up as it was. Nothing is ever edited in the middle.
+        val t = WordCaptionParser.parseVtt(autoVtt)
+        var previous: Pair<String, String>? = null
+        var ms = 0L
+        while (ms <= 7_000L) {
+            val now = t.textAt(ms)?.let { captionSlots(it) }
+            val before = previous
+            if (before != null && now != null) {
+                val grew = now.second.startsWith(before.second) && now.first == before.first
+                val rolled = now.first == before.second
+                assertEquals("at $ms ms: $before -> $now", true, grew || rolled)
+            }
+            previous = now
+            ms += 10L
+        }
+    }
+
+    @Test
+    fun layout_aLongCueIsWrappedToTheLineWidth() {
+        val vtt = """
+WEBVTT
+
+00:00:01.000 --> 00:00:09.000
+This is a rather long sentence that somebody wrote on one single caption line for no reason.
+""".trimIndent()
+        val t = WordCaptionParser.parseVtt(vtt)
+        var ms = 900L
+        while (ms <= 9_500L) {
+            val (top, bottom) = captionSlots(t.textAt(ms) ?: "\n")
+            assertEquals("top at $ms: '$top'", true, top.length <= WordCaptionStyle.MAX_LINE_CHARS)
+            assertEquals("bottom at $ms: '$bottom'", true, bottom.length <= WordCaptionStyle.MAX_LINE_CHARS)
+            ms += 50L
+        }
+        // The very end shows the last two lines, the first one has scrolled away.
+        val (top, bottom) = captionSlots(t.textAt(8_900L)!!)
+        assertEquals("single caption line for no", top)
+        assertEquals("reason.", bottom)
+    }
+
+    @Test
+    fun layout_aPauseStartsAFreshPlate() {
+        val vtt = """
+WEBVTT
+
+00:00:01.000 --> 00:00:02.000
+First thing.
+
+00:00:09.000 --> 00:00:10.000
+Much later.
+""".trimIndent()
+        val t = WordCaptionParser.parseVtt(vtt)
+        assertEquals("\nFirst thing.", t.textAt(1_900))
+        assertEquals("\nMuch", t.textAt(9_000))
+        assertEquals(Pair("", "Much later."), captionSlots(t.textAt(9_900)!!))
+    }
+
+    @Test
+    fun slots_splitIntoTopAndBottom() {
+        assertEquals(Pair("a", "b"), captionSlots("a\nb"))
+        assertEquals(Pair("", "b"), captionSlots("\nb"))
+        assertEquals(Pair("", "b"), captionSlots("b"))
+        assertEquals(Pair("y", "z"), captionSlots("x\ny\nz"))
     }
 
     @Test

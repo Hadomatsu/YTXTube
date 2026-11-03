@@ -432,6 +432,9 @@ fun YtxTubeApp() {
     pip.Bind(onClosed = { player.controller?.pause() })
     val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
     val isTabletOrTv = TvMode.isTv || LocalConfiguration.current.smallestScreenWidthDp >= 600
+    // Width of the window right now: an unfolded foldable is wide, the same phone folded is not.
+    val wideScreen = !TvMode.isTv && LocalConfiguration.current.screenWidthDp >= HomeGrid.TWO_COLUMNS_FROM_DP
+    SideEffect { player.wideStage = wideScreen }
 
     val fullscreenBeforePip = remember { mutableStateOf(false) }
     val showFullscreen = if (pip.active) fullscreenBeforePip.value
@@ -894,8 +897,33 @@ fun YtxTubeApp() {
         }
 
         if (showFullscreen) {
+            // A short entrance instead of a hard cut: the screen goes dark while the video
+            // settles in from slightly above and a little smaller, like it was lifted to full size.
+            val enter = remember { androidx.compose.animation.core.Animatable(if (reduced) 1f else 0f) }
+            LaunchedEffect(Unit) {
+                if (reduced) enter.snapTo(1f) else enter.animateTo(1f, tween(Motion.FullscreenEnterMs, easing = Motion.Emphasized))
+            }
             Box(Modifier.fillMaxSize().layerBackdrop(playerBackdrop)) {
-                FullscreenPlayer(player, onExit = { exitFullscreen() })
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .graphicsLayer { alpha = (enter.value * 2.5f).coerceAtMost(1f) }
+                        .background(Color.Black),
+                )
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            val p = enter.value
+                            alpha = (p * 2f).coerceAtMost(1f)
+                            val s = 0.92f + 0.08f * p
+                            scaleX = s
+                            scaleY = s
+                            translationY = -size.height * 0.10f * (1f - p)
+                        },
+                ) {
+                    FullscreenPlayer(player, onExit = { exitFullscreen() })
+                }
             }
         } else if (showPlayer) {
             Box(Modifier.fillMaxSize().layerBackdrop(playerBackdrop)) {
