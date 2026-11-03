@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBars
@@ -33,7 +34,6 @@ import androidx.compose.material.icons.rounded.Explore
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Inbox
 import androidx.compose.material.icons.rounded.Person
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -138,10 +138,16 @@ internal fun TokScreen(state: TokState, onExit: () -> Unit) {
             )
         }
 
-        if (!state.loadedOnce && !state.error && state.progress < 80) {
-            Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(28.dp))
-            }
+        // A thin line under the status bar while a page loads; the page itself is never covered.
+        if (state.progress in 1..99) {
+            Box(
+                Modifier
+                    .align(Alignment.TopStart)
+                    .statusBarsPadding()
+                    .fillMaxWidth(state.progress / 100f)
+                    .height(2.dp)
+                    .background(Color.White.copy(alpha = 0.55f)),
+            )
         }
 
         if (state.error) {
@@ -155,8 +161,17 @@ internal fun TokScreen(state: TokState, onExit: () -> Unit) {
                     "Check your connection and try again.",
                     color = Color.White.copy(alpha = 0.6f),
                     fontSize = 14.sp,
-                    modifier = Modifier.padding(top = 6.dp, bottom = 20.dp),
+                    modifier = Modifier.padding(top = 6.dp),
                 )
+                if (state.errorDetail.isNotEmpty()) {
+                    Text(
+                        state.errorDetail,
+                        color = Color.White.copy(alpha = 0.35f),
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
+                Box(Modifier.size(20.dp))
                 Box(
                     Modifier
                         .clip(RoundedCornerShape(50))

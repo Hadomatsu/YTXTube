@@ -12,6 +12,7 @@ import android.webkit.CookieManager
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -64,9 +65,15 @@ internal object TokWeb {
         }
     }
 
-    /** The same Chrome identity an Android phone sends, so TikTok serves its phone layout. */
-    fun userAgent(context: Context): String =
-        WebSettings.getDefaultUserAgent(context).replace("; wv", "").replace(" Version/4.0", "")
+    /**
+     * The identity Chrome on an Android phone sends (device name reduced to "K", no "wv" or "Build/"),
+     * with the Chrome version of this WebView, so TikTok serves its normal phone page.
+     */
+    fun userAgent(context: Context): String {
+        val default = WebSettings.getDefaultUserAgent(context)
+        val chrome = Regex("Chrome/([0-9.]+)").find(default)?.groupValues?.get(1) ?: "138.0.0.0"
+        return "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/" + chrome + " Mobile Safari/537.36"
+    }
 
     /**
      * Runs on every TikTok page, as early as the browser allows (and again when the page finishes,
@@ -82,7 +89,7 @@ internal object TokWeb {
 (function () {
   if (window.__ytxInit) return;
   window.__ytxInit = true;
-  var CSS = 'html,body{background:#000 !important;overscroll-behavior:none}' +
+  var CSS = 'html,body{overscroll-behavior:none}' +
     '*{-webkit-tap-highlight-color:transparent}' +
     '::-webkit-scrollbar{display:none}' +
     '[data-ytx-nav]{opacity:0 !important;pointer-events:none !important}' +
@@ -105,7 +112,9 @@ internal object TokWeb {
     if (h && p && !document.querySelector('[data-ytx-nav]')) {
       var e = h;
       while (e && !e.contains(p)) e = e.parentElement;
-      if (e && e !== document.body && e !== document.documentElement) e.setAttribute('data-ytx-nav', '1');
+      if (e && e !== document.body && e !== document.documentElement && e.getBoundingClientRect().height <= 120) {
+        e.setAttribute('data-ytx-nav', '1');
+      }
     }
     var no = document.querySelector('[data-e2e="alt-middle-cta-cancel-btn"]');
     if (no) no.click();
@@ -118,10 +127,12 @@ internal object TokWeb {
         if (c.childElementCount > 4) continue;
         var t = (c.textContent || '').trim().toLowerCase();
         if (t !== 'open app') continue;
+        var cr = c.getBoundingClientRect();
+        if (cr.width > 220 || cr.height > 64 || cr.width === 0) continue;
         var r = c;
-        while (r.parentElement && r.parentElement !== document.body &&
-               (r.parentElement.textContent || '').trim().toLowerCase() === 'open app' &&
-               r.parentElement.getBoundingClientRect().width <= 220) {
+        while (r.parentElement && r.parentElement !== document.body) {
+          var pr = r.parentElement.getBoundingClientRect();
+          if ((r.parentElement.textContent || '').trim().toLowerCase() !== 'open app' || pr.width > 220 || pr.height > 64) break;
           r = r.parentElement;
         }
         r.setAttribute('data-ytx-hide', '1');
@@ -179,6 +190,7 @@ internal class TokState {
     var progress by mutableIntStateOf(0)
     var loadedOnce by mutableStateOf(false)
     var error by mutableStateOf(false)
+    var errorDetail by mutableStateOf("")
     var webView: WebView? = null
     var pendingUrl: String? = null
 
@@ -261,7 +273,17 @@ private class TokClient(private val state: TokState, private val context: Contex
     }
 
     override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
-        if (request.isForMainFrame) state.error = true
+        if (request.isForMainFrame) {
+            state.errorDetail = error.errorCode.toString() + " " + error.description
+            state.error = true
+        }
+    }
+
+    override fun onReceivedHttpError(view: WebView, request: WebResourceRequest, errorResponse: WebResourceResponse) {
+        if (request.isForMainFrame && errorResponse.statusCode >= 400) {
+            state.errorDetail = "HTTP " + errorResponse.statusCode + " " + (errorResponse.reasonPhrase ?: "")
+            state.error = true
+        }
     }
 }
 

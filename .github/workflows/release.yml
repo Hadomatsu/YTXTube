@@ -32,17 +32,21 @@ jobs:
       - name: Grant Execute Permission for Gradlew
         run: chmod +x gradlew
 
-      - name: Build Release APK
-        run: ./gradlew :app:assembleRelease --stacktrace
+      - name: Build Release APKs
+        run: ./gradlew :app:assembleYtRelease :app:assembleTokRelease --stacktrace
 
-      - name: Prepare APK Artifact
-        run: cp app/build/outputs/apk/release/app-release.apk YTXTube.apk
+      - name: Prepare APK Artifacts
+        run: |
+          cp app/build/outputs/apk/yt/release/app-yt-release.apk YTXTube.apk
+          cp app/build/outputs/apk/tok/release/app-tok-release.apk YTXTok.apk
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: YTXTube
-          path: YTXTube.apk
+          path: |
+            YTXTube.apk
+            YTXTok.apk
 
       - name: Read version
         id: version
@@ -56,7 +60,9 @@ jobs:
           tag_name: v${{ steps.version.outputs.name }}
           target_commitish: ${{ github.sha }}
           name: YTXTube Custom ${{ steps.version.outputs.name }}
-          files: YTXTube.apk
+          files: |
+            YTXTube.apk
+            YTXTok.apk
           body: |
             Custom build on top of YTXTube.
 
@@ -64,6 +70,7 @@ jobs:
             - Subtitle button on the player, captions switch on without delay.
             - Word by word captions: only the words already spoken are shown.
             - Installs next to the original YTXTube (different app id).
+            - YTXTok.apk is the separate TikTok app (own app id, own icon).
           draft: false
           prerelease: false
         env:

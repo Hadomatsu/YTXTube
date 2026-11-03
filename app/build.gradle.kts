@@ -8,11 +8,23 @@ android {
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "com.tensei.ytxtube.custom"
         minSdk = 24
         targetSdk = 36
-        versionCode = 236
-        versionName = "2.3.0"
+        versionCode = 237
+        versionName = "2.3.1"
+    }
+
+    // Two apps from one codebase: the YouTube client and the TikTok client (own package, own icon, own APK).
+    flavorDimensions += "app"
+    productFlavors {
+        create("yt") {
+            dimension = "app"
+            applicationId = "com.tensei.ytxtube.custom"
+        }
+        create("tok") {
+            dimension = "app"
+            applicationId = "com.tensei.ytxtok"
+        }
     }
 
     signingConfigs {
@@ -137,7 +149,7 @@ dependencies {
     implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.26.5")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("io.coil-kt:coil-compose:2.7.0")
-    implementation("androidx.webkit:webkit:1.14.0")
+    "tokImplementation"("androidx.webkit:webkit:1.14.0")
     implementation("com.google.guava:guava:33.3.1-android")
 
 

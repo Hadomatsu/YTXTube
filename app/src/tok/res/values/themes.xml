@@ -1,0 +1,6 @@
+<resources>
+    <!-- Opens on pure black so there is no light flash before the page paints. -->
+    <style name="Theme.YTXTok" parent="Theme.YTXTube">
+        <item name="android:windowBackground">@android:color/black</item>
+    </style>
+</resources>

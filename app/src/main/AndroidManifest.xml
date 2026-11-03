@@ -3,12 +3,7 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.VIBRATE" />
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
-    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!-- One APK for phones, tablets and Android TV: none of this hardware is mandatory. -->
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
@@ -17,125 +12,9 @@
     <uses-feature android:name="android.hardware.type.television" android:required="false" />
     <uses-feature android:name="android.hardware.gamepad" android:required="false" />
 
+    <!-- Each flavor (yt, tok) adds its own application name, icon, label and screens. -->
     <application
-        android:name=".YTXTubeApplication"
         android:allowBackup="false"
-        android:banner="@drawable/tv_banner"
         android:enableOnBackInvokedCallback="true"
-        android:icon="@mipmap/ic_launcher"
-        android:roundIcon="@mipmap/ic_launcher"
-        android:label="@string/app_name"
-        android:supportsRtl="true"
-        android:theme="@style/Theme.YTXTube">
-
-        <activity
-            android:name=".MainActivity"
-            android:exported="true"
-            android:launchMode="singleTask"
-            android:supportsPictureInPicture="true"
-            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|density|keyboardHidden|uiMode"
-            android:windowSoftInputMode="adjustResize|stateAlwaysHidden">
-
-            <property
-                android:name="android.window.PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY"
-                android:value="true" />
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
-            </intent-filter>
-
-            <!-- YouTube web URLs -->
-            <intent-filter android:autoVerify="true">
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="http" />
-                <data android:scheme="https" />
-                <data android:host="youtube.com" />
-                <data android:host="www.youtube.com" />
-                <data android:host="m.youtube.com" />
-                <data android:pathPrefix="/watch" />
-                <data android:pathPrefix="/shorts" />
-                <data android:pathPrefix="/live" />
-                <data android:pathPrefix="/embed" />
-                <data android:pathPrefix="/v" />
-            </intent-filter>
-
-            <!-- youtu.be short links -->
-            <intent-filter android:autoVerify="true">
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="http" />
-                <data android:scheme="https" />
-                <data android:host="youtu.be" />
-                <data android:pathPattern="/.*" />
-            </intent-filter>
-
-            <!-- vnd.youtube protocol links -->
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="vnd.youtube" />
-            </intent-filter>
-
-            <!-- Sharing text/link from another app (e.g. WhatsApp, Browser, Telegram) -->
-            <intent-filter>
-                <action android:name="android.intent.action.SEND" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="text/plain" />
-            </intent-filter>
-        </activity>
-
-        <!-- Second launcher entry: a TikTok client built around tiktok.com with the same liquid-glass shell. -->
-        <activity
-            android:name=".TokActivity"
-            android:exported="true"
-            android:label="@string/tok_app_name"
-            android:icon="@mipmap/ic_tok"
-            android:roundIcon="@mipmap/ic_tok"
-            android:theme="@style/Theme.YTXTok"
-            android:launchMode="singleTask"
-            android:taskAffinity="com.tensei.ytxtube.custom.tok"
-            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|density|keyboardHidden|uiMode"
-            android:windowSoftInputMode="adjustResize">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-
-            <!-- TikTok links shared from other apps -->
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="https" />
-                <data android:host="www.tiktok.com" />
-                <data android:host="m.tiktok.com" />
-                <data android:host="vm.tiktok.com" />
-                <data android:host="vt.tiktok.com" />
-            </intent-filter>
-        </activity>
-
-        <service
-            android:name=".PlaybackService"
-            android:exported="true"
-            android:foregroundServiceType="mediaPlayback">
-            <intent-filter>
-                <action android:name="androidx.media3.session.MediaSessionService" />
-            </intent-filter>
-        </service>
-
-        <provider
-            android:name="androidx.core.content.FileProvider"
-            android:authorities="${applicationId}.fileprovider"
-            android:exported="false"
-            android:grantUriPermissions="true">
-            <meta-data
-                android:name="android.support.FILE_PROVIDER_PATHS"
-                android:resource="@xml/file_paths" />
-        </provider>
-    </application>
+        android:supportsRtl="true" />
 </manifest>
