@@ -134,7 +134,7 @@ internal fun TokScreen(state: TokState, onExit: () -> Unit) {
                             web.loadUrl(first)
                         }
                     },
-                    modifier = (if (state.desktop) Modifier else Modifier.widthIn(max = FeedMaxWidth)).fillMaxSize(),
+                    modifier = (if (state.desktop || !state.capWidth) Modifier else Modifier.widthIn(max = FeedMaxWidth)).fillMaxSize(),
                     onRelease = { web ->
                         if (state.webView === web) state.webView = null
                         web.stopLoading()
@@ -190,7 +190,7 @@ internal fun TokScreen(state: TokState, onExit: () -> Unit) {
             }
         }
 
-        if (!imeUp) {
+        if (!imeUp && state.dockOn) {
             Box(
                 Modifier
                     .align(Alignment.BottomCenter)
@@ -247,7 +247,8 @@ private fun TokDiagStrip(state: TokState) {
     LaunchedEffect(state) {
         while (true) {
             delay(1200)
-            state.webView?.evaluateJavascript(TokWeb.DIAG_SCRIPT) { r -> state.diag = (r ?: "").trim('"') }
+            state.nativeText = state.nativeInfo()
+            state.webView?.evaluateJavascript(TokWeb.DIAG_SCRIPT) { r -> state.diag = (r ?: "").trim('"').replace("\\n", "\n") }
         }
     }
     Column(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 2.dp)) {
@@ -261,14 +262,32 @@ private fun TokDiagStrip(state: TokState) {
                 state.webView?.loadUrl("https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4")
             }
         }
+        Row(
+            Modifier.padding(top = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            TokChip("Layer " + listOf("none", "hw", "sw")[state.layerMode]) {
+                state.layerMode = (state.layerMode + 1) % 3
+                state.applyLayer()
+            }
+            TokChip("FR " + (if (state.frameHint) "on" else "off")) {
+                state.frameHint = !state.frameHint
+                state.applyFrameHint()
+            }
+            TokChip("Dock " + (if (state.dockOn) "on" else "off")) { state.dockOn = !state.dockOn }
+            TokChip("Cap " + (if (state.capWidth) "on" else "off")) { state.capWidth = !state.capWidth }
+            TokChip("Mode " + (if (state.modeHint) "on" else "off")) { state.dropModeRequest() }
+        }
         Text(
-            (if (state.desktop) "desktop " else "mobile ") + state.diag +
+            state.nativeText + "\n" + (if (state.desktop) "desktop " else "mobile ") + state.diag +
                 (if (state.net.isNotEmpty()) "\nnet: " + state.net else "") +
                 (if (state.console.isNotEmpty()) "\njs: " + state.console else ""),
             color = Color.White.copy(alpha = 0.6f),
             fontSize = 9.sp,
             lineHeight = 11.sp,
-            maxLines = 5,
+            minLines = 7,
+            maxLines = 7,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(top = 3.dp),
         )

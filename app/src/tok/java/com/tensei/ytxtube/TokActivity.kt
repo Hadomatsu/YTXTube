@@ -78,6 +78,7 @@ class TokActivity : ComponentActivity() {
 
     /** The same request the YouTube screen makes: the panel's top mode at the current resolution. */
     private fun requestHighestRefreshRate() {
+        if (!state.modeHint) return
         runCatching {
             @Suppress("DEPRECATION")
             val disp = (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) display else windowManager.defaultDisplay)

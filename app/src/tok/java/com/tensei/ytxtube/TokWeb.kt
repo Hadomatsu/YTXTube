@@ -278,6 +278,13 @@ internal class TokState {
     var error by mutableStateOf(false)
     var errorDetail by mutableStateOf("")
     var diag by mutableStateOf("")
+    var nativeText by mutableStateOf("")
+    /** Switches for finding out why the page is only half drawn: how the WebView is layered, and what else is asking the screen for things. */
+    var layerMode by mutableIntStateOf(0)
+    var frameHint by mutableStateOf(true)
+    var dockOn by mutableStateOf(true)
+    var capWidth by mutableStateOf(true)
+    @Volatile var modeHint: Boolean = true
     var net by mutableStateOf("")
     var console by mutableStateOf("")
     @Volatile var remoteJs: String = ""
@@ -323,6 +330,48 @@ internal class TokState {
             tab = t
             navigatedTab = t
         }
+    }
+
+    fun applyLayer() {
+        val web = webView ?: return
+        web.setLayerType(
+            when (layerMode) {
+                1 -> View.LAYER_TYPE_HARDWARE
+                2 -> View.LAYER_TYPE_SOFTWARE
+                else -> View.LAYER_TYPE_NONE
+            },
+            null,
+        )
+        web.invalidate()
+    }
+
+    fun applyFrameHint() {
+        if (Build.VERSION.SDK_INT < 35) return
+        val value = if (frameHint) View.REQUESTED_FRAME_RATE_CATEGORY_HIGH else View.REQUESTED_FRAME_RATE_CATEGORY_NO_PREFERENCE
+        webView?.let { web ->
+            runCatching { web.requestedFrameRate = value }
+            runCatching { web.rootView.requestedFrameRate = value }
+        }
+    }
+
+    /** Takes the preferred display mode back off the window, as if this app never asked for a refresh rate. */
+    fun dropModeRequest() {
+        modeHint = false
+        val window = (webView?.context as? android.app.Activity)?.window ?: return
+        runCatching {
+            val lp = window.attributes
+            lp.preferredDisplayModeId = 0
+            lp.preferredRefreshRate = 0f
+            window.attributes = lp
+        }
+    }
+
+    /** What the WebView is, and how the system sees it. */
+    fun nativeInfo(): String {
+        val web = webView ?: return "no webview"
+        val pkg = runCatching { WebView.getCurrentWebViewPackage() }.getOrNull()
+        return (pkg?.packageName ?: "?") + " " + (pkg?.versionName ?: "?") + " hw" + (if (web.isHardwareAccelerated) 1 else 0) +
+            " layer" + web.layerType + " " + web.width + "x" + web.height + " sdk" + Build.VERSION.SDK_INT
     }
 
     fun retry() {
