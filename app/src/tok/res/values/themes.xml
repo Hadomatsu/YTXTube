@@ -1,6 +1,9 @@
 <resources>
-    <!-- Opens on pure black so there is no light flash before the page paints. -->
-    <style name="Theme.YTXTok" parent="Theme.YTXTube">
+    <!--
+        Always dark, whatever the phone's own theme: the WebView reports prefers-color-scheme from the app
+        theme, so TikTok's page follows it and comes up black. Opens on pure black, with no light flash.
+    -->
+    <style name="Theme.YTXTok" parent="android:Theme.Material.NoActionBar">
         <item name="android:windowBackground">@android:color/black</item>
     </style>
 </resources>

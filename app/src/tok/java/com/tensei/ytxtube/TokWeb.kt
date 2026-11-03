@@ -9,7 +9,6 @@ import android.net.Uri
 import android.os.Build
 import android.view.View
 import android.view.ViewGroup
-import android.webkit.ConsoleMessage
 import android.webkit.CookieManager
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
@@ -22,6 +21,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.webkit.WebSettingsCompat
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 
@@ -34,16 +34,6 @@ import androidx.webkit.WebViewFeature
 internal object TokWeb {
     const val HOME = "https://www.tiktok.com/foryou"
 
-    /** A page that measures the viewport units, used to compare this app's WebView with a plain one. */
-    val PROBE_HTML = """<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head>
-<body style="margin:0;background:#fff;color:#000;font:15px monospace"><pre id="o" style="white-space:pre-wrap;margin:6px"></pre>
-<script>
-function m(){var d=document.createElement('div');d.style.cssText='position:fixed;left:0;top:0;width:1px;visibility:hidden';document.body.appendChild(d);var r=[];['100vh','100dvh','100svh','100lvh','100%'].forEach(function(u){d.style.height=u;r.push(u+'='+d.offsetHeight)});d.remove();return r.join('  ')}
-setInterval(function(){document.getElementById('o').textContent='PROBE\n'+m()+'\ninner '+innerWidth+'x'+innerHeight+' dpr '+devicePixelRatio+' vv '+(window.visualViewport?Math.round(window.visualViewport.height):'-')+'\n'+navigator.userAgent},400);
-</script></body></html>"""
-
-    /** Whether the WebView honours the page's viewport tag with a wide layout viewport (see applyTokMode). */
-    @Volatile var wide = false
 
     /** Tab index to the TikTok link that opens it (the same links TikTok's own bottom bar uses). */
     val tabs = listOf(
@@ -225,34 +215,6 @@ setInterval(function(){document.getElementById('o').textContent='PROBE\n'+m()+'\
   try { addStyle(); observe(); } catch (x) {}
   setInterval(schedule, 1500);
   schedule();
-  window.__ytxDiag = function () {
-    try {
-      var v = [].slice.call(document.querySelectorAll('video'));
-      var a = v.filter(function (x) {
-        var r = x.getBoundingClientRect();
-        return r.height > 0 && r.top < innerHeight * 0.6 && r.bottom > innerHeight * 0.4;
-      })[0] || v[0];
-      var s = 'v' + v.length;
-      if (a) {
-        s += ' ' + (a.paused ? 'paused' : 'play') + ' rs' + a.readyState + ' ' + a.videoWidth + 'x' + a.videoHeight + (a.error ? ' err' + a.error.code : '');
-        try {
-          var c = document.createElement('canvas'); c.width = 8; c.height = 8;
-          var g = c.getContext('2d'); g.drawImage(a, 0, 0, 8, 8);
-          var d = g.getImageData(0, 0, 8, 8).data, r1 = 0, g1 = 0, b1 = 0;
-          for (var i = 0; i < d.length; i += 4) { r1 += d[i]; g1 += d[i + 1]; b1 += d[i + 2]; }
-          var n = d.length / 4;
-          s += ' px' + Math.round(r1 / n) + ',' + Math.round(g1 / n) + ',' + Math.round(b1 / n);
-        } catch (e) { s += ' px?'; }
-      }
-      if (document.querySelector('[data-e2e="middle-cta-container"]')) s += ' wall';
-      s += ' ' + location.pathname + ' txt' + ((document.body && document.body.innerText) || '').length +
-        ' if' + document.querySelectorAll('iframe').length + ' ' + document.documentElement.getAttribute('data-theme') + ' ' + innerWidth + 'w';
-      var ms = window.MediaSource;
-      s += ' mse' + (ms ? (ms.isTypeSupported('video/mp4; codecs="avc1.42E01E"') ? 'A' : 'a') + (ms.isTypeSupported('video/mp4; codecs="hvc1.1.6.L93.B0"') ? 'H' : 'h') : '-');
-      s += ' ua:' + (navigator.userAgentData ? navigator.userAgentData.brands.map(function (b) { return b.brand.slice(0, 8); }).join('/') : 'none');
-      return s;
-    } catch (x) { return 'diag error ' + x; }
-  };
 })();
 """
     val script: String = SCRIPT_BODY
@@ -260,12 +222,6 @@ setInterval(function(){document.getElementById('o').textContent='PROBE\n'+m()+'\
     /** Clicks one of TikTok's own bottom-bar links; answers "1" when it found it, so the caller can fall back to loading the page. */
     fun clickScript(e2e: String): String =
         "(function(){var a=document.querySelector('[data-e2e=\"$e2e\"]');if(a){a.click();return '1';}return '0';})()"
-
-    /** One short line about the page and its video, shown in the strip at the top while this client is being tuned. */
-    const val DIAG_SCRIPT = "(window.__ytxDiag ? window.__ytxDiag() : 'no diag')"
-
-    /** While this client is being tuned, a script from the repo is loaded at start so JS and CSS experiments need no rebuild. */
-    const val REMOTE_JS = "https://api.github.com/repos/Hadomatsu/YTXTube/contents/tok/inject.js?ref=main"
 
     /** Stops every video, for when the app leaves the screen. */
     const val PAUSE_SCRIPT =
@@ -289,27 +245,6 @@ internal class TokState {
     var loadedOnce by mutableStateOf(false)
     var error by mutableStateOf(false)
     var errorDetail by mutableStateOf("")
-    var diag by mutableStateOf("")
-    var nativeText by mutableStateOf("")
-    var remoteStatus by mutableStateOf("rj none")
-    /** Switches for finding out why the page is only half drawn: how the WebView is layered, and what else is asking the screen for things. */
-    var layerMode by mutableIntStateOf(0)
-    var frameHint by mutableStateOf(true)
-    var dockOn by mutableStateOf(true)
-    var capWidth by mutableStateOf(true)
-    var wideOn by mutableStateOf(false)
-    var plain by mutableStateOf(false)
-    @Volatile var modeHint: Boolean = true
-    var net by mutableStateOf("")
-    var console by mutableStateOf("")
-    @Volatile var remoteJs: String = ""
-    private val netCounts = LinkedHashMap<String, Int>()
-
-    /** Counts a failed page request by host and status, so the strip can show what is being blocked. */
-    fun recordNet(key: String) {
-        netCounts[key] = (netCounts[key] ?: 0) + 1
-        net = netCounts.entries.sortedByDescending { it.value }.take(4).joinToString("  ") { it.value.toString() + "x " + it.key }
-    }
     /** Whether the page is loaded as the desktop site (needed for some sign-in screens). */
     var desktop by mutableStateOf(false)
     var webView: WebView? = null
@@ -345,48 +280,6 @@ internal class TokState {
             tab = t
             navigatedTab = t
         }
-    }
-
-    fun applyLayer() {
-        val web = webView ?: return
-        web.setLayerType(
-            when (layerMode) {
-                1 -> View.LAYER_TYPE_HARDWARE
-                2 -> View.LAYER_TYPE_SOFTWARE
-                else -> View.LAYER_TYPE_NONE
-            },
-            null,
-        )
-        web.invalidate()
-    }
-
-    fun applyFrameHint() {
-        if (Build.VERSION.SDK_INT < 35) return
-        val value = if (frameHint) View.REQUESTED_FRAME_RATE_CATEGORY_HIGH else View.REQUESTED_FRAME_RATE_CATEGORY_NO_PREFERENCE
-        webView?.let { web ->
-            runCatching { web.requestedFrameRate = value }
-            runCatching { web.rootView.requestedFrameRate = value }
-        }
-    }
-
-    /** Takes the preferred display mode back off the window, as if this app never asked for a refresh rate. */
-    fun dropModeRequest() {
-        modeHint = false
-        val window = (webView?.context as? android.app.Activity)?.window ?: return
-        runCatching {
-            val lp = window.attributes
-            lp.preferredDisplayModeId = 0
-            lp.preferredRefreshRate = 0f
-            window.attributes = lp
-        }
-    }
-
-    /** What the WebView is, and how the system sees it. */
-    fun nativeInfo(): String {
-        val web = webView ?: return "no webview"
-        val pkg = runCatching { WebView.getCurrentWebViewPackage() }.getOrNull()
-        return (pkg?.packageName ?: "?") + " " + (pkg?.versionName ?: "?") + " hw" + (if (web.isHardwareAccelerated) 1 else 0) +
-            " layer" + web.layerType + " " + web.width + "x" + web.height + " sdk" + Build.VERSION.SDK_INT
     }
 
     fun retry() {
@@ -435,12 +328,10 @@ private class TokClient(private val state: TokState, private val context: Contex
         state.progress = 0
         state.error = false
         view.evaluateJavascript(TokWeb.script, null)
-        if (state.remoteJs.isNotEmpty()) view.evaluateJavascript(state.remoteJs, null)
     }
 
     override fun onPageFinished(view: WebView, url: String?) {
         view.evaluateJavascript(TokWeb.script, null)
-        if (state.remoteJs.isNotEmpty()) view.evaluateJavascript(state.remoteJs, null)
         state.loadedOnce = true
     }
 
@@ -452,8 +343,6 @@ private class TokClient(private val state: TokState, private val context: Contex
         if (request.isForMainFrame) {
             state.errorDetail = error.errorCode.toString() + " " + error.description
             state.error = true
-        } else {
-            state.recordNet("err" + error.errorCode + " " + (request.url.host ?: "").takeLast(26))
         }
     }
 
@@ -461,8 +350,6 @@ private class TokClient(private val state: TokState, private val context: Contex
         if (request.isForMainFrame && errorResponse.statusCode >= 400) {
             state.errorDetail = "HTTP " + errorResponse.statusCode + " " + (errorResponse.reasonPhrase ?: "")
             state.error = true
-        } else if (errorResponse.statusCode >= 400) {
-            state.recordNet("" + errorResponse.statusCode + " " + (request.url.host ?: "").takeLast(26))
         }
     }
 }
@@ -490,7 +377,7 @@ internal fun createTokWebView(context: Context, state: TokState): WebView {
     s.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
     s.allowFileAccess = false
     s.allowContentAccess = false
-    state.desktop = context.getSharedPreferences("tok", Context.MODE_PRIVATE).getBoolean("desktop", false)
+    state.desktop = false
     applyTokMode(web, state.desktop)
 
     val cookies = CookieManager.getInstance()
@@ -504,10 +391,6 @@ internal fun createTokWebView(context: Context, state: TokState): WebView {
             state.progress = newProgress
         }
 
-        override fun onConsoleMessage(m: ConsoleMessage): Boolean {
-            if (m.messageLevel() == ConsoleMessage.MessageLevel.ERROR) state.console = m.message().take(120)
-            return false
-        }
     }
 
     // Runs before the page's own scripts when the WebView supports it, so the app-install pop-up never flashes.
@@ -523,45 +406,20 @@ internal fun createTokWebView(context: Context, state: TokState): WebView {
     if (Build.VERSION.SDK_INT >= 35) {
         runCatching { web.requestedFrameRate = View.REQUESTED_FRAME_RATE_CATEGORY_HIGH }
     }
-    fetchRemoteScript(state)
+    // The page follows the app's own (dark) theme for prefers-color-scheme; it must not be recoloured on top of that.
+    if (WebViewFeature.isFeatureSupported(WebViewFeature.ALGORITHMIC_DARKENING)) {
+        runCatching { WebSettingsCompat.setAlgorithmicDarkening(web.settings, false) }
+    }
     return web
-}
-
-/** Fetches the experiment script from the repo (see REMOTE_JS, one minute of cache at most) and runs it on the page that is open. */
-internal fun fetchRemoteScript(state: TokState) {
-    Thread {
-        var status: String
-        val text = try {
-            val c = java.net.URL(TokWeb.REMOTE_JS).openConnection() as java.net.HttpURLConnection
-            c.useCaches = false
-            c.connectTimeout = 6000
-            c.readTimeout = 6000
-            c.setRequestProperty("Accept", "application/vnd.github.raw+json")
-            c.setRequestProperty("User-Agent", "YTXTok")
-            c.setRequestProperty("Cache-Control", "no-cache")
-            val body = c.inputStream.bufferedReader().use { it.readText() }
-            status = "rj ok " + body.length + "b " + body.lineSequence().firstOrNull().orEmpty().take(24)
-            body
-        } catch (e: Exception) {
-            status = "rj fail " + (e.message ?: e.javaClass.simpleName).take(40)
-            ""
-        }
-        state.remoteStatus = status
-        if (text.isNotEmpty()) {
-            state.remoteJs = text
-            state.webView?.post { state.webView?.evaluateJavascript(text, null) }
-        }
-    }.start()
 }
 
 /** The phone site (default) or the desktop site: identity, and whether the page can be pinched. */
 internal fun applyTokMode(web: WebView, desktop: Boolean) {
     val s = web.settings
     s.userAgentString = TokWeb.userAgent(web.context, desktop)
-    // With the wide viewport on, TikTok's page ends up with a layout viewport of zero height (100vh is 0), which
-    // collapses the feed container and clips the whole feed; the page's own width rules still apply when it is off.
-    s.useWideViewPort = TokWeb.wide
-    s.loadWithOverviewMode = desktop && TokWeb.wide
+    // The layout width is always the view's own width (the phone page asks for exactly that anyway).
+    s.useWideViewPort = false
+    s.loadWithOverviewMode = false
     s.setSupportZoom(desktop)
     s.builtInZoomControls = desktop
     s.displayZoomControls = false

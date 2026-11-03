@@ -123,7 +123,6 @@ internal fun TokScreen(state: TokState, onExit: () -> Unit) {
                 .imePadding()
                 .padding(bottom = reserve),
         ) {
-            TokDiagStrip(state)
             Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.TopCenter) {
                 AndroidView(
                     factory = { ctx ->
@@ -134,31 +133,12 @@ internal fun TokScreen(state: TokState, onExit: () -> Unit) {
                             web.loadUrl(first)
                         }
                     },
-                    modifier = (if (state.desktop || !state.capWidth) Modifier else Modifier.widthIn(max = FeedMaxWidth)).fillMaxSize(),
+                    modifier = (if (state.desktop) Modifier else Modifier.widthIn(max = FeedMaxWidth)).fillMaxSize(),
                     onRelease = { web ->
                         if (state.webView === web) state.webView = null
                         web.stopLoading()
                         web.destroy()
                     },
-                )
-            }
-        }
-
-        if (state.plain) {
-            // A vanilla WebView with default settings, to see whether the zero viewport units come from this app's setup.
-            Box(Modifier.fillMaxSize().statusBarsPadding().padding(top = 150.dp, bottom = 90.dp)) {
-                AndroidView(
-                    factory = { ctx ->
-                        android.webkit.WebView(ctx).also { w ->
-                            w.layoutParams = android.view.ViewGroup.LayoutParams(
-                                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
-                                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
-                            )
-                            w.settings.javaScriptEnabled = true
-                            w.loadDataWithBaseURL("https://probe.local/", TokWeb.PROBE_HTML, "text/html", "utf-8", null)
-                        }
-                    },
-                    modifier = Modifier.fillMaxSize(),
                 )
             }
         }
@@ -209,7 +189,7 @@ internal fun TokScreen(state: TokState, onExit: () -> Unit) {
             }
         }
 
-        if (!imeUp && state.dockOn) {
+        if (!imeUp) {
             Box(
                 Modifier
                     .align(Alignment.BottomCenter)
@@ -253,87 +233,5 @@ private fun RowScope.TokTab(
             )
         }
         NavLabel(spec.label, selected, Color.White)
-    }
-}
-
-/**
- * A strip above the page while this client is being tuned: the switch to the desktop site (some sign-in
- * screens only exist there), a reload, a plain video test, and a few lines about the page, its video and
- * whatever the page failed to load.
- */
-@Composable
-private fun TokDiagStrip(state: TokState) {
-    LaunchedEffect(state) {
-        while (true) {
-            delay(1200)
-            state.nativeText = state.nativeInfo()
-            state.webView?.evaluateJavascript(TokWeb.DIAG_SCRIPT) { r -> state.diag = (r ?: "").trim('"').replace("\\n", "\n") }
-        }
-    }
-    Column(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 2.dp)) {
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-            TokChip(if (state.desktop) "Mobile site" else "Desktop site") { state.switchSite(!state.desktop) }
-            TokChip("Reload") {
-                fetchRemoteScript(state)
-                state.retry()
-            }
-            TokChip("Test video") {
-                state.webView?.loadUrl("https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4")
-            }
-        }
-        Row(
-            Modifier.padding(top = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            TokChip("Layer " + listOf("none", "hw", "sw")[state.layerMode]) {
-                state.layerMode = (state.layerMode + 1) % 3
-                state.applyLayer()
-            }
-            TokChip("FR " + (if (state.frameHint) "on" else "off")) {
-                state.frameHint = !state.frameHint
-                state.applyFrameHint()
-            }
-            TokChip("Dock " + (if (state.dockOn) "on" else "off")) { state.dockOn = !state.dockOn }
-            TokChip("Cap " + (if (state.capWidth) "on" else "off")) { state.capWidth = !state.capWidth }
-            TokChip("Mode " + (if (state.modeHint) "on" else "off")) { state.dropModeRequest() }
-            TokChip("Probe") {
-                state.webView?.loadDataWithBaseURL("https://probe.local/", TokWeb.PROBE_HTML, "text/html", "utf-8", null)
-            }
-            TokChip("Plain " + (if (state.plain) "on" else "off")) { state.plain = !state.plain }
-            TokChip("Wide " + (if (state.wideOn) "on" else "off")) {
-                state.wideOn = !state.wideOn
-                TokWeb.wide = state.wideOn
-                state.webView?.let { web ->
-                    applyTokMode(web, state.desktop)
-                    web.reload()
-                }
-            }
-        }
-        Text(
-            state.nativeText + " " + state.remoteStatus + "\n" + (if (state.desktop) "desktop " else "mobile ") + state.diag +
-                (if (state.net.isNotEmpty()) "\nnet: " + state.net else "") +
-                (if (state.console.isNotEmpty()) "\njs: " + state.console else ""),
-            color = Color.White.copy(alpha = 0.6f),
-            fontSize = 9.sp,
-            lineHeight = 11.sp,
-            minLines = 7,
-            maxLines = 7,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(top = 3.dp),
-        )
-    }
-}
-
-@Composable
-private fun TokChip(text: String, onClick: () -> Unit) {
-    Box(
-        Modifier
-            .clip(RoundedCornerShape(50))
-            .background(Color.White.copy(alpha = 0.14f))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 10.dp, vertical = 4.dp),
-    ) {
-        Text(text, color = Color.White, fontSize = 11.sp)
     }
 }
