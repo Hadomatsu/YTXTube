@@ -21,7 +21,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.webkit.WebSettingsCompat
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 
@@ -409,8 +408,8 @@ internal fun createTokWebView(context: Context, state: TokState): WebView {
         runCatching { web.requestedFrameRate = View.REQUESTED_FRAME_RATE_CATEGORY_HIGH }
     }
     // The page follows the app's own (dark) theme for prefers-color-scheme; it must not be recoloured on top of that.
-    if (WebViewFeature.isFeatureSupported(WebViewFeature.ALGORITHMIC_DARKENING)) {
-        runCatching { WebSettingsCompat.setAlgorithmicDarkening(web.settings, false) }
+    if (Build.VERSION.SDK_INT >= 33) {
+        runCatching { web.settings.isAlgorithmicDarkeningAllowed = false }
     }
     return web
 }
