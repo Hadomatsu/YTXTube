@@ -2374,6 +2374,15 @@ private fun PlaybackSettingsContent() {
             onCheckedChange = { PlaybackSpeed.setRemember(it, PlaybackSpeed.saved) },
         )
 
+        val holds = PlaybackPrefs.holdSpeeds
+        SettingsChoiceRow(
+            title = "Hold for speed",
+            subtitle = "Speed while you keep a finger on the video",
+            options = holds.map { h -> (if (h % 1f == 0f) h.toInt().toString() else h.toString()) + "x" },
+            selected = holds.indexOf(PlaybackPrefs.holdSpeed).coerceAtLeast(0),
+            onSelect = { PlaybackPrefs.updateHoldSpeed(holds[it]) },
+        )
+
         SettingsGroupLabel("What plays next")
         SettingsSwitchRow(
             title = "Autoplay",
@@ -2401,6 +2410,32 @@ private fun PlaybackSettingsContent() {
             checked = PlaybackPrefs.skipSilence,
             onCheckedChange = { PlaybackPrefs.updateSkipSilence(it) },
         )
+        SettingsSwitchRow(
+            title = "Pause for other sounds",
+            subtitle = "Pause when a call or another app plays audio; off keeps playing over it",
+            checked = PlaybackPrefs.pauseForOtherAudio,
+            onCheckedChange = { PlaybackPrefs.updatePauseForOtherAudio(it) },
+        )
+        SettingsSwitchRow(
+            title = "Keep playing when swiped away",
+            subtitle = "Closing the app from recent apps leaves music playing in the notification",
+            checked = PlaybackPrefs.keepPlayingOnSwipe,
+            onCheckedChange = { PlaybackPrefs.updateKeepPlayingOnSwipe(it) },
+        )
+
+        SettingsGroupLabel("Video page")
+        SettingsSwitchRow(
+            title = "Captions on by default",
+            subtitle = "Turn subtitles on automatically when a video has them",
+            checked = CaptionPreference.enabled,
+            onCheckedChange = { CaptionPreference.set(it) },
+        )
+        SettingsSwitchRow(
+            title = "Show dislikes",
+            subtitle = "Dislike counts from Return YouTube Dislike",
+            checked = PlaybackPrefs.showDislikes,
+            onCheckedChange = { PlaybackPrefs.updateShowDislikes(it) },
+        )
     }
 }
 
@@ -2416,6 +2451,33 @@ private fun MusicSettingsContent() {
             options = qualities.map { it.label },
             selected = qualities.indexOf(PlaybackPrefs.audioQuality),
             onSelect = { PlaybackPrefs.updateAudioQuality(qualities[it]) },
+        )
+
+        SettingsGroupLabel("Equalizer")
+        val presets = PlaybackService.eqPresetNames
+        if (presets.isEmpty()) {
+            Text(
+                "Play a song once and the phone's equalizer presets appear here.",
+                color = c.onSurfaceVariant,
+                fontSize = 11.5.sp,
+                modifier = Modifier.padding(vertical = 6.dp),
+            )
+        } else {
+            SettingsChoiceRow(
+                title = "Equalizer",
+                subtitle = "The phone's own sound presets, applied to everything this app plays",
+                options = listOf("Off") + presets,
+                selected = (PlaybackPrefs.eqPreset + 1).coerceIn(0, presets.size),
+                onSelect = { PlaybackPrefs.updateEqPreset(it - 1) },
+            )
+        }
+        val boosts = listOf(0, 250, 500, 750, 1000)
+        SettingsChoiceRow(
+            title = "Bass boost",
+            subtitle = "More low end; works best with headphones",
+            options = listOf("Off", "Light", "Medium", "Strong", "Max"),
+            selected = boosts.indexOf(PlaybackPrefs.bassBoost).coerceAtLeast(0),
+            onSelect = { PlaybackPrefs.updateBassBoost(boosts[it]) },
         )
 
         SettingsGroupLabel("Lyrics")
@@ -2438,6 +2500,12 @@ private fun MusicSettingsContent() {
             subtitle = "Lines that are not being sung are softly blurred, as on Apple Music",
             checked = PlaybackPrefs.lyricsBlur,
             onCheckedChange = { PlaybackPrefs.updateLyricsBlur(it) },
+        )
+        SettingsSwitchRow(
+            title = "Keep screen on with lyrics",
+            subtitle = "The screen does not turn off while the lyrics page is open",
+            checked = PlaybackPrefs.keepScreenOnLyrics,
+            onCheckedChange = { PlaybackPrefs.updateKeepScreenOnLyrics(it) },
         )
         SettingsSwitchRow(
             title = "Large lyrics",

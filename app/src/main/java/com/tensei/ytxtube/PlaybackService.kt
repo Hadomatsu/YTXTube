@@ -62,13 +62,55 @@ class PlaybackService : MediaSessionService() {
     companion object {
         /** The player while the service runs, so a changed setting can reach it straight away. */
         @Volatile private var live: ExoPlayer? = null
+        private var equalizer: android.media.audiofx.Equalizer? = null
+        private var bass: android.media.audiofx.BassBoost? = null
+
+        /** The phone's equalizer presets (names), known once something has played. */
+        var eqPresetNames: List<String> = emptyList()
+            private set
 
         /** Applies the settings a running player can change on the fly (main thread). */
         fun applyLivePrefs() {
             val player = live ?: return
-            android.os.Handler(android.os.Looper.getMainLooper()).post {
-                runCatching { player.skipSilenceEnabled = PlaybackPrefs.skipSilence }
+            android.os.Handler(android.os.Looper.getMainLooper()).post { applyTo(player) }
+        }
+
+        private fun applyTo(player: ExoPlayer) {
+            runCatching { player.skipSilenceEnabled = PlaybackPrefs.skipSilence }
+            runCatching { player.setAudioAttributes(player.audioAttributes, PlaybackPrefs.pauseForOtherAudio) }
+            val session = player.audioSessionId
+            if (session != 0 && session != C.AUDIO_SESSION_ID_UNSET) {
+                runCatching {
+                    val eq = equalizer ?: android.media.audiofx.Equalizer(0, session).also { e ->
+                        equalizer = e
+                        eqPresetNames = (0 until e.numberOfPresets).map { i -> e.getPresetName(i.toShort()) }
+                    }
+                    val preset = PlaybackPrefs.eqPreset
+                    if (preset in 0 until eq.numberOfPresets) {
+                        eq.usePreset(preset.toShort())
+                        eq.enabled = true
+                    } else {
+                        eq.enabled = false
+                    }
+                }
+                runCatching {
+                    val b = bass ?: android.media.audiofx.BassBoost(0, session).also { bass = it }
+                    val strength = PlaybackPrefs.bassBoost
+                    if (strength > 0 && b.strengthSupported) {
+                        b.setStrength(strength.toShort())
+                        b.enabled = true
+                    } else {
+                        b.enabled = false
+                    }
+                }
             }
+        }
+
+        private fun releaseEffects() {
+            runCatching { equalizer?.release() }
+            runCatching { bass?.release() }
+            equalizer = null
+            bass = null
         }
     }
 
@@ -138,6 +180,7 @@ class PlaybackService : MediaSessionService() {
         player.addListener(SpeedKeeper(player))
         player.skipSilenceEnabled = PlaybackPrefs.skipSilence
         live = player
+        applyTo(player)
 
 
         if (AudioOnly.enabled) {
@@ -158,8 +201,8 @@ class PlaybackService : MediaSessionService() {
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
 
     override fun onTaskRemoved(rootIntent: Intent?) {
-
-
+        // Settings, Playback: music can keep going after the app is swiped away.
+        if (PlaybackPrefs.keepPlayingOnSwipe && live?.isPlaying == true) return
         pauseAllPlayersAndStopSelf()
     }
 
@@ -168,6 +211,7 @@ class PlaybackService : MediaSessionService() {
 
     override fun onDestroy() {
         live = null
+        releaseEffects()
         resumeSaver?.saveNow()
         watchTime?.finish()
         session?.run {

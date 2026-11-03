@@ -61,6 +61,27 @@ object PlaybackPrefs {
         private set
     var lyricsTextLarge by mutableStateOf(true)
         private set
+    var keepScreenOnLyrics by mutableStateOf(true)
+        private set
+
+    val holdSpeeds = listOf(1.5f, 2f, 2.5f, 3f)
+    /** Speed while a finger is held on the video. */
+    var holdSpeed by mutableFloatStateOf(2f)
+        private set
+    var showDislikes by mutableStateOf(true)
+        private set
+    /** Keep playing when the app is swiped away from recents (off: stop, as before). */
+    var keepPlayingOnSwipe by mutableStateOf(false)
+        private set
+    /** Pause when another app starts playing sound (calls, other players). */
+    var pauseForOtherAudio by mutableStateOf(true)
+        private set
+    /** Index of the phone's equalizer preset, or -1 for off. */
+    var eqPreset by mutableIntStateOf(-1)
+        private set
+    /** Bass boost strength, 0 (off) to 1000. */
+    var bassBoost by mutableIntStateOf(0)
+        private set
 
     val seekStepMs: Long get() = seekStepSec * 1000L
 
@@ -80,6 +101,13 @@ object PlaybackPrefs {
         lyricsBlur = p.getBoolean("lyrics_blur", true)
         lyricsOffsetMs = p.getInt("lyrics_offset", 0).coerceIn(-3000, 3000)
         lyricsTextLarge = p.getBoolean("lyrics_large", true)
+        keepScreenOnLyrics = p.getBoolean("lyrics_screen_on", true)
+        holdSpeed = p.getFloat("hold_speed", 2f).takeIf { it in holdSpeeds } ?: 2f
+        showDislikes = p.getBoolean("show_dislikes", true)
+        keepPlayingOnSwipe = p.getBoolean("keep_on_swipe", false)
+        pauseForOtherAudio = p.getBoolean("audio_focus", true)
+        eqPreset = p.getInt("eq_preset", -1)
+        bassBoost = p.getInt("bass_boost", 0).coerceIn(0, 1000)
     }
 
     private fun edit(block: SharedPreferences.Editor.() -> Unit) {
@@ -106,4 +134,15 @@ object PlaybackPrefs {
     fun updateLyricsBlur(on: Boolean) { lyricsBlur = on; edit { putBoolean("lyrics_blur", on) } }
     fun updateLyricsOffset(ms: Int) { lyricsOffsetMs = ms.coerceIn(-3000, 3000); edit { putInt("lyrics_offset", lyricsOffsetMs) } }
     fun updateLyricsLarge(on: Boolean) { lyricsTextLarge = on; edit { putBoolean("lyrics_large", on) } }
+    fun updateKeepScreenOnLyrics(on: Boolean) { keepScreenOnLyrics = on; edit { putBoolean("lyrics_screen_on", on) } }
+    fun updateHoldSpeed(v: Float) { holdSpeed = v; edit { putFloat("hold_speed", v) } }
+    fun updateShowDislikes(on: Boolean) { showDislikes = on; edit { putBoolean("show_dislikes", on) } }
+    fun updateKeepPlayingOnSwipe(on: Boolean) { keepPlayingOnSwipe = on; edit { putBoolean("keep_on_swipe", on) } }
+    fun updatePauseForOtherAudio(on: Boolean) {
+        pauseForOtherAudio = on
+        edit { putBoolean("audio_focus", on) }
+        PlaybackService.applyLivePrefs()
+    }
+    fun updateEqPreset(i: Int) { eqPreset = i; edit { putInt("eq_preset", i) }; PlaybackService.applyLivePrefs() }
+    fun updateBassBoost(v: Int) { bassBoost = v.coerceIn(0, 1000); edit { putInt("bass_boost", bassBoost) }; PlaybackService.applyLivePrefs() }
 }

@@ -1226,7 +1226,7 @@ fun BitChordMusicPlayer(
         if (showLyrics && lyrics == null && !lyricsLoading) {
             lyricsLoading = true
             lyrics = runCatching {
-                InnerTube.musicLyrics(item.id, item.title, item.channel, item.durationSec)
+                InnerTube.musicLyrics(item.id, item.title, item.channel, maxOf(item.durationSec, state.durationMs / 1000L))
             }.getOrNull()
             lyricsLoading = false
         }
@@ -1339,60 +1339,41 @@ fun BitChordMusicPlayer(
                         .padding(vertical = if (wide) 18.dp else 12.dp),
                     contentAlignment = Alignment.Center,
                 ) {
-                    if (showLyrics) {
-                        MusicLyricsPanel(
-                            lyrics = lyrics,
-                            loading = lyricsLoading,
-                            positionMs = state.positionMs,
-                            englishScript = englishScript,
-                            onToggleEnglish = { englishScript = !englishScript },
-                            onSeek = { state.seekTo(it) },
-                            onDismiss = { showLyrics = false },
-                            playing = state.isPlaying,
-                            speed = state.speed,
-                            romanized = if (englishScript) romanized else null,
-                            canRomanize = lyrics?.lines?.any { LyricsRomanizer.needsRomanization(it.text) } == true,
+                    BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        val side = minOf(maxWidth, maxHeight, controlsWidth)
+                        Box(
                             modifier = Modifier
-                                .widthIn(max = controlsWidth + 80.dp)
-                                .fillMaxSize(),
-                        )
-                    } else {
-                        BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            val side = minOf(maxWidth, maxHeight, controlsWidth)
-                            Box(
-                                modifier = Modifier
-                                    .size(side)
-                                    .graphicsLayer {
-                                        scaleX = albumScale
-                                        scaleY = albumScale
-                                    }
-                                    .shadow(
-                                        elevation = 30.dp,
-                                        shape = RoundedCornerShape(28.dp),
-                                        ambientColor = dominantColor.copy(alpha = 0.55f),
-                                        spotColor = Color.Black.copy(alpha = 0.7f),
-                                    )
-                                    .clip(RoundedCornerShape(28.dp))
-                                    .background(c.surfaceContainerHighest)
-                                    .border(
-                                        width = 1.dp,
-                                        brush = Brush.linearGradient(
-                                            listOf(
-                                                Color.White.copy(alpha = 0.22f),
-                                                Color.Transparent,
-                                                Color.White.copy(alpha = 0.06f),
-                                            ),
-                                        ),
-                                        shape = RoundedCornerShape(28.dp),
-                                    ),
-                            ) {
-                                AsyncImage(
-                                    model = highResMusicThumbnail(item.thumbnail) ?: sharpenFeedThumbnail(null, item.id),
-                                    contentDescription = item.title,
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier.fillMaxSize(),
+                                .size(side)
+                                .graphicsLayer {
+                                    scaleX = albumScale
+                                    scaleY = albumScale
+                                }
+                                .shadow(
+                                    elevation = 30.dp,
+                                    shape = RoundedCornerShape(28.dp),
+                                    ambientColor = dominantColor.copy(alpha = 0.55f),
+                                    spotColor = Color.Black.copy(alpha = 0.7f),
                                 )
-                            }
+                                .clip(RoundedCornerShape(28.dp))
+                                .background(c.surfaceContainerHighest)
+                                .border(
+                                    width = 1.dp,
+                                    brush = Brush.linearGradient(
+                                        listOf(
+                                            Color.White.copy(alpha = 0.22f),
+                                            Color.Transparent,
+                                            Color.White.copy(alpha = 0.06f),
+                                        ),
+                                    ),
+                                    shape = RoundedCornerShape(28.dp),
+                                ),
+                        ) {
+                            AsyncImage(
+                                model = highResMusicThumbnail(item.thumbnail) ?: sharpenFeedThumbnail(null, item.id),
+                                contentDescription = item.title,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize(),
+                            )
                         }
                     }
                 }
@@ -1584,6 +1565,23 @@ fun BitChordMusicPlayer(
                     }
                 }
             }
+        }
+
+        if (showLyrics) {
+            AppleLyricsScreen(
+                state = state,
+                item = item,
+                lyrics = lyrics,
+                loading = lyricsLoading,
+                romanized = if (englishScript) romanized else null,
+                canRomanize = lyrics?.lines?.any { LyricsRomanizer.needsRomanization(it.text) } == true,
+                romanizeOn = englishScript,
+                onToggleRomanize = { englishScript = !englishScript },
+                onClose = { showLyrics = false },
+                onQueue = { showQueue = true },
+                top = top,
+                bottom = bottom,
+            )
         }
     }
 

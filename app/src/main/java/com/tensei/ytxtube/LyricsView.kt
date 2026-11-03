@@ -78,8 +78,9 @@ internal fun AppleSyncedLyrics(
     speed: Float,
     romanized: List<String?>?,
     onSeek: (Long) -> Unit,
+    contentColor: Color = MaterialTheme.colorScheme.onSurface,
+    alignTo: Float = 0.4f,
 ) {
-    val c = MaterialTheme.colorScheme
     val lines = lyrics.lines
     val offset = PlaybackPrefs.lyricsOffsetMs
     val head = rememberLyricPlayhead(positionMs, playing, speed)
@@ -100,7 +101,7 @@ internal fun AppleSyncedLyrics(
         if (visible == null) listState.scrollToItem(current)
         val settled = listState.layoutInfo
         val item = settled.visibleItemsInfo.firstOrNull { it.index == current } ?: return@LaunchedEffect
-        val delta = item.offset + item.size / 2f - (settled.viewportStartOffset + settled.viewportEndOffset) * 0.4f
+        val delta = item.offset + item.size / 2f - (settled.viewportStartOffset + settled.viewportEndOffset) * alignTo
         if (abs(delta) > 1f) listState.animateScrollBy(delta, spring(dampingRatio = 0.86f, stiffness = 160f))
     }
 
@@ -139,13 +140,25 @@ internal fun AppleSyncedLyrics(
                         }
                         .then(if (blur > 0.05f) Modifier.blur(blur.dp, BlurredEdgeTreatment.Unbounded) else Modifier),
                 ) {
-                    val dim = c.onSurface.copy(alpha = if (index < current) 0.38f else 0.32f)
-                    if (active && line.words.isNotEmpty()) {
-                        WordSweepLine(line, head, offset, dim, c.onSurface, size, lineHeight)
+                    val dim = contentColor.copy(alpha = if (index < current) 0.38f else 0.32f)
+                    if (line.text.isBlank()) {
+                        // An instrumental break: Apple's three dots, breathing while it lasts.
+                        val pulse = if (active) {
+                            val t = (head.value % 1600L) / 1600f
+                            0.55f + 0.45f * kotlin.math.sin(t * 2f * Math.PI.toFloat()).let { it * it }
+                        } else 0f
+                        Text(
+                            "•  •  •",
+                            color = lerpColor(dim, contentColor, activation * pulse),
+                            fontSize = size,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    } else if (active && line.words.isNotEmpty()) {
+                        WordSweepLine(line, head, offset, dim, contentColor, size, lineHeight)
                     } else {
                         Text(
                             line.text,
-                            color = lerpColor(dim, c.onSurface, activation),
+                            color = lerpColor(dim, contentColor, activation),
                             fontSize = size,
                             lineHeight = lineHeight,
                             fontWeight = FontWeight.Bold,
@@ -155,7 +168,7 @@ internal fun AppleSyncedLyrics(
                     line.background?.let { bg ->
                         Text(
                             bg,
-                            color = lerpColor(dim, c.onSurface.copy(alpha = 0.75f), activation).copy(alpha = 0.6f),
+                            color = lerpColor(dim, contentColor.copy(alpha = 0.75f), activation).copy(alpha = 0.6f),
                             fontSize = size * 0.62f,
                             lineHeight = lineHeight * 0.66f,
                             fontStyle = FontStyle.Italic,
@@ -166,7 +179,7 @@ internal fun AppleSyncedLyrics(
                         Spacer(Modifier.height(2.dp))
                         Text(
                             reading,
-                            color = lerpColor(dim, c.onSurface.copy(alpha = 0.78f), activation),
+                            color = lerpColor(dim, contentColor.copy(alpha = 0.78f), activation),
                             fontSize = size * 0.6f,
                             lineHeight = lineHeight * 0.64f,
                             fontWeight = FontWeight.SemiBold,
@@ -209,8 +222,11 @@ private fun WordSweepLine(
 
 /** Lyrics without timing: the whole text, with Latin readings under lines in other scripts. */
 @Composable
-internal fun PlainLyricsView(lyrics: LyricsDoc, romanized: List<String?>?) {
-    val c = MaterialTheme.colorScheme
+internal fun PlainLyricsView(
+    lyrics: LyricsDoc,
+    romanized: List<String?>?,
+    contentColor: Color = MaterialTheme.colorScheme.onSurface,
+) {
     Column(
         Modifier
             .fillMaxSize()
@@ -220,13 +236,14 @@ internal fun PlainLyricsView(lyrics: LyricsDoc, romanized: List<String?>?) {
         lyrics.lines.forEachIndexed { index, line ->
             Text(
                 line.text,
-                fontSize = 17.sp,
-                lineHeight = 25.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = c.onSurface.copy(alpha = 0.92f),
+                fontSize = 22.sp,
+                lineHeight = 30.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = RoundedHeavy,
+                color = contentColor.copy(alpha = 0.92f),
             )
             romanized?.getOrNull(index)?.let {
-                Text(it, fontSize = 13.sp, lineHeight = 18.sp, color = c.onSurfaceVariant)
+                Text(it, fontSize = 14.sp, lineHeight = 19.sp, color = contentColor.copy(alpha = 0.65f))
             }
             Spacer(Modifier.height(6.dp))
         }

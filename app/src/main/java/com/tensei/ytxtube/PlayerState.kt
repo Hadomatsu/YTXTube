@@ -413,7 +413,7 @@ class PlayerState(private val scope: CoroutineScope) {
                     else if (startPlayback) startPlayback(d.item)
 
                     scope.launch(kotlinx.coroutines.Dispatchers.IO) {
-                        val dislikes = fetchDislikeCount(item.id)
+                        val dislikes = if (PlaybackPrefs.showDislikes) fetchDislikeCount(item.id) else -1
                         if (current?.id == item.id && dislikes >= 0) {
                             details = details?.copy(dislikes = dislikes)
                         }
@@ -1061,7 +1061,7 @@ class PlayerState(private val scope: CoroutineScope) {
         if (!player.isPlaying) return false
         speedBeforeHold = player.playbackParameters.speed
         holdSpeedActive = true
-        previewSpeed(2f)
+        previewSpeed(PlaybackPrefs.holdSpeed)
         return true
     }
 
