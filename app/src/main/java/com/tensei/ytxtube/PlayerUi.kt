@@ -1219,7 +1219,8 @@ fun BitChordMusicPlayer(
     var showQueue by remember(item.id) { mutableStateOf(false) }
     var lyrics by remember(item.id) { mutableStateOf<LyricsDoc?>(null) }
     var lyricsLoading by remember(item.id) { mutableStateOf(false) }
-    var englishScript by remember(item.id) { mutableStateOf(false) }
+    var englishScript by remember(item.id) { mutableStateOf(PlaybackPrefs.romanizeLyrics) }
+    var romanized by remember(item.id) { mutableStateOf<List<String?>?>(null) }
 
     LaunchedEffect(item.id, showLyrics) {
         if (showLyrics && lyrics == null && !lyricsLoading) {
@@ -1228,6 +1229,12 @@ fun BitChordMusicPlayer(
                 InnerTube.musicLyrics(item.id, item.title, item.channel, item.durationSec)
             }.getOrNull()
             lyricsLoading = false
+        }
+    }
+    LaunchedEffect(item.id, lyrics, englishScript) {
+        val doc = lyrics ?: return@LaunchedEffect
+        if (englishScript && romanized == null) {
+            romanized = LyricsRomanizer.romanize(item.id, doc.lines.map { it.text })
         }
     }
     val albumScale by animateFloatAsState(
@@ -1341,6 +1348,10 @@ fun BitChordMusicPlayer(
                             onToggleEnglish = { englishScript = !englishScript },
                             onSeek = { state.seekTo(it) },
                             onDismiss = { showLyrics = false },
+                            playing = state.isPlaying,
+                            speed = state.speed,
+                            romanized = if (englishScript) romanized else null,
+                            canRomanize = lyrics?.lines?.any { LyricsRomanizer.needsRomanization(it.text) } == true,
                             modifier = Modifier
                                 .widthIn(max = controlsWidth + 80.dp)
                                 .fillMaxSize(),
@@ -1530,19 +1541,22 @@ fun BitChordMusicPlayer(
                             .padding(horizontal = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(c.onSurface.copy(alpha = 0.08f))
-                                .padding(horizontal = 10.dp, vertical = 5.dp),
-                        ) {
-                            Text(
-                                "HQ AUDIO · 256 KBPS AAC",
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                letterSpacing = 0.8.sp,
-                                color = c.onSurfaceVariant,
-                            )
+                        // The codec and bitrate actually playing (Settings, Music, Audio quality).
+                        state.playingAudio?.let { audio ->
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(c.onSurface.copy(alpha = 0.08f))
+                                    .padding(horizontal = 10.dp, vertical = 5.dp),
+                            ) {
+                                Text(
+                                    audio,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 0.8.sp,
+                                    color = c.onSurfaceVariant,
+                                )
+                            }
                         }
                         Spacer(Modifier.weight(1f))
                         IconButton(
@@ -1621,6 +1635,10 @@ private fun MusicLyricsPanel(
     onToggleEnglish: () -> Unit,
     onSeek: (Long) -> Unit,
     onDismiss: () -> Unit,
+    playing: Boolean = false,
+    speed: Float = 1f,
+    romanized: List<String?>? = null,
+    canRomanize: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val c = MaterialTheme.colorScheme
@@ -1659,8 +1677,16 @@ private fun MusicLyricsPanel(
                     color = c.primary,
                     letterSpacing = 1.sp,
                 )
+                lyrics?.source?.takeIf { it.isNotBlank() }?.let { src ->
+                    Text(
+                        "  ·  " + src,
+                        fontSize = 10.5.sp,
+                        color = c.onSurfaceVariant.copy(alpha = 0.7f),
+                        maxLines = 1,
+                    )
+                }
                 Spacer(Modifier.weight(1f))
-                Row(
+                if (canRomanize) Row(
                     modifier = Modifier
                         .clip(CircleShape)
                         .background(
@@ -1673,13 +1699,13 @@ private fun MusicLyricsPanel(
                 ) {
                     Icon(
                         Icons.Rounded.Translate,
-                        contentDescription = "Show lyrics in English letters",
+                        contentDescription = "Show a reading in Latin letters",
                         tint = if (englishScript) c.primary else c.onSurfaceVariant,
                         modifier = Modifier.size(15.dp),
                     )
                     Spacer(Modifier.width(5.dp))
                     Text(
-                        "EN",
+                        "ABC",
                         fontSize = 10.5.sp,
                         fontWeight = FontWeight.Bold,
                         color = if (englishScript) c.primary else c.onSurfaceVariant,
@@ -1715,138 +1741,18 @@ private fun MusicLyricsPanel(
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                     )
                 }
-                lyrics.synced -> SyncedLyrics(
+                lyrics.synced -> AppleSyncedLyrics(
                     lyrics = lyrics,
                     positionMs = positionMs,
-                    englishScript = englishScript,
+                    playing = playing,
+                    speed = speed,
+                    romanized = romanized,
                     onSeek = onSeek,
                 )
-                else -> Column(
-                    Modifier
-                        .fillMaxSize()
-                        .verticalScroll(rememberScrollState())
-                        .padding(end = 8.dp),
-                ) {
-                    Text(
-                        if (englishScript) lyrics.lines.joinToString("\n") { transliterate(it.text) } else lyrics.plain,
-                        fontSize = 16.sp,
-                        lineHeight = 27.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = c.onSurface.copy(alpha = 0.92f),
-                    )
-                }
+                else -> PlainLyricsView(lyrics, romanized)
             }
         }
     }
-}
-
-@Composable
-private fun SyncedLyrics(
-    lyrics: LyricsDoc,
-    positionMs: Long,
-    englishScript: Boolean,
-    onSeek: (Long) -> Unit,
-) {
-    val c = MaterialTheme.colorScheme
-
-    val lines = remember(lyrics, englishScript) {
-        lyrics.lines.map { if (englishScript) it.copy(text = transliterate(it.text)) else it }
-    }
-    val current = lines.indexOfLast { it.timeMs in 0..positionMs }
-    val listState = rememberLazyListState()
-    val dragged by listState.interactionSource.collectIsDraggedAsState()
-
-    // Apple Music keeps the line being sung pinned to the middle of the pane and glides there
-    // with a soft spring instead of jumping. A short lead makes the highlight land with the
-    // first syllable rather than a beat after it.
-    LaunchedEffect(current, dragged) {
-        if (current < 0 || dragged) return@LaunchedEffect
-        val info = listState.layoutInfo
-        val center = (info.viewportStartOffset + info.viewportEndOffset) / 2f
-        val visible = info.visibleItemsInfo.firstOrNull { it.index == current }
-        if (visible != null) {
-            val delta = visible.offset + visible.size / 2f - center
-            if (kotlin.math.abs(delta) > 1f) {
-                listState.animateScrollBy(
-                    delta,
-                    spring(dampingRatio = 0.9f, stiffness = 210f),
-                )
-            }
-        } else {
-            listState.scrollToItem(current)
-            val settled = listState.layoutInfo
-            val item = settled.visibleItemsInfo.firstOrNull { it.index == current }
-            if (item != null) {
-                val mid = (settled.viewportStartOffset + settled.viewportEndOffset) / 2f
-                listState.animateScrollBy(
-                    item.offset + item.size / 2f - mid,
-                    spring(dampingRatio = 0.9f, stiffness = 210f),
-                )
-            }
-        }
-    }
-
-    BoxWithConstraints(Modifier.fillMaxSize().padding(end = 8.dp)) {
-        val edge = (maxHeight / 2 - 16.dp).coerceAtLeast(20.dp)
-        LazyColumn(
-            state = listState,
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(vertical = edge),
-        ) {
-            itemsIndexed(lines, key = { i, line -> "$i-${line.timeMs}" }) { index, line ->
-                val active = index == current
-                val activation by animateFloatAsState(
-                    targetValue = if (active) 1f else 0f,
-                    animationSpec = spring(dampingRatio = 0.62f, stiffness = 430f),
-                    label = "lyric-line",
-                )
-                val resting = when {
-                    index < current -> 0.7f
-                    else -> 0.58f
-                }
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                        ) { if (line.timeMs >= 0) onSeek(line.timeMs) }
-                        .padding(vertical = 7.dp),
-                ) {
-                    Text(
-                        text = line.text,
-                        color = lerpColor(
-                            c.onSurfaceVariant.copy(alpha = resting),
-                            c.onSurface,
-                            activation,
-                        ),
-                        fontSize = 17.sp,
-                        lineHeight = 24.sp,
-                        fontWeight = if (active) FontWeight.Bold else FontWeight.SemiBold,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .graphicsLayer {
-                                val scale = 0.95f + 0.11f * activation
-                                scaleX = scale
-                                scaleY = scale
-                                transformOrigin = TransformOrigin(0f, 0.5f)
-                                alpha = 0.8f + 0.2f * activation
-                            },
-                    )
-                }
-            }
-        }
-
-    }
-}
-
-
-private fun transliterate(text: String): String {
-    if (text.isBlank()) return text
-    if (android.os.Build.VERSION.SDK_INT < 29) return text
-    return runCatching {
-        android.icu.text.Transliterator.getInstance("Any-Latin; Latin-ASCII").transliterate(text)
-    }.getOrDefault(text)
 }
 
 @Composable

@@ -38,6 +38,7 @@ class YTXTubeApplication : Application(), ImageLoaderFactory {
         ThemeSettings.init(this)
         HdrSupport.init(this)
         QualityPreference.init(this)
+        PlaybackPrefs.init(this)
         PlaybackSpeed.init(this)
         AudioOnly.init(this)
         AudioTrackPreference.init(this)

@@ -819,7 +819,16 @@ object StreamSelection {
             !it.audioTrackId.isNullOrBlank() || !it.audioTrackName.isNullOrBlank() || it.audioLocale != null
         }
         val byKey = LinkedHashMap<String, AudioStream>()
-        usable.sortedByDescending { it.averageBitrate }.forEach { stream ->
+        // Which encoding of each track wins depends on Settings, Music, Audio quality.
+        fun isOpus(a: AudioStream) = (a.codec ?: "").contains("opus", ignoreCase = true) || a.format?.name?.startsWith("WEBMA") == true
+        fun isAac(a: AudioStream) = a.format == MediaFormat.M4A || (a.codec ?: "").startsWith("mp4a", ignoreCase = true)
+        val ranked = when (PlaybackPrefs.audioQuality) {
+            AudioQuality.BEST -> usable.sortedByDescending { it.averageBitrate }
+            AudioQuality.PREFER_AAC -> usable.sortedWith(compareBy<AudioStream> { if (isAac(it)) 0 else 1 }.thenByDescending { it.averageBitrate })
+            AudioQuality.PREFER_OPUS -> usable.sortedWith(compareBy<AudioStream> { if (isOpus(it)) 0 else 1 }.thenByDescending { it.averageBitrate })
+            AudioQuality.DATA_SAVER -> usable.sortedBy { if (it.averageBitrate > 0) it.averageBitrate else Int.MAX_VALUE }
+        }
+        ranked.forEach { stream ->
             val key = audioTrackKey(stream)
             if (named && key == "default") return@forEach
             byKey.putIfAbsent(key, stream)

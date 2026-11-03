@@ -59,6 +59,19 @@ class PlaybackService : MediaSessionService() {
     private var session: MediaSession? = null
     private val resolver = MoreExecutors.listeningDecorator(Executors.newFixedThreadPool(2))
 
+    companion object {
+        /** The player while the service runs, so a changed setting can reach it straight away. */
+        @Volatile private var live: ExoPlayer? = null
+
+        /** Applies the settings a running player can change on the fly (main thread). */
+        fun applyLivePrefs() {
+            val player = live ?: return
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                runCatching { player.skipSilenceEnabled = PlaybackPrefs.skipSilence }
+            }
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
 
@@ -112,8 +125,8 @@ class PlaybackService : MediaSessionService() {
 
 
             .setWakeMode(C.WAKE_MODE_NETWORK)
-            .setSeekBackIncrementMs(10_000)
-            .setSeekForwardIncrementMs(10_000)
+            .setSeekBackIncrementMs(PlaybackPrefs.seekStepMs)
+            .setSeekForwardIncrementMs(PlaybackPrefs.seekStepMs)
             .build()
         val openApp = PendingIntent.getActivity(
             this, 0,
@@ -123,6 +136,8 @@ class PlaybackService : MediaSessionService() {
         player.setVideoFrameMetadataListener { _, releaseTimeNs, _, _ -> AvSync.onFrameReleased(releaseTimeNs) }
         player.addListener(SponsorSkipper(player))
         player.addListener(SpeedKeeper(player))
+        player.skipSilenceEnabled = PlaybackPrefs.skipSilence
+        live = player
 
 
         if (AudioOnly.enabled) {
@@ -152,6 +167,7 @@ class PlaybackService : MediaSessionService() {
     private var watchTime: WatchTimeReporter? = null
 
     override fun onDestroy() {
+        live = null
         resumeSaver?.saveNow()
         watchTime?.finish()
         session?.run {

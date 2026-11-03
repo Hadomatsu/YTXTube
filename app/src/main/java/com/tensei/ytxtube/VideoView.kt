@@ -81,6 +81,10 @@ import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.Repeat
 import androidx.compose.material.icons.rounded.RepeatOne
 import androidx.compose.material.icons.rounded.Replay10
+import androidx.compose.material.icons.rounded.Forward30
+import androidx.compose.material.icons.rounded.Forward5
+import androidx.compose.material.icons.rounded.Replay30
+import androidx.compose.material.icons.rounded.Replay5
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.Speed
@@ -279,13 +283,13 @@ fun VideoContent(
                 true
             }
             Key.MediaNext, Key.MediaFastForward -> {
-                state.seekBy(10_000)
+                state.seekBy(SeekStepMs)
                 controlsVisible = true
                 touched()
                 true
             }
             Key.MediaPrevious, Key.MediaRewind -> {
-                state.seekBy(-10_000)
+                state.seekBy(-SeekStepMs)
                 controlsVisible = true
                 touched()
                 true
@@ -734,8 +738,8 @@ fun VideoContent(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     val skip = if (fullscreen) 50.dp else 43.dp
-                    GlassButton(Icons.Rounded.Replay10, "Back 10 seconds", enabled, size = skip, iconSize = skip * 0.6f, backdrop = videoBackdrop) {
-                        touched(); state.seekBy(-10_000)
+                    GlassButton(seekBackIcon(), "Back " + PlaybackPrefs.seekStepSec + " seconds", enabled, size = skip, iconSize = skip * 0.6f, backdrop = videoBackdrop) {
+                        touched(); state.seekBy(-SeekStepMs)
                     }
                     val playGlass = Modifier.liquidGlass(
                         videoBackdrop,
@@ -758,8 +762,8 @@ fun VideoContent(
                         backdrop = playGlass,
                         glass = true,
                     ) { touched(); state.togglePlay() }
-                    GlassButton(Icons.Rounded.Forward10, "Forward 10 seconds", enabled, size = skip, iconSize = skip * 0.6f, backdrop = videoBackdrop) {
-                        touched(); state.seekBy(10_000)
+                    GlassButton(seekForwardIcon(), "Forward " + PlaybackPrefs.seekStepSec + " seconds", enabled, size = skip, iconSize = skip * 0.6f, backdrop = videoBackdrop) {
+                        touched(); state.seekBy(SeekStepMs)
                     }
                 }
                 Column(
@@ -1001,7 +1005,7 @@ fun AudioOnlyStage(
                 horizontalArrangement = Arrangement.spacedBy(30.dp, Alignment.CenterHorizontally),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                TonalSkip(Icons.Rounded.Replay10, "Back 10 seconds", interactive) { state.seekBy(-10_000) }
+                TonalSkip(seekBackIcon(), "Back " + PlaybackPrefs.seekStepSec + " seconds", interactive) { state.seekBy(-SeekStepMs) }
                 MorphPlayButton(
                     playing = state.isPlaying,
                     buffering = state.isBuffering || (state.loading && state.details == null),
@@ -1010,7 +1014,7 @@ fun AudioOnlyStage(
                     content = c.onPrimary,
                     enabled = interactive,
                 ) { state.togglePlay() }
-                TonalSkip(Icons.Rounded.Forward10, "Forward 10 seconds", interactive) { state.seekBy(10_000) }
+                TonalSkip(seekForwardIcon(), "Forward " + PlaybackPrefs.seekStepSec + " seconds", interactive) { state.seekBy(SeekStepMs) }
             }
             Spacer(Modifier.height(8.dp))
             var scrubPreview by remember { mutableStateOf<Long?>(null) }
@@ -1501,7 +1505,22 @@ private fun GlassButton(
     ) { Icon(icon, description, tint = Color.White, modifier = Modifier.size(iconSize)) }
 }
 
-private const val SeekStepMs = 10_000L
+/** How far double tap and the skip buttons jump (Settings, Playback). */
+private val SeekStepMs: Long get() = PlaybackPrefs.seekStepMs
+
+private fun seekBackIcon(): androidx.compose.ui.graphics.vector.ImageVector = when (PlaybackPrefs.seekStepSec) {
+    5 -> Icons.Rounded.Replay5
+    10 -> Icons.Rounded.Replay10
+    30 -> Icons.Rounded.Replay30
+    else -> Icons.Rounded.FastRewind
+}
+
+private fun seekForwardIcon(): androidx.compose.ui.graphics.vector.ImageVector = when (PlaybackPrefs.seekStepSec) {
+    5 -> Icons.Rounded.Forward5
+    10 -> Icons.Rounded.Forward10
+    30 -> Icons.Rounded.Forward30
+    else -> Icons.Rounded.FastForward
+}
 
 /**
  * The caption block, laid out like YouTube's: two fixed slots, the previous line on top and the

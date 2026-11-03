@@ -41,7 +41,7 @@ object PlaybackSpeed {
     }
 
 
-    val forNewVideo: Float get() = if (remember) saved else 1f
+    val forNewVideo: Float get() = if (remember) saved else PlaybackPrefs.defaultSpeed
 
     fun setRemember(on: Boolean, current: Float) {
         remember = on

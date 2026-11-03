@@ -80,13 +80,25 @@ data class ChannelRef(val id: String, val name: String, val avatar: String?) {
 data class FeedPage(val videos: List<VideoItem>, val next: String?, val channelHeader: ChannelHeaderMeta? = null)
 
 
+/**
+ * A lyric line. [words] carries per-word timing when the source has it (Apple Music style); [endMs]
+ * is when the line stops being sung, or -1 when the source does not say; [background] is a backing
+ * vocal sung over the line.
+ */
 @Immutable
-data class LyricLine(val timeMs: Long, val text: String)
+data class LyricLine(
+    val timeMs: Long,
+    val text: String,
+    val words: List<LyricWord> = emptyList(),
+    val endMs: Long = -1L,
+    val background: String? = null,
+)
 
 
 @Immutable
-data class LyricsDoc(val lines: List<LyricLine>) {
+data class LyricsDoc(val lines: List<LyricLine>, val source: String = "") {
     val synced: Boolean get() = lines.any { it.timeMs >= 0 }
+    val wordSynced: Boolean get() = lines.any { it.words.isNotEmpty() }
     val plain: String get() = lines.joinToString("\n") { it.text }
 }
 
@@ -823,6 +835,12 @@ object InnerTube {
             .trim()
         val cleanArtist = artist.split(",", "·", "&", "feat.", "ft.", " - ").firstOrNull()?.trim() ?: artist.trim()
 
+
+        // Apple Music word timing first (Settings, Music & Lyrics), as BitChord does.
+        if (PlaybackPrefs.lyricsMode == LyricsMode.WORD_SYNCED) {
+            val words = kotlinx.coroutines.withTimeoutOrNull(7_000) { AppleLyrics.fetch(cleanTitle, cleanArtist, durationSec) }
+            if (!words.isNullOrEmpty()) return@withContext LyricsDoc(words, source = "BetterLyrics (Apple Music)")
+        }
 
         var plainFallback: LyricsDoc? = null
         runCatching {

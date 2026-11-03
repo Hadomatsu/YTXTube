@@ -72,8 +72,13 @@ class PlayerState(private val scope: CoroutineScope) {
     var shuffleEnabled by mutableStateOf(false)
         private set
     var isMusicMode by mutableStateOf(false)
-    var autoPlayEnabled by mutableStateOf(true)
+    var autoPlayEnabled by mutableStateOf(PlaybackPrefs.autoplay)
         private set
+    /** What the audio track really is right now, for example "OPUS · 141 KBPS". */
+    var playingAudio by mutableStateOf<String?>(null)
+        private set
+    /** Songs played before this one in music mode, newest last, so Previous can go back. */
+    private val musicHistory = ArrayList<VideoItem>()
     var videoZoom by mutableFloatStateOf(1f)
     var zoomToFill by mutableStateOf(false)
 
@@ -86,6 +91,7 @@ class PlayerState(private val scope: CoroutineScope) {
 
     fun toggleAutoPlay() {
         autoPlayEnabled = !autoPlayEnabled
+        PlaybackPrefs.updateAutoplay(autoPlayEnabled)
         actionMessage = if (autoPlayEnabled) "Autoplay on" else "Autoplay off"
     }
 
@@ -110,14 +116,27 @@ class PlayerState(private val scope: CoroutineScope) {
         }
     }
 
+    /**
+     * Restarts the song, or, within its first three seconds, goes back to the song before it (music
+     * mode), the way every music player does. The current song goes back to the front of Up next.
+     */
     fun skipPrevious() {
         val player = controller ?: return
-        if (player.currentPosition > 3000) {
+        val now = current
+        if (player.currentPosition > 3000 || !isMusicMode || musicHistory.isEmpty() || now == null) {
             player.seekTo(0)
-        } else {
-            player.seekTo(0)
+            return
+        }
+        val previous = musicHistory.removeAt(musicHistory.size - 1)
+        val upNext = listOf(now) + musicQueue
+        goingBack = true
+        try {
+            openMusicQueue(listOf(previous) + upNext, 0, expanded)
+        } finally {
+            goingBack = false
         }
     }
+    private var goingBack = false
 
     fun toggleLoop() {
         val player = controller ?: return
@@ -285,6 +304,11 @@ class PlayerState(private val scope: CoroutineScope) {
 
     fun openMusicQueue(items: List<VideoItem>, index: Int, expand: Boolean = true) {
         val item = items.getOrNull(index) ?: return
+        val before = current
+        if (!goingBack && isMusicMode && before != null && before.id != item.id) {
+            musicHistory.add(before)
+            if (musicHistory.size > 100) musicHistory.removeAt(0)
+        }
         isMusicMode = true
         applyVideoTrack()
         musicQueue = items.drop(index + 1).filter { it.id != item.id }
@@ -324,6 +348,7 @@ class PlayerState(private val scope: CoroutineScope) {
         aspectFromFrames = false
         decodedHeight = null
         playingFormat = null
+        playingAudio = null
         loading = true
         sheet = null
         comments.clearFor(item.id)
@@ -481,7 +506,8 @@ class PlayerState(private val scope: CoroutineScope) {
     private fun startPlayback(item: VideoItem) {
         val player = controller ?: run { pendingStart = item; return }
 
-        replaceCurrent(player, item, positionMs = ResumeStore.startPosition(item.id))
+        val start = if (PlaybackPrefs.resume) ResumeStore.startPosition(item.id) else 0L
+        replaceCurrent(player, item, positionMs = start)
         player.play()
         if (selectedSubtitleLanguage != null) setSubtitleLanguage(selectedSubtitleLanguage, userInitiated = false)
         refreshTracks()
@@ -1135,6 +1161,11 @@ class PlayerState(private val scope: CoroutineScope) {
 
 
     internal fun onConnected() {
+        controller?.let { p ->
+            if (p.mediaItemCount == 0) {
+                p.repeatMode = if (PlaybackPrefs.loopByDefault) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
+            }
+        }
         syncFromPlayer()
         applyVideoTrack()
         controller?.videoSize?.let(::takeVideoSize)
@@ -1178,6 +1209,7 @@ class PlayerState(private val scope: CoroutineScope) {
     internal val listener = object : Player.Listener {
         override fun onEvents(player: Player, events: Player.Events) {
             syncFromPlayer()
+            if (events.contains(Player.EVENT_TRACKS_CHANGED)) describeAudio()
             if (events.contains(Player.EVENT_TIMELINE_CHANGED) || events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION)) rebuildQueue()
         }
 
@@ -1254,6 +1286,28 @@ class PlayerState(private val scope: CoroutineScope) {
         describeFormat(w, videoSize.height)
     }
 
+
+    /** Reads the codec and bitrate of the audio actually selected, for the music player's badge. */
+    private fun describeAudio() {
+        val format = controller?.currentTracks?.groups.orEmpty()
+            .filter { it.type == C.TRACK_TYPE_AUDIO && it.isSelected }
+            .flatMap { g -> (0 until g.length).filter { g.isTrackSelected(it) }.map { g.getTrackFormat(it) } }
+            .firstOrNull()
+        if (format == null) {
+            playingAudio = null
+            return
+        }
+        val codecs = (format.codecs ?: format.sampleMimeType ?: "").lowercase(java.util.Locale.US)
+        val codec = when {
+            "opus" in codecs -> "OPUS"
+            "mp4a" in codecs || "aac" in codecs -> "AAC"
+            "vorbis" in codecs -> "VORBIS"
+            "ac-3" in codecs || "ec-3" in codecs -> "DOLBY"
+            else -> codecs.substringAfterLast('/').uppercase(java.util.Locale.US).ifBlank { "AUDIO" }
+        }
+        val bits = listOf(format.averageBitrate, format.bitrate, format.peakBitrate).firstOrNull { it > 0 }
+        playingAudio = if (bits != null) codec + " · " + ((bits + 500) / 1000) + " KBPS" else codec
+    }
 
     private fun describeFormat(width: Int, height: Int) {
         val tier = qualityTier(width, height)

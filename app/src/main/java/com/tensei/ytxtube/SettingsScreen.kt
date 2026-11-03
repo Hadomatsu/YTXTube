@@ -75,6 +75,7 @@ import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.FileDownload
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Palette
+import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Storage
@@ -215,6 +216,18 @@ fun SettingsScreen(
                 SettingsSectionHeader(I18n.t("player_interface", "Player & Interface"))
                 SettingsCard {
                     SettingsRow(
+                        icon = Icons.Rounded.PlayCircle,
+                        title = "Playback",
+                        subtitle = "Skip length " + PlaybackPrefs.seekStepSec + " s, speed, autoplay, loop, resume, skip silence",
+                        onClick = { activeFloatingSection = SettingsFloatingSection.PLAYBACK },
+                    )
+                    SettingsRow(
+                        icon = Icons.Rounded.MusicNote,
+                        title = "Music & Lyrics",
+                        subtitle = PlaybackPrefs.audioQuality.label + ", Apple style word-by-word lyrics, romanization",
+                        onClick = { activeFloatingSection = SettingsFloatingSection.MUSIC },
+                    )
+                    SettingsRow(
                         icon = Icons.Rounded.Tune,
                         title = I18n.t("general_modification", "General Modification"),
                         subtitle = I18n.t("general_modification_sub", "Font, gestures, quality & downloads"),
@@ -354,6 +367,24 @@ fun SettingsScreen(
                         onDismiss = { activeFloatingSection = null },
                     ) {
                         GeneralModificationContent(context = context)
+                    }
+                }
+                SettingsFloatingSection.PLAYBACK -> {
+                    SettingsFloatingDialog(
+                        title = "Playback",
+                        subtitle = "How videos and songs play",
+                        onDismiss = { activeFloatingSection = null },
+                    ) {
+                        PlaybackSettingsContent()
+                    }
+                }
+                SettingsFloatingSection.MUSIC -> {
+                    SettingsFloatingDialog(
+                        title = "Music & Lyrics",
+                        subtitle = "Audio quality and the lyrics view",
+                        onDismiss = { activeFloatingSection = null },
+                    ) {
+                        MusicSettingsContent()
                     }
                 }
                 SettingsFloatingSection.STORAGE_USAGE -> {
@@ -581,6 +612,8 @@ fun SettingsScreen(
 private enum class SettingsFloatingSection {
     APPEARANCE,
     GENERAL_MODS,
+    PLAYBACK,
+    MUSIC,
     STORAGE_USAGE,
     LANGUAGE,
 }
@@ -2243,5 +2276,207 @@ private fun SettingsSwitchRow(
             onCheckedChange = onCheckedChange,
             colors = SwitchDefaults.colors(checkedTrackColor = c.primary),
         )
+    }
+}
+
+
+/** A setting with a few fixed choices: tap to open the list, tap a choice to keep it. */
+@Composable
+private fun SettingsChoiceRow(
+    title: String,
+    subtitle: String,
+    options: List<String>,
+    selected: Int,
+    onSelect: (Int) -> Unit,
+) {
+    val c = MaterialTheme.colorScheme
+    var open by remember { mutableStateOf(false) }
+    Box {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .pressable { open = true }
+                .padding(vertical = 9.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                Text(title, fontWeight = FontWeight.Medium, fontSize = 14.sp, color = c.onSurface)
+                Spacer(Modifier.height(1.dp))
+                Text(subtitle, color = c.onSurfaceVariant, fontSize = 11.5.sp, lineHeight = 15.sp)
+            }
+            Box(
+                Modifier
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(c.primary.copy(alpha = 0.14f))
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+            ) {
+                Text(options.getOrElse(selected) { "" }, color = c.primary, fontWeight = FontWeight.SemiBold, fontSize = 12.5.sp)
+            }
+        }
+        androidx.compose.material3.DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            options.forEachIndexed { i, label ->
+                androidx.compose.material3.DropdownMenuItem(
+                    text = {
+                        Text(label, fontWeight = if (i == selected) FontWeight.Bold else FontWeight.Normal)
+                    },
+                    trailingIcon = if (i == selected) {
+                        { Icon(Icons.Rounded.Check, contentDescription = null, tint = c.primary) }
+                    } else null,
+                    onClick = {
+                        open = false
+                        onSelect(i)
+                    },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingsGroupLabel(text: String) {
+    Text(
+        text.uppercase(),
+        color = MaterialTheme.colorScheme.primary,
+        fontWeight = FontWeight.Bold,
+        fontSize = 10.5.sp,
+        letterSpacing = 0.8.sp,
+        modifier = Modifier.padding(top = 12.dp, bottom = 2.dp),
+    )
+}
+
+@Composable
+private fun PlaybackSettingsContent() {
+    Column(Modifier.fillMaxWidth()) {
+        SettingsGroupLabel("Seeking")
+        val steps = PlaybackPrefs.seekSteps
+        SettingsChoiceRow(
+            title = "Skip length",
+            subtitle = "How far double tap and the skip buttons jump, on videos and in the notification",
+            options = steps.map { "$it s" },
+            selected = steps.indexOf(PlaybackPrefs.seekStepSec).coerceAtLeast(0),
+            onSelect = { PlaybackPrefs.updateSeekStep(steps[it]) },
+        )
+
+        SettingsGroupLabel("Speed")
+        val speeds = PlaybackPrefs.speedChoices
+        SettingsChoiceRow(
+            title = "Default speed",
+            subtitle = "Speed every new video and song starts at",
+            options = speeds.map { s -> (if (s == s.toInt().toFloat()) s.toInt().toString() else s.toString()) + "x" },
+            selected = speeds.indexOf(PlaybackPrefs.defaultSpeed).coerceAtLeast(0),
+            onSelect = { PlaybackPrefs.updateDefaultSpeed(speeds[it]) },
+        )
+        SettingsSwitchRow(
+            title = "Remember last speed",
+            subtitle = "Keep the speed you last picked for the next video instead of the default",
+            checked = PlaybackSpeed.remember,
+            onCheckedChange = { PlaybackSpeed.setRemember(it, PlaybackSpeed.saved) },
+        )
+
+        SettingsGroupLabel("What plays next")
+        SettingsSwitchRow(
+            title = "Autoplay",
+            subtitle = "Play a related video or song when one ends",
+            checked = PlaybackPrefs.autoplay,
+            onCheckedChange = { PlaybackPrefs.updateAutoplay(it) },
+        )
+        SettingsSwitchRow(
+            title = "Loop by default",
+            subtitle = "Start with repeat-one switched on when the app opens",
+            checked = PlaybackPrefs.loopByDefault,
+            onCheckedChange = { PlaybackPrefs.updateLoopByDefault(it) },
+        )
+        SettingsSwitchRow(
+            title = "Resume where you left off",
+            subtitle = "Reopening a video or song continues from where you stopped",
+            checked = PlaybackPrefs.resume,
+            onCheckedChange = { PlaybackPrefs.updateResume(it) },
+        )
+
+        SettingsGroupLabel("Sound")
+        SettingsSwitchRow(
+            title = "Skip silence",
+            subtitle = "Silent stretches are skipped while playing, for videos and music",
+            checked = PlaybackPrefs.skipSilence,
+            onCheckedChange = { PlaybackPrefs.updateSkipSilence(it) },
+        )
+    }
+}
+
+@Composable
+private fun MusicSettingsContent() {
+    val c = MaterialTheme.colorScheme
+    Column(Modifier.fillMaxWidth()) {
+        SettingsGroupLabel("Audio quality")
+        val qualities = AudioQuality.entries
+        SettingsChoiceRow(
+            title = "Streaming quality",
+            subtitle = PlaybackPrefs.audioQuality.detail + ". YouTube has no lossless audio. Applies from the next song.",
+            options = qualities.map { it.label },
+            selected = qualities.indexOf(PlaybackPrefs.audioQuality),
+            onSelect = { PlaybackPrefs.updateAudioQuality(qualities[it]) },
+        )
+
+        SettingsGroupLabel("Lyrics")
+        val modes = LyricsMode.entries
+        SettingsChoiceRow(
+            title = "Lyrics source",
+            subtitle = PlaybackPrefs.lyricsMode.detail,
+            options = modes.map { it.label },
+            selected = modes.indexOf(PlaybackPrefs.lyricsMode),
+            onSelect = { PlaybackPrefs.updateLyricsMode(modes[it]) },
+        )
+        SettingsSwitchRow(
+            title = "Romanize lyrics",
+            subtitle = "Show a reading in Latin letters under songs in Japanese, Korean, Chinese, Arabic, Russian and other scripts",
+            checked = PlaybackPrefs.romanizeLyrics,
+            onCheckedChange = { PlaybackPrefs.updateRomanize(it) },
+        )
+        SettingsSwitchRow(
+            title = "Blur other lines",
+            subtitle = "Lines that are not being sung are softly blurred, as on Apple Music",
+            checked = PlaybackPrefs.lyricsBlur,
+            onCheckedChange = { PlaybackPrefs.updateLyricsBlur(it) },
+        )
+        SettingsSwitchRow(
+            title = "Large lyrics",
+            subtitle = "Big bold lines; off for smaller text that fits more lines",
+            checked = PlaybackPrefs.lyricsTextLarge,
+            onCheckedChange = { PlaybackPrefs.updateLyricsLarge(it) },
+        )
+        Row(
+            Modifier.fillMaxWidth().padding(vertical = 9.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                Text("Lyrics timing", fontWeight = FontWeight.Medium, fontSize = 14.sp, color = c.onSurface)
+                Spacer(Modifier.height(1.dp))
+                Text(
+                    "Shift the lyrics if they run early or late",
+                    color = c.onSurfaceVariant,
+                    fontSize = 11.5.sp,
+                )
+            }
+            val step = 250
+            Box(
+                Modifier.size(34.dp).clip(CircleShape).background(c.surfaceContainerHigh)
+                    .pressable { PlaybackPrefs.updateLyricsOffset(PlaybackPrefs.lyricsOffsetMs - step) },
+                contentAlignment = Alignment.Center,
+            ) { Text("−", fontSize = 18.sp, color = c.onSurface) }
+            val ms = PlaybackPrefs.lyricsOffsetMs
+            Text(
+                (if (ms > 0) "+" else "") + String.format(java.util.Locale.US, "%.2f s", ms / 1000f),
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 13.sp,
+                color = c.onSurface,
+                modifier = Modifier.padding(horizontal = 10.dp),
+            )
+            Box(
+                Modifier.size(34.dp).clip(CircleShape).background(c.surfaceContainerHigh)
+                    .pressable { PlaybackPrefs.updateLyricsOffset(PlaybackPrefs.lyricsOffsetMs + step) },
+                contentAlignment = Alignment.Center,
+            ) { Text("+", fontSize = 18.sp, color = c.onSurface) }
+        }
     }
 }
