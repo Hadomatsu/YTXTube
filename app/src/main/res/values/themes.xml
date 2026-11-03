@@ -2,4 +2,8 @@
     <style name="Theme.YTXTube" parent="android:Theme.Material.Light.NoActionBar">
         <item name="android:windowBackground">@color/window_light</item>
     </style>
+    <!-- The TikTok client opens on pure black so there is no light flash before the page paints. -->
+    <style name="Theme.YTXTok" parent="Theme.YTXTube">
+        <item name="android:windowBackground">@android:color/black</item>
+    </style>
 </resources>

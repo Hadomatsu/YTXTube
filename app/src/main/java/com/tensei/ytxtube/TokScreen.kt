@@ -1,0 +1,217 @@
+package com.tensei.ytxtube
+
+import android.app.Activity
+import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
+import androidx.activity.compose.BackHandler
+import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Explore
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Inbox
+import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material.icons.rounded.Explore
+import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.Inbox
+import androidx.compose.material.icons.rounded.Person
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.view.WindowCompat
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+
+private val DockHeight = 64.dp
+private val DockGap = 12.dp
+private val DockWidth = 344.dp
+
+/** TikTok's own phone bottom bar is 49 dp tall; it stays in the page's layout, just invisible, under this app's dock. */
+private val TikTokNavHeight = 49.dp
+
+/** On a wide screen (the unfolded phone) the feed keeps a phone-sized column in the middle. */
+private val FeedMaxWidth = 560.dp
+
+private val tabIcons: List<Pair<ImageVector, ImageVector>> = listOf(
+    Icons.Outlined.Home to Icons.Rounded.Home,
+    Icons.Outlined.Explore to Icons.Rounded.Explore,
+    Icons.Outlined.Inbox to Icons.Rounded.Inbox,
+    Icons.Outlined.Person to Icons.Rounded.Person,
+)
+
+/**
+ * The TikTok client: TikTok's own page in the middle (account, For You feed, comments, everything),
+ * and the same floating liquid-glass bar as the YouTube client underneath it, on pure black.
+ */
+@Composable
+internal fun TokScreen(state: TokState, onExit: () -> Unit) {
+    val density = LocalDensity.current
+    val view = LocalView.current
+    val backdrop = rememberLayerBackdrop()
+    val imeUp = WindowInsets.ime.getBottom(density) > 0
+    val navInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    // The page ends where the dock begins, so the dock never covers the caption or the buttons.
+    val reserve = if (imeUp) 0.dp else (navInset + DockGap + DockHeight - TikTokNavHeight).coerceAtLeast(0.dp)
+
+    // This screen is always black, so the status and gesture bars always get light icons,
+    // whatever theme the YouTube side is set to.
+    SideEffect {
+        val activity = view.context as? ComponentActivity
+        val window = activity?.window ?: (view.context as? Activity)?.window ?: return@SideEffect
+        val controller = WindowCompat.getInsetsController(window, view)
+        controller.isAppearanceLightStatusBars = false
+        controller.isAppearanceLightNavigationBars = false
+        if (activity != null) {
+            val style = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
+            runCatching {
+                activity.enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
+                controller.isAppearanceLightStatusBars = false
+                controller.isAppearanceLightNavigationBars = false
+            }
+        }
+    }
+
+    BackHandler {
+        val web = state.webView
+        if (web != null && web.canGoBack()) web.goBack() else onExit()
+    }
+
+    Box(Modifier.fillMaxSize()) {
+        // The black page behind everything. The dock's glass reads from this layer, not from the web page.
+        Box(Modifier.fillMaxSize().layerBackdrop(backdrop).background(Color.Black))
+
+        Box(
+            Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .imePadding()
+                .padding(bottom = reserve),
+            contentAlignment = Alignment.TopCenter,
+        ) {
+            AndroidView(
+                factory = { ctx ->
+                    createTokWebView(ctx, state).also { web ->
+                        state.webView = web
+                        val first = state.pendingUrl ?: TokWeb.HOME
+                        state.pendingUrl = null
+                        web.loadUrl(first)
+                    }
+                },
+                modifier = Modifier.widthIn(max = FeedMaxWidth).fillMaxSize(),
+                onRelease = { web ->
+                    if (state.webView === web) state.webView = null
+                    web.stopLoading()
+                    web.destroy()
+                },
+            )
+        }
+
+        if (!state.loadedOnce && !state.error && state.progress < 80) {
+            Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(28.dp))
+            }
+        }
+
+        if (state.error) {
+            Column(
+                Modifier.fillMaxSize().background(Color.Black).padding(32.dp),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text("Can't reach TikTok", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+                Text(
+                    "Check your connection and try again.",
+                    color = Color.White.copy(alpha = 0.6f),
+                    fontSize = 14.sp,
+                    modifier = Modifier.padding(top = 6.dp, bottom = 20.dp),
+                )
+                Box(
+                    Modifier
+                        .clip(RoundedCornerShape(50))
+                        .background(Color.White.copy(alpha = 0.14f))
+                        .clickable { state.retry() }
+                        .padding(horizontal = 28.dp, vertical = 12.dp),
+                ) {
+                    Text("Try again", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                }
+            }
+        }
+
+        if (!imeUp) {
+            Box(
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
+                    .padding(start = 16.dp, end = 16.dp, bottom = DockGap)
+                    .widthIn(max = DockWidth)
+                    .fillMaxWidth(),
+            ) {
+                val selected = remember(state) { { state.tab } }
+                LiquidBottomBar(
+                    selectedTabIndex = selected,
+                    onTabSelected = { state.settle(it) },
+                    backdrop = backdrop,
+                    tabsCount = TokWeb.tabs.size,
+                    isDarkSurface = true,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    TokWeb.tabs.forEachIndexed { i, spec ->
+                        TokTab(spec, tabIcons[i], selected = state.tab == i) { state.tap(i) }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RowScope.TokTab(
+    spec: TokTabSpec,
+    icons: Pair<ImageVector, ImageVector>,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    LiquidBottomTab(onClick = onClick) {
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(28.dp)) {
+            Icon(
+                if (selected) icons.second else icons.first,
+                contentDescription = spec.label,
+                tint = Color.White,
+                modifier = Modifier.size(22.dp),
+            )
+        }
+        NavLabel(spec.label, selected, Color.White)
+    }
+}

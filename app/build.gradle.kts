@@ -11,8 +11,8 @@ android {
         applicationId = "com.tensei.ytxtube.custom"
         minSdk = 24
         targetSdk = 36
-        versionCode = 235
-        versionName = "2.2.15"
+        versionCode = 236
+        versionName = "2.3.0"
     }
 
     signingConfigs {
@@ -137,6 +137,7 @@ dependencies {
     implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.26.5")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("io.coil-kt:coil-compose:2.7.0")
+    implementation("androidx.webkit:webkit:1.14.0")
     implementation("com.google.guava:guava:33.3.1-android")
 
 

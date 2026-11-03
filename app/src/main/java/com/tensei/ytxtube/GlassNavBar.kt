@@ -459,7 +459,7 @@ fun RowScope.LiquidNavTab(
 }
 
 @Composable
-private fun NavLabel(text: String, selected: Boolean, color: Color) {
+internal fun NavLabel(text: String, selected: Boolean, color: Color) {
     BasicText(
         text = text,
         modifier = Modifier.fillMaxWidth(),
