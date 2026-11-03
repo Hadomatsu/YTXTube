@@ -86,6 +86,25 @@ class PoTokenGenerator {
     }
   }
 
+  /**
+   * Throws the cached WebView generator away so the next token is minted from scratch. Used when a
+   * stream was refused, in case the token had gone stale. Blocks; call it off the main thread.
+   */
+  fun reset() {
+    try {
+      runBlocking {
+        webPoTokenGenLock.withLock {
+          withContext(Dispatchers.Main) { webPoTokenGenerator?.close() }
+          webPoTokenGenerator = null
+          webPoTokenStreamingPot = null
+          webPoTokenSessionId = null
+        }
+      }
+    } catch (e: Exception) {
+      Log.w(TAG, "Could not reset the poToken generator: ${e.message}")
+    }
+  }
+
   private companion object {
     const val POTOKEN_TIMEOUT_MS = 8_000L
   }

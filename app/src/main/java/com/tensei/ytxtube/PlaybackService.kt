@@ -251,6 +251,8 @@ private class StreamRecoverer(
         StreamRecovery.recovering = id
         StreamCache.invalidate(id)
         resolver.execute {
+            // The refused stream may carry a stale token: start the retry from a fresh one.
+            runCatching { YtxPoTokenProvider.current?.reset() }
             val result = runCatching { StreamCache.getOrLoad(id) }
             main.post {
                 StreamRecovery.recovering = null
@@ -279,7 +281,9 @@ private class StreamRecoverer(
     }
 
     private companion object {
-        const val PROGRESS_MS = 30_000L
+        // A stream that played this much after the last refusal counts as a new problem, so the
+        // video is silently recovered again; only one that dies straight away gives up.
+        const val PROGRESS_MS = 10_000L
     }
 }
 

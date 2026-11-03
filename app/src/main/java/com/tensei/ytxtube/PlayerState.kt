@@ -1138,7 +1138,7 @@ class PlayerState(private val scope: CoroutineScope) {
             error = when (e.errorCode) {
                 PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
                 PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT -> "Lost the connection. Check your network and try again."
-                PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS -> "YouTube refused the stream. Try again."
+                PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS -> "YouTube refused the stream${status?.let { " (HTTP $it)" } ?: ""}. Try again."
                 else -> "This video couldn't be played."
             }
         }
