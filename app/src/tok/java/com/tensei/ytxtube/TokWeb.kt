@@ -33,6 +33,9 @@ import androidx.webkit.WebViewFeature
 internal object TokWeb {
     const val HOME = "https://www.tiktok.com/foryou"
 
+    /** Whether the WebView honours the page's viewport tag with a wide layout viewport (see applyTokMode). */
+    @Volatile var wide = false
+
     /** Tab index to the TikTok link that opens it (the same links TikTok's own bottom bar uses). */
     val tabs = listOf(
         TokTabSpec("Home", "home-icon", "https://www.tiktok.com/foryou"),
@@ -285,6 +288,7 @@ internal class TokState {
     var frameHint by mutableStateOf(true)
     var dockOn by mutableStateOf(true)
     var capWidth by mutableStateOf(true)
+    var wideOn by mutableStateOf(false)
     @Volatile var modeHint: Boolean = true
     var net by mutableStateOf("")
     var console by mutableStateOf("")
@@ -540,8 +544,10 @@ internal fun fetchRemoteScript(state: TokState) {
 internal fun applyTokMode(web: WebView, desktop: Boolean) {
     val s = web.settings
     s.userAgentString = TokWeb.userAgent(web.context, desktop)
-    s.useWideViewPort = true
-    s.loadWithOverviewMode = desktop
+    // With the wide viewport on, TikTok's page ends up with a layout viewport of zero height (100vh is 0), which
+    // collapses the feed container and clips the whole feed; the page's own width rules still apply when it is off.
+    s.useWideViewPort = TokWeb.wide
+    s.loadWithOverviewMode = desktop && TokWeb.wide
     s.setSupportZoom(desktop)
     s.builtInZoomControls = desktop
     s.displayZoomControls = false

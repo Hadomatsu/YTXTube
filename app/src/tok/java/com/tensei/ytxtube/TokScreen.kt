@@ -278,6 +278,14 @@ private fun TokDiagStrip(state: TokState) {
             TokChip("Dock " + (if (state.dockOn) "on" else "off")) { state.dockOn = !state.dockOn }
             TokChip("Cap " + (if (state.capWidth) "on" else "off")) { state.capWidth = !state.capWidth }
             TokChip("Mode " + (if (state.modeHint) "on" else "off")) { state.dropModeRequest() }
+            TokChip("Wide " + (if (state.wideOn) "on" else "off")) {
+                state.wideOn = !state.wideOn
+                TokWeb.wide = state.wideOn
+                state.webView?.let { web ->
+                    applyTokMode(web, state.desktop)
+                    web.reload()
+                }
+            }
         }
         Text(
             state.nativeText + " " + state.remoteStatus + "\n" + (if (state.desktop) "desktop " else "mobile ") + state.diag +

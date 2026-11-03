@@ -2,8 +2,8 @@
 // The video decodes (a canvas can read its frames) but the web view does not paint it, so the canvas
 // shows the picture instead, and TikTok's own captions and buttons stay where they are.
 (function () {
-  if (window.__ytxMirV === 'v9') return;
-  window.__ytxMirV = 'v9';
+  if (window.__ytxMirV === 'v10') return;
+  window.__ytxMirV = 'v10';
   ['ytx-dbg', 'ytx-paint'].forEach(function (id) { var o = document.getElementById(id); if (o) o.remove(); });
   if (window.__ytxDbgTimer) { clearInterval(window.__ytxDbgTimer); window.__ytxDbgTimer = 0; }
   var M = window.__ytxMir;
@@ -93,6 +93,12 @@
       if (v) { L.push('V ' + st(v)); var e = v.parentElement, n = 0; while (e && e !== h && n < 14) { L.push(' ^' + st(e)); e = e.parentElement; n++; } }
       var c = document.querySelector('canvas[data-ytx-mirror]');
       if (c) L.push('C ' + st(c));
+      var pr = document.createElement('div');
+      pr.style.cssText = 'position:fixed;left:0;top:0;width:1px;visibility:hidden;height:100vh';
+      document.body.appendChild(pr);
+      var a = pr.offsetHeight; pr.style.height = '100dvh'; var d = pr.offsetHeight; pr.style.height = '100svh'; var sv = pr.offsetHeight; pr.style.height = '100lvh'; var lv = pr.offsetHeight; pr.style.height = '100%'; var pc = pr.offsetHeight;
+      pr.remove();
+      L.push('probe vh' + a + ' dvh' + d + ' svh' + sv + ' lvh' + lv + ' pct' + pc + ' compat ' + document.compatMode + ' dpr ' + devicePixelRatio);
     } catch (x) { L.push('err ' + x); }
     return L;
   }
