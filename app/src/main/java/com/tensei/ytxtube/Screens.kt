@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -217,9 +218,13 @@ fun HomeScreen(
         revealOnlyAtTop = true,
         header = {
             Column(Modifier.fillMaxWidth()) {
-                // Search and the profile live in the bottom bar.
-                ScreenHeader(title = "YTXTube", brandMark = true)
-                HomeFilterChips(selected = activeFilter, onSelect = { activeFilter = it })
+                // No logo or title any more, just the categories. Search and the profile live in
+                // the bottom bar.
+                HomeFilterChips(
+                    selected = activeFilter,
+                    onSelect = { activeFilter = it },
+                    modifier = Modifier.statusBarsPadding().padding(top = 6.dp),
+                )
             }
         },
     ) { top ->
