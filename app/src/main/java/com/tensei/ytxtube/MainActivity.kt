@@ -146,6 +146,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             YtxTubeTheme {
                 Box(Modifier.fillMaxSize()) {
+                    RequestHighFrameRate()
                     YtxTubeApp()
                     FpsOverlay()
                 }
@@ -237,16 +238,32 @@ class MainActivity : ComponentActivity() {
                 ?: modes.maxByOrNull { it.refreshRate }
             if (bestMode != null) {
                 val lp = window.attributes
+                var changed = false
                 if (lp.preferredDisplayModeId != bestMode.modeId || lp.preferredRefreshRate != bestMode.refreshRate) {
                     lp.preferredDisplayModeId = bestMode.modeId
                     lp.preferredRefreshRate = bestMode.refreshRate
-                    window.attributes = lp
+                    changed = true
                 }
+                // Android 14+: also ask for a minimum render rate, which is what phones with a
+                // variable (LTPO) panel use to decide how fast an app may draw.
+                if (Build.VERSION.SDK_INT >= 34 && lp.preferredMinDisplayRefreshRate != bestMode.refreshRate) {
+                    lp.preferredMinDisplayRefreshRate = bestMode.refreshRate
+                    changed = true
+                }
+                if (changed) window.attributes = lp
             }
         }
         if (Build.VERSION.SDK_INT >= 35) {
             runCatching {
                 window.decorView.requestedFrameRate = android.view.View.REQUESTED_FRAME_RATE_CATEGORY_HIGH
+            }
+            // Opt this window out of the "power savings balanced" frame-rate throttling, which
+            // otherwise lets the system hold an app that did not vote high at about 60 Hz.
+            // Looked up by name so an older SDK stub cannot break the build.
+            runCatching {
+                android.view.Window::class.java
+                    .getMethod("setFrameRatePowerSavingsBalanced", java.lang.Boolean.TYPE)
+                    .invoke(window, false)
             }
         }
     }
