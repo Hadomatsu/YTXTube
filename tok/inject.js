@@ -7,7 +7,7 @@
   var M = window.__ytxMir;
   if (M && M.stop) M.stop();
   M = window.__ytxMir = { n: 0, f: 0, err: '', alive: true };
-  M.stop = function () { M.alive = false; clearInterval(M.timer); [].forEach.call(document.querySelectorAll('canvas[data-ytx-mirror]'), function (c) { c.remove(); }); [].forEach.call(document.querySelectorAll('video'), function (v) { v.__ytxC = null; }); };
+  M.stop = function () { M.alive = false; clearInterval(M.timer); clearInterval(M.tick); [].forEach.call(document.querySelectorAll('canvas[data-ytx-mirror]'), function (c) { c.remove(); }); [].forEach.call(document.querySelectorAll('video'), function (v) { v.__ytxC = null; }); };
 
   function attach(v) {
     if (v.__ytxC) return;
@@ -54,9 +54,10 @@
       }
       M.n = n;
     } catch (e) { M.err = String(e).slice(0, 60); }
-    requestAnimationFrame(tick);
   }
-  requestAnimationFrame(tick);
+  M.tick = setInterval(tick, 40);
+  M.raf = 0;
+  (function loop() { M.raf++; if (M.alive) requestAnimationFrame(loop); })();
   // The page replaces whole video lists as it scrolls; drop canvases whose video is gone.
   M.timer = setInterval(function () {
     [].forEach.call(document.querySelectorAll('canvas[data-ytx-mirror]'), function (c) {
@@ -67,7 +68,7 @@
 
   var old = window.__ytxDiag;
   if (typeof old === 'function' && !old.__m) {
-    var w = function () { return old() + ' mir' + M.n + '/' + M.f + (M.err ? ' E:' + M.err : ''); };
+    var w = function () { return old() + ' mir' + M.n + '/' + M.f + ' raf' + M.raf + ' vis:' + document.visibilityState + ' foc' + (document.hasFocus() ? 1 : 0) + (M.err ? ' E:' + M.err : ''); };
     w.__m = true;
     window.__ytxDiag = w;
   }
