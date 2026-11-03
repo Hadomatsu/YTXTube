@@ -225,9 +225,9 @@ fun PlayerScreen(
         }
     }
     val ambientColor by animateColorAsState(dominantColor, tween(600), label = "ambient")
-    val ambientDrift = if (GlassQuality.effectsSupported) {
+    val ambientDrift: androidx.compose.runtime.State<Float> = if (GlassQuality.effectsSupported) {
         val ambientMotion = androidx.compose.animation.core.rememberInfiniteTransition(label = "ambientDrift")
-        val drift by ambientMotion.animateFloat(
+        ambientMotion.animateFloat(
             initialValue = 0f,
             targetValue = 1f,
             animationSpec = androidx.compose.animation.core.infiniteRepeatable(
@@ -236,9 +236,8 @@ fun PlayerScreen(
             ),
             label = "ambientDriftValue",
         )
-        drift
     } else {
-        0.5f
+        remember { androidx.compose.runtime.mutableFloatStateOf(0.5f) }
     }
 
     val isDark = isDarkTheme()
@@ -276,6 +275,7 @@ fun PlayerScreen(
                 // AMOLED is meant to be pure black. The drifting status-bar/player glow
                 // is a normal-theme effect only; low-end devices skip it to keep playback smooth.
                 if (isAmoled || !GlassQuality.effectsSupported || state.isMusicMode || size.width < 10f || size.height < 10f) return@drawBehind
+                val drift = ambientDrift.value
                 val topStrength = if (isAmoled) 0.40f else if (isDark) 0.35f else 0.22f
                 val bodyStrength = if (isAmoled) 0.30f else if (isDark) 0.26f else 0.16f
                 val aspect = state.stageAspect.coerceAtLeast(0.5f)
@@ -284,7 +284,7 @@ fun PlayerScreen(
                 drawRect(
                     Brush.radialGradient(
                         colors = listOf(ambientColor.copy(alpha = topStrength), Color.Transparent),
-                        center = Offset(size.width * (0.2f + 0.6f * ambientDrift), 0f),
+                        center = Offset(size.width * (0.2f + 0.6f * drift), 0f),
                         radius = topRadius,
                     ),
                 )
@@ -307,7 +307,7 @@ fun PlayerScreen(
                 drawRect(
                     Brush.radialGradient(
                         colors = listOf(ambientColor.copy(alpha = bodyStrength * 0.7f), Color.Transparent),
-                        center = Offset(size.width * (0.85f - 0.7f * ambientDrift), top.toPx() + size.width / aspect + 100f),
+                        center = Offset(size.width * (0.85f - 0.7f * drift), top.toPx() + size.width / aspect + 100f),
                         radius = bottomRadius,
                     ),
                 )

@@ -1358,6 +1358,15 @@ private fun GeneralModificationContent(context: Context) {
 
         HorizontalDivider(color = c.onSurface.copy(alpha = 0.08f))
 
+        SettingsSwitchRow(
+            title = I18n.t("show_fps", "Show FPS counter"),
+            subtitle = I18n.t("show_fps_sub", "Live frame rate, slowest frame and panel refresh rate, to check that 120 Hz is really in use"),
+            checked = FpsSettings.enabled,
+            onCheckedChange = { FpsSettings.set(it) },
+        )
+
+        HorizontalDivider(color = c.onSurface.copy(alpha = 0.08f))
+
         Spacer(Modifier.height(8.dp))
         Text(
             text = I18n.t("sponsorblock", "SponsorBlock"),

@@ -143,7 +143,14 @@ class MainActivity : ComponentActivity() {
         ) {
             notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
-        setContent { YtxTubeTheme { YtxTubeApp() } }
+        setContent {
+            YtxTubeTheme {
+                Box(Modifier.fillMaxSize()) {
+                    YtxTubeApp()
+                    FpsOverlay()
+                }
+            }
+        }
     }
 
     override fun onResume() {
