@@ -259,9 +259,9 @@ object YouTube {
             }.orEmpty(),
             likes = info.likeCount,
             subscribers = info.uploaderSubscriberCount,
-            related = info.relatedItems.filterIsInstance<StreamInfoItem>().mapNotNull { it.toVideoItem() }.let { list ->
-                if (list.isNotEmpty()) list else fetchFallbackRelated(id, info.name)
-            },
+            // When the extractor found none, PlayerState asks for them (with retries) after the
+            // video has started, instead of making the first frame wait for two more requests.
+            related = info.relatedItems.filterIsInstance<StreamInfoItem>().mapNotNull { it.toVideoItem() },
             playable = picked.isPlayable,
             quality = picked.playedHeight?.let { "${it}p${if (picked.hdr) " HDR" else ""}" }
                 ?: if (isLive) "Live" else null,
@@ -271,6 +271,10 @@ object YouTube {
                 ?.takeIf { it.width > 0 && it.height > 0 }?.let { it.width.toFloat() / it.height },
         )
     }
+
+    /** Related videos from YouTube's "next" request (or a search), for when the extractor had none. */
+    suspend fun fallbackRelated(id: String, title: String): List<VideoItem> =
+        withContext(Dispatchers.IO) { fetchFallbackRelated(id, title) }
 
     private suspend fun fetchFallbackRelated(id: String, title: String): List<VideoItem> {
         val parsed = runCatching {
@@ -482,7 +486,7 @@ object StreamCache {
                     entries[id] = Entry(it, System.currentTimeMillis())
                     Net.noteMediaHost(StreamSelection.pick(it).let { p -> (p.video ?: p.muxed)?.content })
                     CaptionTracks.put(id, CaptionTracks.fromStreamInfo(it))
-                    if (it.subtitles.isEmpty()) runCatching { CaptionTracks.load(id) }
+                    // No captions in the extraction? PlayerState asks YouTube's player response later.
                 }
             } catch (t: Throwable) {
                 if (t is org.schabi.newpipe.extractor.exceptions.SignInConfirmNotBotException) {
@@ -492,7 +496,6 @@ object StreamCache {
                         entries[id] = Entry(it, System.currentTimeMillis())
                         Net.noteMediaHost(StreamSelection.pick(it).let { p -> (p.video ?: p.muxed)?.content })
                         CaptionTracks.put(id, CaptionTracks.fromStreamInfo(it))
-                        if (it.subtitles.isEmpty()) runCatching { CaptionTracks.load(id) }
                     }
                 } else throw t
             }

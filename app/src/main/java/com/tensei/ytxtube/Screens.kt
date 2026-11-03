@@ -213,9 +213,12 @@ fun HomeScreen(
     }
     CollapsingHeaderLayout(
         resetKey = scrollToTop to (lib.home.generation to activeFilter),
+        // Scrolling up never brings the header back: it only shows again at the very top.
+        revealOnlyAtTop = true,
         header = {
             Column(Modifier.fillMaxWidth()) {
-                ScreenHeader(title = "YTXTube", brandMark = true) { HeaderActions(onSearch, onAccount) }
+                // Search and the profile live in the bottom bar.
+                ScreenHeader(title = "YTXTube", brandMark = true)
                 HomeFilterChips(selected = activeFilter, onSelect = { activeFilter = it })
             }
         },

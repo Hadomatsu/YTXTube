@@ -48,9 +48,17 @@ import kotlinx.coroutines.launch
 
 
 
+/**
+ * A header that slides away as the content scrolls.
+ *
+ * By default it comes back as soon as the user scrolls up. With [revealOnlyAtTop] it never comes
+ * back early: it behaves as if it were the first item of the list, so it only shows again once the
+ * list is back at its very top, and the content keeps scrolling full screen until then.
+ */
 @Composable
 fun CollapsingHeaderLayout(
     resetKey: Any? = null,
+    revealOnlyAtTop: Boolean = false,
     header: @Composable () -> Unit,
     content: @Composable (top: Dp) -> Unit,
 ) {
@@ -63,21 +71,40 @@ fun CollapsingHeaderLayout(
     val offset = remember { Animatable(0f) }
     val settleSpec = spring<Float>(dampingRatio = 0.9f, stiffness = 420f)
 
-    LaunchedEffect(resetKey) { if (reduced) offset.snapTo(0f) else offset.animateTo(0f, settleSpec) }
+    // How far the content has been scrolled away from its top (only tracked for revealOnlyAtTop).
+    val fromTop = remember { floatArrayOf(0f) }
 
-    val connection = remember(reduced) {
+    LaunchedEffect(resetKey) {
+        fromTop[0] = 0f
+        if (reduced) offset.snapTo(0f) else offset.animateTo(0f, settleSpec)
+    }
+
+    val connection = remember(reduced, revealOnlyAtTop) {
         object : NestedScrollConnection {
             override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
                 val h = headerPx.toFloat()
-                if (h <= 0f || consumed.y == 0f) return Offset.Zero
+                if (h <= 0f) return Offset.Zero
 
+                if (revealOnlyAtTop) {
+                    // The list could not use all of an upward drag: it is at its very top.
+                    if (available.y > 0f) {
+                        fromTop[0] = 0f
+                    } else {
+                        fromTop[0] = (fromTop[0] - consumed.y).coerceAtLeast(0f)
+                    }
+                    val target = -fromTop[0].coerceAtMost(h)
+                    if (target != offset.value) scope.launch { offset.snapTo(target) }
+                    return Offset.Zero
+                }
 
+                if (consumed.y == 0f) return Offset.Zero
                 val target = (offset.value + consumed.y).coerceIn(-h, 0f)
                 scope.launch { offset.snapTo(target) }
                 return Offset.Zero
             }
 
             override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
+                if (revealOnlyAtTop) return Velocity.Zero
                 val h = headerPx.toFloat()
                 val v = offset.value
                 if (h > 0f && v < 0f && v > -h) {

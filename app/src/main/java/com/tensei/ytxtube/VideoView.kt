@@ -135,10 +135,13 @@ import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -174,9 +177,6 @@ fun VideoContent(
     onInactiveTap: () -> Unit = {},
 
     portraitEdgeScrub: Boolean = false,
-
-    /** The captions live in a bar under the video (see [CaptionStrip]) instead of on the picture. */
-    captionsBelow: Boolean = false,
 ) {
 
 
@@ -257,6 +257,7 @@ fun VideoContent(
     LaunchedEffect(state.current?.id) {
         state.current?.id?.let { ScrubStoryboards.preload(it) }
     }
+    var rootSize by remember { mutableStateOf(IntSize.Zero) }
     val tvKeys = Modifier.onPreviewKeyEvent { e ->
         if (!TvMode.isTv || !interactive || e.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
         when (e.key) {
@@ -292,7 +293,7 @@ fun VideoContent(
             }
         }
     }
-    Box(modifier.background(Color.Black).then(tvKeys).onGloballyPositioned { pip?.videoBounds = it.boundsInWindow() }.pointerInput(state, portraitEdgeScrub) {
+    Box(modifier.background(Color.Black).then(tvKeys).onSizeChanged { rootSize = it }.onGloballyPositioned { pip?.videoBounds = it.boundsInWindow() }.pointerInput(state, portraitEdgeScrub, fullscreen) {
         val doubleTapMs = viewConfiguration.doubleTapTimeoutMillis
         val holdSpeedMs = Motion.HoldSpeedMs
         coroutineScope {
@@ -322,69 +323,36 @@ fun VideoContent(
                 val startTime = System.currentTimeMillis()
                 val downX = down.position.x / size.width
                 val downY = down.position.y
-                var isDraggingGesture = false
-                var lastY = downY
+                val swipeSlop = viewConfiguration.touchSlop * 3f
 
-                var verticalSwipeHandled = false
+                // 0 = not a swipe, 1 = brightness, 2 = volume, 3 = leave fullscreen / ignore,
+                // 4 = a swipe on the small player, which the stage's own drag handles.
+                var swipe = 0
+                var swipeUp = false
                 val upEarly = withTimeoutOrNull(holdSpeedMs) {
                     var event = awaitPointerEvent()
                     while (event.changes.any { it.pressed }) {
                         val change = event.changes.firstOrNull { it.pressed }
                         if (change != null) {
-                            val dy = lastY - change.position.y
                             val totalDy = downY - change.position.y
                             val totalDx = down.position.x - change.position.x
-
-                            val isVerticalIntent = kotlin.math.abs(totalDy) > kotlin.math.abs(totalDx) * 1.5f
-
-                            if (fullscreen) {
-                                val gesturesOn = VideoGestureSettings.enabled
-                                val isLeftEdge = gesturesOn && downX < 0.20f
-                                val isRightEdge = gesturesOn && downX > 0.80f
-
-                                if (!isDraggingGesture && isVerticalIntent && kotlin.math.abs(totalDy) > 60f) {
-                                    if (isLeftEdge || isRightEdge) {
-                                        isDraggingGesture = true
+                            val verticalIntent = abs(totalDy) > abs(totalDx) * 1.5f
+                            if (verticalIntent && abs(totalDy) > swipeSlop) {
+                                if (!fullscreen) {
+                                    // Swipe down minimizes and swipe up goes fullscreen; the stage
+                                    // (VideoStage) follows the finger for both, so leave it alone.
+                                    swipe = 4
+                                } else {
+                                    val gesturesOn = VideoGestureSettings.enabled
+                                    swipe = when {
+                                        gesturesOn && downX < 0.20f -> 1
+                                        gesturesOn && downX > 0.80f -> 2
+                                        else -> 3
                                     }
-                                }
-                                if (isDraggingGesture) {
+                                    swipeUp = totalDy > 0f
                                     change.consume()
-                                    if (isLeftEdge && activity != null) {
-                                        val window = activity.window
-                                        val attrs = window.attributes
-                                        val currentB = if (attrs.screenBrightness < 0f) 0.5f else attrs.screenBrightness
-
-                                        val newB = (currentB + (dy / size.height) * 0.85f).coerceIn(0.02f, 1f)
-                                        attrs.screenBrightness = newB
-                                        window.attributes = attrs
-                                        gestureHud = Pair(Icons.Rounded.BrightnessMedium, Pair("Brightness", newB))
-                                    } else if (isRightEdge && audioManager != null) {
-                                        val maxV = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-                                        val curV = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
-
-                                        val deltaV = ((dy / size.height) * maxV * 1.0f).toInt()
-                                        if (deltaV != 0) {
-                                            val newV = (curV + deltaV).coerceIn(0, maxV)
-                                            audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, newV, 0)
-                                            val icon = if (newV == 0) Icons.AutoMirrored.Rounded.VolumeMute else Icons.AutoMirrored.Rounded.VolumeUp
-                                            gestureHud = Pair(icon, Pair("Volume", newV.toFloat() / maxV.toFloat()))
-                                        }
-                                    }
-                                    lastY = change.position.y
                                 }
-                            } else {
-
-
-                                if (!verticalSwipeHandled && isVerticalIntent && kotlin.math.abs(totalDy) > 90f) {
-                                    verticalSwipeHandled = true
-                                    change.consume()
-                                    if (totalDy < -90f) {
-                                        onCollapse()
-                                    } else {
-                                        onToggleFullscreen()
-                                    }
-                                    return@withTimeoutOrNull null
-                                }
+                                return@withTimeoutOrNull null
                             }
                         }
                         event = awaitPointerEvent()
@@ -392,7 +360,48 @@ fun VideoContent(
                     event.changes.firstOrNull()
                 }
 
-                if (isDraggingGesture || verticalSwipeHandled) {
+                if (swipe == 4) return@awaitEachGesture
+                if (swipe == 3) {
+                    // Like YouTube: a swipe down leaves fullscreen (it works with the edge
+                    // gestures turned off too).
+                    if (!swipeUp) onToggleFullscreen()
+                    return@awaitEachGesture
+                }
+                if (swipe == 1 || swipe == 2) {
+                    // Left edge: brightness. Right edge: volume. Keeps following the finger for as
+                    // long as it is down (it used to stop after the hold window).
+                    var lastY = downY
+                    var volumeCarry = 0f
+                    while (true) {
+                        val ev = awaitPointerEvent()
+                        val ch = ev.changes.firstOrNull { it.id == down.id } ?: break
+                        if (!ch.pressed) break
+                        val dy = lastY - ch.position.y
+                        ch.consume()
+                        lastY = ch.position.y
+                        if (swipe == 1 && activity != null) {
+                            val window = activity.window
+                            val attrs = window.attributes
+                            val currentB = if (attrs.screenBrightness < 0f) 0.5f else attrs.screenBrightness
+                            val newB = (currentB + (dy / size.height) * 0.85f).coerceIn(0.02f, 1f)
+                            attrs.screenBrightness = newB
+                            window.attributes = attrs
+                            gestureHud = Pair(Icons.Rounded.BrightnessMedium, Pair("Brightness", newB))
+                        } else if (swipe == 2 && audioManager != null) {
+                            val maxV = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+                            val curV = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+                            // Small moves add up until they are worth a whole volume step.
+                            volumeCarry += (dy / size.height) * maxV * 1.3f
+                            val steps = volumeCarry.toInt()
+                            if (steps != 0) {
+                                volumeCarry -= steps
+                                val newV = (curV + steps).coerceIn(0, maxV)
+                                audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, newV, 0)
+                                val icon = if (newV == 0) Icons.AutoMirrored.Rounded.VolumeMute else Icons.AutoMirrored.Rounded.VolumeUp
+                                gestureHud = Pair(icon, Pair("Volume", newV.toFloat() / maxV.toFloat()))
+                            }
+                        }
+                    }
                     return@awaitEachGesture
                 }
 
@@ -732,21 +741,47 @@ fun VideoContent(
         }
 
         val captionText = state.captionText
-        if (!captionsBelow && !scrubbing && captionText != null) {
-            val captionLift by animateDpAsState(
-                targetValue = if (controlsVisible) EdgeScrubTimeRowBottomPad + EdgeScrubTimeRowHeight + 10.dp else 28.dp,
-                animationSpec = if (reduced) tween(0) else tween(200, easing = Motion.Emphasized),
-                label = "captionLift",
-            )
-            CaptionLines(
-                text = captionText,
-                fontSize = if (fullscreen) 20.sp else 15.sp,
-                plates = true,
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(horizontal = 16.dp)
-                    .padding(bottom = captionLift),
-            )
+        if (!scrubbing && captionText != null) {
+            val captionSize = when {
+                fullscreen -> 20.sp
+                state.wideStage -> 17.sp
+                else -> 15.sp
+            }
+            val density = androidx.compose.ui.platform.LocalDensity.current
+            // Unfolded fullscreen letterboxes the picture: the captions then go into the black bar
+            // that is already below it (just under the picture), and nothing is added. Anywhere
+            // else, or when the bar is too thin, they sit on the picture.
+            val barTopPx = captionBarTop(rootSize, state.videoAspect, fullscreen && !state.zoomToFill && state.videoZoom <= 1.05f)
+            val blockPx = captionBlockHeightPx(captionSize, density)
+            val gapPx = with(density) { 10.dp.toPx() }
+            val fitsInBar = barTopPx != null &&
+                rootSize.height - barTopPx >= blockPx + gapPx * 2f
+            if (fitsInBar && barTopPx != null) {
+                CaptionLines(
+                    text = captionText,
+                    fontSize = captionSize,
+                    plates = false,
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .offset { IntOffset(0, (barTopPx + gapPx).roundToInt()) }
+                        .padding(horizontal = 16.dp),
+                )
+            } else {
+                val captionLift by animateDpAsState(
+                    targetValue = if (controlsVisible) EdgeScrubTimeRowBottomPad + EdgeScrubTimeRowHeight + 10.dp else 28.dp,
+                    animationSpec = if (reduced) tween(0) else tween(200, easing = Motion.Emphasized),
+                    label = "captionLift",
+                )
+                CaptionLines(
+                    text = captionText,
+                    fontSize = captionSize,
+                    plates = true,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(horizontal = 16.dp)
+                        .padding(bottom = captionLift),
+                )
+            }
         }
 
         if (state.error == null && (!fullscreenControlsScrub || controlsVisible || scrubbing)) {
@@ -1380,7 +1415,7 @@ private const val SeekStepMs = 10_000L
  * end of the bottom line and nothing already on screen moves.
  *
  * [plates] draws a dark rounded plate behind each line (over the picture); without it the text
- * sits on whatever is behind it (the black [CaptionStrip]).
+ * sits on whatever is behind it (the black bar under a letterboxed picture).
  */
 @Composable
 internal fun CaptionLines(text: String, fontSize: TextUnit, plates: Boolean, modifier: Modifier = Modifier) {
@@ -1422,28 +1457,23 @@ private fun CaptionSlot(text: String, fontSize: TextUnit, lineHeight: TextUnit, 
     }
 }
 
+/** Height of the two-slot caption block, in pixels. Matches the layout in [CaptionLines]. */
+internal fun captionBlockHeightPx(fontSize: TextUnit, density: androidx.compose.ui.unit.Density): Float =
+    with(density) { 2f * ((fontSize * 1.33f).toPx() + 4.dp.toPx()) }
+
 /**
- * Captions for the wide (unfolded) layout: a black bar directly under the video, so the subtitles
- * sit just below the picture instead of covering it. It is only there while captions are on, and
- * always the height of two lines, so it does not change size while the words come in.
+ * Where the black bar under a letterboxed picture starts (its top edge, in pixels from the top of
+ * the player), or null when the picture fills the player or the player is not letterboxed.
  */
-@Composable
-fun CaptionStrip(state: PlayerState, modifier: Modifier = Modifier) {
-    androidx.compose.animation.AnimatedVisibility(
-        visible = state.selectedSubtitleLanguage != null,
-        enter = androidx.compose.animation.expandVertically(tween(180)) + androidx.compose.animation.fadeIn(tween(180)),
-        exit = androidx.compose.animation.shrinkVertically(tween(150)) + androidx.compose.animation.fadeOut(tween(150)),
-    ) {
-        Box(
-            modifier = modifier
-                .fillMaxWidth()
-                .background(Color.Black)
-                .padding(vertical = 8.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            CaptionLines(text = state.captionText ?: "\n", fontSize = 18.sp, plates = false)
-        }
+internal fun captionBarTop(size: IntSize, aspect: Float, letterboxed: Boolean): Float? {
+    if (!letterboxed || size.width <= 0 || size.height <= 0 || aspect <= 0f) return null
+    val w = size.width.toFloat()
+    val h = size.height.toFloat()
+    if (w / h <= aspect) {
+        val pictureH = w / aspect
+        return (h + pictureH) / 2f
     }
+    return null
 }
 
 private const val SeekBurstWindowMs = 600L

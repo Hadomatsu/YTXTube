@@ -252,9 +252,9 @@ enum class Tab(val defaultLabel: String, val icon: ImageVector, val selectedIcon
 
 
 private val NavHeight = 64.dp
-private val NavWidth = 368.dp
+private val NavWidth = 420.dp
 private val NavLift = 10.dp
-private val MiniWidth = 368.dp
+private val MiniWidth = 420.dp
 private val MiniGap = 8.dp
 
 @Composable
@@ -759,6 +759,9 @@ fun YtxTubeApp() {
         if (hasMini && !openSettings && tab != Tab.Shorts && shortsEntry == null) {
             val dismiss = remember { androidx.compose.animation.core.Animatable(0f) }
             LaunchedEffect(player.current?.id) { dismiss.snapTo(0f) }
+            // Swiping the mini player sideways closes it, like YouTube's.
+            val dismissX = remember { androidx.compose.animation.core.Animatable(0f) }
+            LaunchedEffect(player.current?.id) { dismissX.snapTo(0f) }
             val dismissDistance = with(density) { 56.dp.toPx() }
 
             if (player.isMusicMode || MiniPlayerSettings.useLiquidMiniPlayer) {
@@ -773,8 +776,29 @@ fun YtxTubeApp() {
                         .widthIn(max = MiniWidth)
                         .graphicsLayer {
                             translationY = dismiss.value
-                            alpha = (if (showPlayer) 0f else 1f) * (1f - (dismiss.value / (dismissDistance * 1.6f)).coerceIn(0f, 1f))
+                            translationX = dismissX.value
+                            alpha = (if (showPlayer) 0f else 1f) *
+                                (1f - (dismiss.value / (dismissDistance * 1.6f)).coerceIn(0f, 1f)) *
+                                (1f - (kotlin.math.abs(dismissX.value) / (dismissDistance * 5f)).coerceIn(0f, 1f))
                         }
+                        .draggable(
+                            state = rememberDraggableState { delta ->
+                                scope.launch { dismissX.snapTo(dismissX.value + delta) }
+                            },
+                            orientation = Orientation.Horizontal,
+                            onDragStopped = { velocity ->
+                                val far = kotlin.math.abs(dismissX.value) > dismissDistance * 2f || kotlin.math.abs(velocity) > 1200f
+                                scope.launch {
+                                    if (far) {
+                                        val dir = if (dismissX.value != 0f) kotlin.math.sign(dismissX.value) else kotlin.math.sign(velocity)
+                                        if (!reduced) dismissX.animateTo(dir * constraints.maxWidth.toFloat(), tween(200, easing = Motion.Emphasized))
+                                        player.close()
+                                    } else {
+                                        dismissX.animateTo(0f, spring(dampingRatio = 0.8f, stiffness = 500f))
+                                    }
+                                }
+                            },
+                        )
                         .draggable(
                             state = rememberDraggableState { delta ->
                                 if (morph.progress.value <= 0f && (delta > 0f || dismiss.value > 0f)) {
@@ -862,16 +886,28 @@ fun YtxTubeApp() {
                 .widthIn(max = NavWidth)
                 .fillMaxWidth(),
         ) {
+            // The pages come first, then Search and the profile (they open a screen, not a page).
+            val searchIndex = Tab.entries.size
+            val profileIndex = Tab.entries.size + 1
             LiquidBottomBar(
-                selectedTabIndex = { Tab.entries.indexOf(tab) },
-                onTabSelected = { index -> Tab.entries.getOrNull(index)?.let(selectTab) },
+                selectedTabIndex = { if (openSearch) searchIndex else Tab.entries.indexOf(tab) },
+                onTabSelected = { index ->
+                    when (index) {
+                        searchIndex -> openSearch = true
+                        profileIndex -> openSettings = true
+                        else -> Tab.entries.getOrNull(index)?.let(selectTab)
+                    }
+                },
                 backdrop = pageBackdrop,
+                tabsCount = Tab.entries.size + 2,
                 isDarkSurface = tab == Tab.Shorts,
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Tab.entries.forEach { t ->
-                    LiquidNavTab(t, t == tab, isDarkSurface = tab == Tab.Shorts) { selectTab(t) }
+                    LiquidNavTab(t, t == tab && !openSearch, isDarkSurface = tab == Tab.Shorts) { selectTab(t) }
                 }
+                LiquidSearchTab(selected = openSearch, isDarkSurface = tab == Tab.Shorts) { openSearch = true }
+                LiquidProfileTab(isDarkSurface = tab == Tab.Shorts) { openSettings = true }
             }
         }
 

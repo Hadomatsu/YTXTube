@@ -226,6 +226,17 @@ class PlayerState(private val scope: CoroutineScope) {
     var actionMessage by mutableStateOf<String?>(null)
 
     private var loadJob: Job? = null
+    private var relatedJob: Job? = null
+
+    /** True while the related videos are being fetched separately (the extractor had none). */
+    var relatedLoading by mutableStateOf(false)
+        private set
+
+    /** The related videos could not be loaded after a few tries; the UI offers a retry. */
+    var relatedFailed by mutableStateOf(false)
+        private set
+    private var captionFallbackFor: String? = null
+    private var captionFallbackRunning = false
 
     private var pendingStart: VideoItem? = null
 
@@ -304,6 +315,11 @@ class PlayerState(private val scope: CoroutineScope) {
         sheet = null
         comments.clearFor(item.id)
         liveChat.stop()
+        relatedJob?.cancel()
+        relatedLoading = false
+        relatedFailed = false
+        captionFallbackFor = null
+        captionFallbackRunning = false
         accountState = null
         inWatchLater = false
         audioOptions = emptyList()
@@ -344,6 +360,8 @@ class PlayerState(private val scope: CoroutineScope) {
                     Log.i("YTXTubeTime", "details +${android.os.SystemClock.elapsedRealtime() - openedAt}ms")
                     details = d
                     refreshTracks()
+                    if (d.related.isEmpty()) loadRelatedFallback(item.id, d.item.title)
+                    else prefetchRelated(d.related)
 
                     if (!aspectFromFrames) d.aspect?.let { videoAspect = it }
 
@@ -368,6 +386,49 @@ class PlayerState(private val scope: CoroutineScope) {
                     comments.load(item.id)
                 }
             loading = false
+        }
+    }
+
+    /**
+     * The extractor sometimes returns no related videos, which left "More videos" empty. Ask YouTube
+     * directly, a few times, without holding up the video itself.
+     */
+    private fun loadRelatedFallback(id: String, title: String) {
+        relatedJob?.cancel()
+        relatedFailed = false
+        relatedLoading = true
+        relatedJob = scope.launch {
+            var found: List<VideoItem> = emptyList()
+            for (attempt in 0 until 3) {
+                if (current?.id != id) return@launch
+                found = runCatching { YouTube.fallbackRelated(id, title) }.getOrDefault(emptyList())
+                if (found.isNotEmpty()) break
+                delay(1_000L * (attempt + 1))
+            }
+            if (current?.id != id) return@launch
+            relatedLoading = false
+            if (found.isEmpty()) {
+                relatedFailed = true
+                return@launch
+            }
+            found.forEach { known[it.id] = it }
+            details = details?.takeIf { it.item.id == id }?.copy(related = found)
+            prefetchRelated(found)
+        }
+    }
+
+    fun retryRelated() {
+        val d = details ?: return
+        loadRelatedFallback(d.item.id, d.item.title)
+    }
+
+    /** Resolve the first couple of related videos in the background, so tapping one starts faster. */
+    private fun prefetchRelated(list: List<VideoItem>) {
+        val ids = list.asSequence().filter { !it.isLive }.take(2).map { it.id }.toList()
+        if (ids.isEmpty()) return
+        scope.launch(Dispatchers.IO) {
+            delay(3_000) // let this video get going first
+            ids.forEach { StreamCache.prefetch(it) }
         }
     }
 
@@ -844,7 +905,7 @@ class PlayerState(private val scope: CoroutineScope) {
         val videoId = current?.id ?: return
         val tracks = captionTracksFor(videoId)
         if (tracks.isEmpty()) {
-            actionMessage = if (StreamCache.get(videoId) == null) "Captions are still loading" else "No captions for this video"
+            actionMessage = if (StreamCache.get(videoId) == null || captionFallbackRunning) "Captions are still loading" else "No captions for this video"
             return
         }
         val track = CaptionTracks.pick(tracks, CaptionPreference.languageTag)
@@ -861,7 +922,25 @@ class PlayerState(private val scope: CoroutineScope) {
     private fun prepareCaptions(videoId: String) {
         if (current?.id != videoId) return
         val tracks = captionTracksFor(videoId)
-        if (tracks.isEmpty()) return
+        if (tracks.isEmpty()) {
+            // The extraction listed no captions. Ask YouTube's player response directly, but only
+            // now: it used to run before the video could start, one more round trip for every
+            // video without captions.
+            if (captionFallbackFor != videoId && StreamCache.get(videoId) != null) {
+                captionFallbackFor = videoId
+                captionFallbackRunning = true
+                scope.launch {
+                    val found = withContext(Dispatchers.IO) {
+                        runCatching { CaptionTracks.load(videoId) }.getOrDefault(emptyList())
+                    }
+                    if (current?.id == videoId) {
+                        captionFallbackRunning = false
+                        if (found.isNotEmpty()) prepareCaptions(videoId)
+                    }
+                }
+            }
+            return
+        }
         val wanted = selectedSubtitleLanguage ?: CaptionPreference.languageTag
         val track = CaptionTracks.pick(tracks, wanted)
         if (selectedSubtitleLanguage != null || CaptionPreference.enabled) {
@@ -1016,6 +1095,9 @@ class PlayerState(private val scope: CoroutineScope) {
 
     fun close() {
         loadJob?.cancel()
+        relatedJob?.cancel()
+        relatedLoading = false
+        relatedFailed = false
         controller?.run { stop(); clearMediaItems() }
         queue = emptyList()
         expanded = false

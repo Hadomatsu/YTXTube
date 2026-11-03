@@ -28,6 +28,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.TextAutoSize
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AccountCircle
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -451,23 +454,80 @@ fun RowScope.LiquidNavTab(
         }
 
 
-        BasicText(
-            text = tab.label,
-            modifier = Modifier.fillMaxWidth(),
-            style = TextStyle(
-                color = contentColor,
-                fontSize = 11.sp,
-                letterSpacing = 0.sp,
-                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                textAlign = TextAlign.Center,
-            ),
-            maxLines = 1,
-            softWrap = false,
-            autoSize = TextAutoSize.StepBased(
-                minFontSize = 8.sp,
-                maxFontSize = 11.sp,
-                stepSize = 0.5.sp,
-            ),
-        )
+        NavLabel(tab.label, selected, contentColor)
+    }
+}
+
+@Composable
+private fun NavLabel(text: String, selected: Boolean, color: Color) {
+    BasicText(
+        text = text,
+        modifier = Modifier.fillMaxWidth(),
+        style = TextStyle(
+            color = color,
+            fontSize = 11.sp,
+            letterSpacing = 0.sp,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+            textAlign = TextAlign.Center,
+        ),
+        maxLines = 1,
+        softWrap = false,
+        autoSize = TextAutoSize.StepBased(
+            minFontSize = 8.sp,
+            maxFontSize = 11.sp,
+            stepSize = 0.5.sp,
+        ),
+    )
+}
+
+@Composable
+private fun navContentColor(isDarkSurface: Boolean): Color {
+    val isLightTheme = !isDarkSurface && !isSystemInDarkTheme() && ThemeSettings.mode != "dark" && ThemeSettings.mode != "amoled"
+    return if (isLightTheme) Color.Black else Color.White
+}
+
+/** Search in the bottom bar. It is an action, not a page, so it sits at the end of the row. */
+@Composable
+fun RowScope.LiquidSearchTab(
+    selected: Boolean,
+    isDarkSurface: Boolean = false,
+    onClick: () -> Unit,
+) {
+    val contentColor = navContentColor(isDarkSurface)
+    LiquidBottomTab(onClick = onClick) {
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(28.dp)) {
+            Icon(
+                Icons.Rounded.Search,
+                contentDescription = "Search",
+                tint = contentColor,
+                modifier = Modifier.size(22.dp),
+            )
+        }
+        NavLabel(I18n.t("tab_search", "Search"), selected, contentColor)
+    }
+}
+
+/** The profile in the bottom bar: the account picture when signed in, a generic icon otherwise. */
+@Composable
+fun RowScope.LiquidProfileTab(
+    isDarkSurface: Boolean = false,
+    onClick: () -> Unit,
+) {
+    val contentColor = navContentColor(isDarkSurface)
+    val profile = Account.profile
+    LiquidBottomTab(onClick = onClick) {
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(28.dp)) {
+            if (profile != null) {
+                ChannelAvatar(profile.avatar, profile.name, size = 24)
+            } else {
+                Icon(
+                    Icons.Rounded.AccountCircle,
+                    contentDescription = "Profile",
+                    tint = contentColor,
+                    modifier = Modifier.size(24.dp),
+                )
+            }
+        }
+        NavLabel(I18n.t("tab_profile", "Profile"), false, contentColor)
     }
 }

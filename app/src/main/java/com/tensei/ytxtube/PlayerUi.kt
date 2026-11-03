@@ -373,12 +373,14 @@ fun PlayerScreen(
                             items(related, key = { "wide-rel-" + it.id }) { video ->
                                 Box(Modifier.padding(horizontal = 14.dp, vertical = 2.dp)) { VideoRow(video, onClick = { onOpen(video) }) }
                             }
-                        } else if (state.loading) {
+                        } else if (state.loading || state.relatedLoading) {
                             item(key = "wideLoading") {
                                 Box(Modifier.fillMaxWidth().padding(top = 40.dp), Alignment.Center) {
                                     CircularProgressIndicator(color = c.primary, strokeWidth = 4.dp, modifier = Modifier.size(32.dp))
                                 }
                             }
+                        } else if (state.relatedFailed) {
+                            item(key = "wideRelatedRetry") { RelatedRetry(onRetry = state::retryRelated) }
                         }
                     }
                 }
@@ -392,11 +394,6 @@ fun PlayerScreen(
                 VideoStage(state, morph, onCollapse, onFullscreen, interactive)
             }
 
-
-            // Captions on a wide screen live in a black bar right under the picture.
-            if (state.wideStage) {
-                CaptionStrip(state, Modifier.graphicsLayer { alpha = ramp(morph.progress.value, DetailsFadeStart) })
-            }
 
             if (!showDetails) Spacer(Modifier.weight(1f)) else
             LazyColumn(
@@ -444,12 +441,14 @@ fun PlayerScreen(
                             Box(Modifier.padding(horizontal = 20.dp)) { VideoRow(video, onClick = { onOpen(video) }) }
                         }
                     }
-                } else if (state.loading) {
+                } else if (state.loading || state.relatedLoading) {
                     item(key = "loading") {
                         Box(Modifier.fillMaxWidth().padding(top = 40.dp), Alignment.Center) {
                             CircularProgressIndicator(color = c.primary, strokeWidth = 4.dp, modifier = Modifier.size(32.dp))
                         }
                     }
+                } else if (state.relatedFailed) {
+                    item(key = "relatedRetry") { RelatedRetry(onRetry = state::retryRelated) }
                 }
             }
         }
@@ -589,7 +588,6 @@ private fun VideoStage(state: PlayerState, morph: PlayerMorph, onCollapse: () ->
             onToggleFullscreen = onFullscreen,
             controlsAlpha = controlsAlpha,
             portraitEdgeScrub = true,
-            captionsBelow = state.wideStage,
             modifier = stage,
         )
     }
@@ -597,6 +595,20 @@ private fun VideoStage(state: PlayerState, morph: PlayerMorph, onCollapse: () ->
 
 
 private val FullscreenPull = 96.dp
+
+/** Shown under the video when "More videos" could not be loaded. */
+@Composable
+private fun RelatedRetry(onRetry: () -> Unit) {
+    val c = MaterialTheme.colorScheme
+    Column(
+        Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 28.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text("Couldn't load more videos", color = c.onSurfaceVariant, fontSize = 14.sp)
+        PillButton("Try again", onRetry)
+    }
+}
 
 
 
