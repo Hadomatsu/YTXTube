@@ -299,7 +299,7 @@ internal class TokState {
     }
 
     /** Switches between the phone site and the desktop site and reloads; the choice is kept. */
-    fun setDesktop(value: Boolean) {
+    fun switchSite(value: Boolean) {
         val web = webView ?: return
         desktop = value
         web.context.getSharedPreferences("tok", Context.MODE_PRIVATE).edit().putBoolean("desktop", value).apply()

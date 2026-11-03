@@ -263,7 +263,7 @@ private fun TokDiagStrip(state: TokState) {
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f),
         )
-        TokChip(if (state.desktop) "Mobile site" else "Desktop site") { state.setDesktop(!state.desktop) }
+        TokChip(if (state.desktop) "Mobile site" else "Desktop site") { state.switchSite(!state.desktop) }
         TokChip("Reload") { state.retry() }
     }
 }
