@@ -2,6 +2,8 @@
 // The video decodes (a canvas can read its frames) but the web view does not paint it, so the canvas
 // shows the picture instead, and TikTok's own captions and buttons stay where they are.
 (function () {
+  if (window.__ytxMirV === 'v8') return;
+  window.__ytxMirV = 'v8';
   ['ytx-dbg', 'ytx-paint'].forEach(function (id) { var o = document.getElementById(id); if (o) o.remove(); });
   if (window.__ytxDbgTimer) { clearInterval(window.__ytxDbgTimer); window.__ytxDbgTimer = 0; }
   var M = window.__ytxMir;
@@ -68,7 +70,7 @@
 
   var old = window.__ytxDiag;
   if (typeof old === 'function' && !old.__m) {
-    var w = function () { return old() + ' mir' + M.n + '/' + M.f + ' raf' + M.raf + ' vis:' + document.visibilityState + ' foc' + (document.hasFocus() ? 1 : 0) + (M.err ? ' E:' + M.err : ''); };
+    var w = function () { var L = window.__ytxMir || {}; return old() + ' mir' + L.n + '/' + L.f + ' raf' + L.raf + ' vis:' + document.visibilityState + ' foc' + (document.hasFocus() ? 1 : 0) + (L.err ? ' E:' + L.err : ''); };
     w.__m = true;
     window.__ytxDiag = w;
   }
