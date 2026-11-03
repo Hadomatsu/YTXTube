@@ -122,6 +122,7 @@ import androidx.core.content.ContextCompat
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberCombinedBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -475,7 +476,16 @@ fun YtxTubeApp() {
     LaunchedEffect(showFullscreen) { player.fullscreen = showFullscreen }
     SystemBarsHidden(showFullscreen)
 
+    // The player page comes back out of black after leaving fullscreen instead of cutting in.
+    val exitFade = remember { androidx.compose.animation.core.Animatable(1f) }
+
     fun exitFullscreen() {
+        if (!reduced) {
+            scope.launch(start = CoroutineStart.UNDISPATCHED) {
+                exitFade.snapTo(0f)
+                exitFade.animateTo(1f, tween(280, easing = Motion.Emphasized))
+            }
+        }
         player.portraitFullscreen = false
         player.fullscreen = false
         player.expanded = true
@@ -990,17 +1000,24 @@ fun YtxTubeApp() {
         }
 
         if (showFullscreen) {
-            // A short entrance instead of a hard cut: the screen goes dark while the video
-            // settles in from slightly above and a little smaller, like it was lifted to full size.
+            // The screen goes fully black first and only then does the video settle in, so the
+            // feed never shows through a half-faded video (that was the white outline). A swipe
+            // up arrives already dark, because the page dimmed under the finger.
             val enter = remember { androidx.compose.animation.core.Animatable(if (reduced) 1f else 0f) }
+            val startDark = remember { player.enterFrom }
             LaunchedEffect(Unit) {
-                if (reduced) enter.snapTo(1f) else enter.animateTo(1f, tween(Motion.FullscreenEnterMs, easing = Motion.Emphasized))
+                player.enterFrom = 0f
+                player.enterDrag.snapTo(0f)
+                if (reduced) enter.snapTo(1f) else enter.animateTo(1f, tween(Motion.FullscreenEnterMs, easing = Motion.FullscreenEase))
+            }
+            DisposableEffect(Unit) {
+                onDispose { scope.launch(start = CoroutineStart.UNDISPATCHED) { player.exitDrag.snapTo(0f) } }
             }
             Box(Modifier.fillMaxSize().layerBackdrop(playerBackdrop)) {
                 Box(
                     Modifier
                         .fillMaxSize()
-                        .graphicsLayer { alpha = (enter.value * 2.5f).coerceAtMost(1f) }
+                        .graphicsLayer { alpha = maxOf(startDark, (enter.value * 4f).coerceAtMost(1f)) }
                         .background(Color.Black),
                 )
                 Box(
@@ -1008,11 +1025,13 @@ fun YtxTubeApp() {
                         .fillMaxSize()
                         .graphicsLayer {
                             val p = enter.value
-                            alpha = (p * 2f).coerceAtMost(1f)
-                            val s = 0.92f + 0.08f * p
+                            // A swipe down shrinks the video away from the finger.
+                            val d = player.exitDrag.value
+                            alpha = ((p - 0.25f) / 0.45f).coerceIn(0f, 1f) * (1f - 0.3f * d)
+                            val s = (0.94f + 0.06f * p) * (1f - 0.12f * d)
                             scaleX = s
                             scaleY = s
-                            translationY = -size.height * 0.10f * (1f - p)
+                            translationY = size.height * 0.04f * (1f - p) + d * 96.dp.toPx()
                         },
                 ) {
                     FullscreenPlayer(player, onExit = { exitFullscreen() })
@@ -1020,13 +1039,23 @@ fun YtxTubeApp() {
             }
         } else if (showPlayer) {
             Box(Modifier.fillMaxSize().layerBackdrop(playerBackdrop)) {
-                PlayerScreen(
-                    player, morph,
-                    onOpen = player::open,
-                    onCollapse = { player.expanded = false },
-                    onFullscreen = { toggleFullscreen() },
-                    onSignIn = { signingIn = true },
-                )
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .drawBehind {
+                            val f = exitFade.value
+                            if (f < 1f) drawRect(Color.Black.copy(alpha = 1f - f))
+                        }
+                        .graphicsLayer { alpha = exitFade.value },
+                ) {
+                    PlayerScreen(
+                        player, morph,
+                        onOpen = player::open,
+                        onCollapse = { player.expanded = false },
+                        onFullscreen = { toggleFullscreen() },
+                        onSignIn = { signingIn = true },
+                    )
+                }
             }
         }
 

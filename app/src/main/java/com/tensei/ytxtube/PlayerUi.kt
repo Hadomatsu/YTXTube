@@ -314,6 +314,12 @@ fun PlayerScreen(
             }
 
 
+            .drawBehind {
+                // A swipe up toward fullscreen: the page goes dark under the finger.
+                val d = state.enterDrag.value
+                if (d > 0.001f) drawRect(Color.Black.copy(alpha = d))
+            }
+
             .then(if (interactive) Modifier.pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent() } } else Modifier),
     ) {
         ActionMessage(state, Modifier.align(Alignment.BottomCenter).zIndex(1f).padding(bottom = bottom + 24.dp))
@@ -405,7 +411,7 @@ fun PlayerScreen(
 
 
                         val p = morph.progress.value
-                        alpha = ramp(p, DetailsFadeStart)
+                        alpha = ramp(p, DetailsFadeStart) * (1f - state.enterDrag.value)
                         val g = morph.geometry
                         translationY = if (g != null && p < 0.98f) {
                             lerpF(g.miniThumb.bottom - g.stage.bottom, 0f, p)
@@ -515,7 +521,8 @@ private fun VideoStage(state: PlayerState, morph: PlayerMorph, onCollapse: () ->
         .aspectRatio(aspect)
         .graphicsLayer {
 
-            val k = 1f + 0.06f * (1f - exp(-pullUp.value / (pullDistance * 1.5f)))
+            val k = (1f + 0.06f * (1f - exp(-pullUp.value / (pullDistance * 1.5f)))) *
+                (1f + 0.045f * state.enterDrag.value)
             scaleX = k
             scaleY = k
             transformOrigin = TransformOrigin(0.5f, 0f)
@@ -594,6 +601,8 @@ private fun VideoStage(state: PlayerState, morph: PlayerMorph, onCollapse: () ->
             onToggleFullscreen = onFullscreen,
             controlsAlpha = controlsAlpha,
             portraitEdgeScrub = true,
+            onSwipeDrag = { morph.dragBy(it) },
+            onSwipeEnd = { morph.settle(it, reduced) },
             modifier = stage,
         )
     }

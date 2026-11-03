@@ -189,6 +189,18 @@ class PlayerState(private val scope: CoroutineScope) {
     /** Portrait videos go edge-to-edge without rotating the device, exactly like YouTube. */
     var portraitFullscreen by mutableStateOf(false)
 
+    /**
+     * How far a swipe up on the windowed video has dragged the player toward fullscreen (0 to 1).
+     * The page dims and the video grows while the finger is down, so the move follows the finger.
+     */
+    val enterDrag = androidx.compose.animation.core.Animatable(0f)
+
+    /** The same for a swipe down in fullscreen: the video shrinks away from the finger. */
+    val exitDrag = androidx.compose.animation.core.Animatable(0f)
+
+    /** How dark the page already was when a swipe committed, so the entrance continues from there. */
+    var enterFrom = 0f
+
     val portraitVideo get() = videoAspect < 1.02f
 
     var sheet by mutableStateOf<PlayerSheet?>(null)

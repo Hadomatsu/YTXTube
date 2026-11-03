@@ -31,6 +31,9 @@ import androidx.compose.ui.unit.dp
 
 object Motion {
     val Emphasized = CubicBezierEasing(0.2f, 0.9f, 0.2f, 1f)
+
+    /** Softer than Emphasized: the fullscreen entrance eases in instead of jumping at the start. */
+    val FullscreenEase = CubicBezierEasing(0.25f, 0.1f, 0.25f, 1f)
     val Morph = CubicBezierEasing(0.35f, 0f, 0.15f, 1.12f)
     const val PageEnterMs = 220
     const val PageRiseMs = 280
@@ -41,7 +44,7 @@ object Motion {
     const val CollapseMs = 380
 
     /** Entrance of the fullscreen player (swipe up or tap on the fullscreen button). */
-    const val FullscreenEnterMs = 320
+    const val FullscreenEnterMs = 440
 
     const val ControlsHideMs = 2_000L
 

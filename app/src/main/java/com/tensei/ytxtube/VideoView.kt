@@ -132,6 +132,8 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.input.pointer.util.VelocityTracker
+import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -148,6 +150,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.media3.ui.compose.PlayerSurface
 import androidx.media3.ui.compose.SURFACE_TYPE_TEXTURE_VIEW
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -177,6 +180,10 @@ fun VideoContent(
     onInactiveTap: () -> Unit = {},
 
     portraitEdgeScrub: Boolean = false,
+    // A swipe down on the windowed video drags the player toward the mini player. These carry the
+    // finger (in pixels, down is positive) and the release velocity to whoever owns that morph.
+    onSwipeDrag: ((Float) -> Unit)? = null,
+    onSwipeEnd: ((Float) -> Unit)? = null,
 ) {
 
 
@@ -224,6 +231,10 @@ fun VideoContent(
     }
     val currentInteractive by androidx.compose.runtime.rememberUpdatedState(interactive)
     val currentInactiveTap by androidx.compose.runtime.rememberUpdatedState(onInactiveTap)
+    val currentSwipeDrag by androidx.compose.runtime.rememberUpdatedState(onSwipeDrag)
+    val currentSwipeEnd by androidx.compose.runtime.rememberUpdatedState(onSwipeEnd)
+    // The video moves while it is dragged, so the finger is followed in window coordinates.
+    val coordsHolder = remember { arrayOfNulls<LayoutCoordinates>(1) }
     fun toggleControls() { controlsVisible = !controlsVisible; touched() }
     fun seekStep(side: Int) {
         val moved = state.seekBy(side * SeekStepMs)
@@ -293,7 +304,7 @@ fun VideoContent(
             }
         }
     }
-    Box(modifier.background(Color.Black).then(tvKeys).onSizeChanged { rootSize = it }.onGloballyPositioned { pip?.videoBounds = it.boundsInWindow() }.pointerInput(state, portraitEdgeScrub, fullscreen) {
+    Box(modifier.background(Color.Black).then(tvKeys).onSizeChanged { rootSize = it }.onGloballyPositioned { coordsHolder[0] = it; pip?.videoBounds = it.boundsInWindow() }.pointerInput(state, portraitEdgeScrub, fullscreen) {
         val doubleTapMs = viewConfiguration.doubleTapTimeoutMillis
         val holdSpeedMs = Motion.HoldSpeedMs
         coroutineScope {
@@ -323,7 +334,12 @@ fun VideoContent(
                 val startTime = System.currentTimeMillis()
                 val downX = down.position.x / size.width
                 val downY = down.position.y
-                val swipeSlop = viewConfiguration.touchSlop * 4f
+                val swipeSlop = viewConfiguration.touchSlop * 2.5f
+                val toWindow: (Offset) -> Offset = { pos ->
+                    coordsHolder[0]?.takeIf { it.isAttached }?.localToWindow(pos) ?: pos
+                }
+                var detectPos = down.position
+                val downUptime = down.uptimeMillis
 
                 // 0 = not a swipe, 1 = brightness, 2 = volume, 3 = vertical swipe (fullscreen),
                 // 4 = vertical swipe on the player below the video (not fullscreen).
@@ -341,6 +357,7 @@ fun VideoContent(
                             val totalDx = down.position.x - change.position.x
                             val verticalIntent = abs(totalDy) > abs(totalDx) * 1.5f
                             if (verticalIntent && abs(totalDy) > swipeSlop) {
+                                detectPos = change.position
                                 if (!fullscreen) {
                                     swipe = 4
                                     swipeUp = totalDy > 0f
@@ -363,20 +380,85 @@ fun VideoContent(
                     event.changes.firstOrNull()
                 }
 
-                if (swipe == 4) {
-                    // Like YouTube: swipe up goes fullscreen, swipe down minimizes. This used to be
-                    // left to a drag handler around the stage, but the pinch-zoom handler inside
-                    // swallowed the finger first, so neither ever fired.
-                    currentView.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
-                    if (swipeUp) onToggleFullscreen() else onCollapse()
-                    return@awaitEachGesture
-                }
-                if (swipe == 3) {
-                    // Like YouTube: a swipe down leaves fullscreen (it works with the edge
-                    // gestures turned off too).
-                    if (!swipeUp) {
-                        currentView.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
-                        onToggleFullscreen()
+                if (swipe == 3 || swipe == 4) {
+                    // Like YouTube, the player follows the finger and only commits on release: up
+                    // grows the video toward fullscreen, down shrinks it out of fullscreen or drags
+                    // it to the mini player. A short flick commits too.
+                    val enterDistance = 150.dp.toPx()
+                    val exitDistance = 190.dp.toPx()
+                    val tracker = VelocityTracker()
+                    val originY = toWindow(detectPos).y
+                    var lastY = originY
+                    tracker.addPosition(downUptime, Offset(0f, toWindow(down.position).y))
+                    val minimizing = swipe == 4 && !swipeUp
+                    val entering = swipe == 4 && swipeUp
+                    val leaving = swipe == 3 && !swipeUp
+                    val drag = if (fullscreen) state.exitDrag else state.enterDrag
+                    while (true) {
+                        val ev = awaitPointerEvent()
+                        val ch = ev.changes.firstOrNull { it.id == down.id } ?: break
+                        val y = toWindow(ch.position).y
+                        tracker.addPosition(ch.uptimeMillis, Offset(0f, y))
+                        if (!ch.pressed) {
+                            ch.consume()
+                            break
+                        }
+                        ch.consume()
+                        val total = y - originY
+                        val step = y - lastY
+                        lastY = y
+                        when {
+                            minimizing -> currentSwipeDrag?.invoke(step)
+                            entering -> {
+                                val target = (-total / enterDistance).coerceIn(0f, 1f)
+                                launch(start = CoroutineStart.UNDISPATCHED) { drag.snapTo(target) }
+                            }
+                            leaving -> {
+                                val target = (total / exitDistance).coerceIn(0f, 1f)
+                                launch(start = CoroutineStart.UNDISPATCHED) { drag.snapTo(target) }
+                            }
+                        }
+                    }
+                    val vy = tracker.calculateVelocity().y
+                    val settle = spring<Float>(dampingRatio = 0.85f, stiffness = 380f)
+                    when {
+                        minimizing -> {
+                            val end = currentSwipeEnd
+                            if (end != null) {
+                                end(vy)
+                            } else if (lastY - originY > enterDistance * 0.5f || vy > 1100f) {
+                                onCollapse()
+                            }
+                        }
+                        entering -> {
+                            val p = drag.value
+                            if (p >= 0.5f || vy < -1100f) {
+                                currentView.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                                state.enterFrom = p
+                                onToggleFullscreen()
+                                // If it never became fullscreen (rotation locked, say), let go of the dim.
+                                launch {
+                                    delay(900)
+                                    if (!state.fullscreen) drag.animateTo(0f, settle)
+                                }
+                            } else {
+                                launch { if (reduced) drag.snapTo(0f) else drag.animateTo(0f, settle) }
+                            }
+                        }
+                        leaving -> {
+                            val p = drag.value
+                            if (p >= 0.4f || vy > 1100f) {
+                                currentView.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                                onToggleFullscreen()
+                                // A phone rotates back first; do not leave the video stuck small meanwhile.
+                                launch {
+                                    delay(500)
+                                    if (state.fullscreen) drag.animateTo(0f, tween(200, easing = Motion.Emphasized))
+                                }
+                            } else {
+                                launch { if (reduced) drag.snapTo(0f) else drag.animateTo(0f, settle) }
+                            }
+                        }
                     }
                     return@awaitEachGesture
                 }
