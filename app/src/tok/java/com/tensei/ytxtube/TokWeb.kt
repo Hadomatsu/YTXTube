@@ -33,6 +33,14 @@ import androidx.webkit.WebViewFeature
 internal object TokWeb {
     const val HOME = "https://www.tiktok.com/foryou"
 
+    /** A page that measures the viewport units, used to compare this app's WebView with a plain one. */
+    val PROBE_HTML = """<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head>
+<body style="margin:0;background:#fff;color:#000;font:15px monospace"><pre id="o" style="white-space:pre-wrap;margin:6px"></pre>
+<script>
+function m(){var d=document.createElement('div');d.style.cssText='position:fixed;left:0;top:0;width:1px;visibility:hidden';document.body.appendChild(d);var r=[];['100vh','100dvh','100svh','100lvh','100%'].forEach(function(u){d.style.height=u;r.push(u+'='+d.offsetHeight)});d.remove();return r.join('  ')}
+setInterval(function(){document.getElementById('o').textContent='PROBE\n'+m()+'\ninner '+innerWidth+'x'+innerHeight+' dpr '+devicePixelRatio+' vv '+(window.visualViewport?Math.round(window.visualViewport.height):'-')+'\n'+navigator.userAgent},400);
+</script></body></html>"""
+
     /** Whether the WebView honours the page's viewport tag with a wide layout viewport (see applyTokMode). */
     @Volatile var wide = false
 
@@ -289,6 +297,7 @@ internal class TokState {
     var dockOn by mutableStateOf(true)
     var capWidth by mutableStateOf(true)
     var wideOn by mutableStateOf(false)
+    var plain by mutableStateOf(false)
     @Volatile var modeHint: Boolean = true
     var net by mutableStateOf("")
     var console by mutableStateOf("")

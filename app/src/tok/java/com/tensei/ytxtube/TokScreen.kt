@@ -144,6 +144,21 @@ internal fun TokScreen(state: TokState, onExit: () -> Unit) {
             }
         }
 
+        if (state.plain) {
+            // A vanilla WebView with default settings, to see whether the zero viewport units come from this app's setup.
+            Box(Modifier.fillMaxSize().statusBarsPadding().padding(top = 150.dp, bottom = 90.dp)) {
+                AndroidView(
+                    factory = { ctx ->
+                        android.webkit.WebView(ctx).also { w ->
+                            w.settings.javaScriptEnabled = true
+                            w.loadDataWithBaseURL("https://probe.local/", TokWeb.PROBE_HTML, "text/html", "utf-8", null)
+                        }
+                    },
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+        }
+
         // A thin line under the status bar while a page loads; the page itself is never covered.
         if (state.progress in 1..99) {
             Box(
@@ -278,6 +293,10 @@ private fun TokDiagStrip(state: TokState) {
             TokChip("Dock " + (if (state.dockOn) "on" else "off")) { state.dockOn = !state.dockOn }
             TokChip("Cap " + (if (state.capWidth) "on" else "off")) { state.capWidth = !state.capWidth }
             TokChip("Mode " + (if (state.modeHint) "on" else "off")) { state.dropModeRequest() }
+            TokChip("Probe") {
+                state.webView?.loadDataWithBaseURL("https://probe.local/", TokWeb.PROBE_HTML, "text/html", "utf-8", null)
+            }
+            TokChip("Plain " + (if (state.plain) "on" else "off")) { state.plain = !state.plain }
             TokChip("Wide " + (if (state.wideOn) "on" else "off")) {
                 state.wideOn = !state.wideOn
                 TokWeb.wide = state.wideOn
