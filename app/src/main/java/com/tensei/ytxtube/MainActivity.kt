@@ -148,10 +148,36 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         setHighestRefreshRate()
+        // Folding or unfolding switches to another screen with its own list of modes, so ask again
+        // whenever the display changes (not only when the app comes back to the front).
+        runCatching {
+            (getSystemService(DISPLAY_SERVICE) as android.hardware.display.DisplayManager)
+                .registerDisplayListener(displayListener, null)
+        }
+    }
+
+    private val displayListener = object : android.hardware.display.DisplayManager.DisplayListener {
+        override fun onDisplayAdded(displayId: Int) {}
+        override fun onDisplayRemoved(displayId: Int) {}
+        override fun onDisplayChanged(displayId: Int) { setHighestRefreshRate() }
+    }
+
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        setHighestRefreshRate()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) setHighestRefreshRate()
     }
 
     override fun onPause() {
         super.onPause()
+        runCatching {
+            (getSystemService(DISPLAY_SERVICE) as android.hardware.display.DisplayManager)
+                .unregisterDisplayListener(displayListener)
+        }
         shortsPlayerHolder?.pause()
     }
 
@@ -183,36 +209,36 @@ class MainActivity : ComponentActivity() {
         intentHandler?.invoke(intent)
     }
 
+    /**
+     * Asks for the panel's top refresh rate (120 Hz on this phone) for the whole window, on both
+     * screens of a foldable. Three requests, because phones honour different ones:
+     *  - the highest mode at the current resolution, as a display mode and as a rate;
+     *  - on Android 15 and newer, the "high" frame-rate category for the window's views.
+     * It only touches the window when something would actually change, so the display listener
+     * that calls this cannot loop.
+     */
     private fun setHighestRefreshRate() {
         runCatching {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                val disp = display ?: return
-                val currentMode = disp.mode
-                val modes = disp.supportedModes
-                val bestMode = modes
-                    .filter { it.physicalWidth == currentMode.physicalWidth && it.physicalHeight == currentMode.physicalHeight }
-                    .maxByOrNull { it.refreshRate }
-                    ?: modes.maxByOrNull { it.refreshRate }
-                if (bestMode != null) {
-                    val lp = window.attributes
+            @Suppress("DEPRECATION")
+            val disp = (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) display else windowManager.defaultDisplay) ?: return@runCatching
+            val currentMode = disp.mode
+            val modes = disp.supportedModes
+            val bestMode = modes
+                .filter { it.physicalWidth == currentMode.physicalWidth && it.physicalHeight == currentMode.physicalHeight }
+                .maxByOrNull { it.refreshRate }
+                ?: modes.maxByOrNull { it.refreshRate }
+            if (bestMode != null) {
+                val lp = window.attributes
+                if (lp.preferredDisplayModeId != bestMode.modeId || lp.preferredRefreshRate != bestMode.refreshRate) {
                     lp.preferredDisplayModeId = bestMode.modeId
                     lp.preferredRefreshRate = bestMode.refreshRate
                     window.attributes = lp
                 }
-            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                @Suppress("DEPRECATION")
-                val disp = windowManager.defaultDisplay ?: return
-                val currentMode = disp.mode
-                val modes = disp.supportedModes
-                val bestMode = modes
-                    .filter { it.physicalWidth == currentMode.physicalWidth && it.physicalHeight == currentMode.physicalHeight }
-                    .maxByOrNull { it.refreshRate }
-                    ?: modes.maxByOrNull { it.refreshRate }
-                if (bestMode != null) {
-                    val lp = window.attributes
-                    lp.preferredDisplayModeId = bestMode.modeId
-                    window.attributes = lp
-                }
+            }
+        }
+        if (Build.VERSION.SDK_INT >= 35) {
+            runCatching {
+                window.decorView.requestedFrameRate = android.view.View.REQUESTED_FRAME_RATE_CATEGORY_HIGH
             }
         }
     }
