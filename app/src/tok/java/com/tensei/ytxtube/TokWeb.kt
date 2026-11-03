@@ -8,6 +8,7 @@ import android.graphics.Color as AColor
 import android.net.Uri
 import android.os.Build
 import android.view.View
+import android.view.ViewGroup
 import android.webkit.ConsoleMessage
 import android.webkit.CookieManager
 import android.webkit.WebChromeClient
@@ -470,6 +471,10 @@ private class TokClient(private val state: TokState, private val context: Contex
 @SuppressLint("SetJavaScriptEnabled")
 internal fun createTokWebView(context: Context, state: TokState): WebView {
     val web = WebView(context)
+    // Compose adds the view with wrap-content layout params by default. A WebView whose height is wrap-content
+    // makes Chromium force the page's layout height to zero (so the page can size the view), which turns every
+    // 100vh into 0 and collapses TikTok's feed. The view always fills the space Compose gives it, so say so.
+    web.layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
     web.setBackgroundColor(AColor.BLACK)
     web.overScrollMode = View.OVER_SCROLL_NEVER
     web.isVerticalScrollBarEnabled = false

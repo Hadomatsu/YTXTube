@@ -150,6 +150,10 @@ internal fun TokScreen(state: TokState, onExit: () -> Unit) {
                 AndroidView(
                     factory = { ctx ->
                         android.webkit.WebView(ctx).also { w ->
+                            w.layoutParams = android.view.ViewGroup.LayoutParams(
+                                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                            )
                             w.settings.javaScriptEnabled = true
                             w.loadDataWithBaseURL("https://probe.local/", TokWeb.PROBE_HTML, "text/html", "utf-8", null)
                         }
