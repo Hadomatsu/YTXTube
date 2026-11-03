@@ -780,10 +780,11 @@ class PlayerState(private val scope: CoroutineScope) {
         }
 
         val videoId = current?.id ?: return
+        val language: String = code ?: return
         val url = trackUrl ?: run {
             val info = StreamCache.get(videoId)
-            info?.subtitles?.firstOrNull { it.languageTag == code }?.content
-                ?: CaptionTracks.get(videoId)?.let { CaptionTracks.pick(it, code) }?.url
+            info?.subtitles?.firstOrNull { it.languageTag == language }?.content
+                ?: CaptionTracks.get(videoId)?.let { CaptionTracks.pick(it, language) }?.url
         }
 
         // Already downloaded (prefetched when the video opened): show it right now.
