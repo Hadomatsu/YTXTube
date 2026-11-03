@@ -365,7 +365,7 @@ fun SubtitlesSheet(
                 Text("Text size", fontWeight = FontWeight.SemiBold, fontSize = 14.5.sp, color = c.onSurface, modifier = Modifier.weight(1f))
                 Box(
                     Modifier.size(36.dp).clip(CircleShape).background(c.surfaceContainerHighest)
-                        .pressable { CaptionPreference.setScale(CaptionPreference.scale - 0.1f) },
+                        .pressable { CaptionPreference.updateScale(CaptionPreference.scale - 0.1f) },
                     contentAlignment = Alignment.Center,
                 ) { Text("A−", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = c.onSurface) }
                 Text(
@@ -377,7 +377,7 @@ fun SubtitlesSheet(
                 )
                 Box(
                     Modifier.size(36.dp).clip(CircleShape).background(c.surfaceContainerHighest)
-                        .pressable { CaptionPreference.setScale(CaptionPreference.scale + 0.1f) },
+                        .pressable { CaptionPreference.updateScale(CaptionPreference.scale + 0.1f) },
                     contentAlignment = Alignment.Center,
                 ) { Text("A+", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = c.onSurface) }
             }

@@ -77,7 +77,7 @@ object CaptionPreference {
     var scale by androidx.compose.runtime.mutableFloatStateOf(1f)
         private set
 
-    fun setScale(value: Float) {
+    fun updateScale(value: Float) {
         scale = (Math.round(value.coerceIn(0.6f, 2.5f) * 10f) / 10f)
         prefs?.edit()?.putFloat("captions_scale", scale)?.apply()
     }

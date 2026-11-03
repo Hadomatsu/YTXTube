@@ -2430,7 +2430,7 @@ private fun PlaybackSettingsContent() {
             subtitle = "Also adjustable live from the captions button on a video",
             options = scales.map { "${Math.round(it * 100)} %" },
             selected = scales.indexOfFirst { kotlin.math.abs(it - CaptionPreference.scale) < 0.05f }.let { if (it < 0) 2 else it },
-            onSelect = { CaptionPreference.setScale(scales[it]) },
+            onSelect = { CaptionPreference.updateScale(scales[it]) },
         )
         SettingsSwitchRow(
             title = "Captions on by default",
