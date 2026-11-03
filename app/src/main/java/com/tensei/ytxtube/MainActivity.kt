@@ -244,12 +244,6 @@ class MainActivity : ComponentActivity() {
                     lp.preferredRefreshRate = bestMode.refreshRate
                     changed = true
                 }
-                // Android 14+: also ask for a minimum render rate, which is what phones with a
-                // variable (LTPO) panel use to decide how fast an app may draw.
-                if (Build.VERSION.SDK_INT >= 34 && lp.preferredMinDisplayRefreshRate != bestMode.refreshRate) {
-                    lp.preferredMinDisplayRefreshRate = bestMode.refreshRate
-                    changed = true
-                }
                 if (changed) window.attributes = lp
             }
         }
