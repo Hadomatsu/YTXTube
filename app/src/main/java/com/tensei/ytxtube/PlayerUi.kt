@@ -547,6 +547,10 @@ private fun VideoStage(state: PlayerState, morph: PlayerMorph, onCollapse: () ->
             spotShadowColor = Color.Black.copy(alpha = 0.35f)
         }
         .draggable(
+            // While the video is open the swipes are handled inside VideoContent (the pinch-zoom
+            // handler there consumed the finger before this drag could start). This one still
+            // carries the small, collapsed player and the audio-only stage.
+            enabled = !interactive || AudioOnly.enabled,
             state = rememberDraggableState { delta ->
                 if (!decided) {
                     decided = true

@@ -323,25 +323,28 @@ fun VideoContent(
                 val startTime = System.currentTimeMillis()
                 val downX = down.position.x / size.width
                 val downY = down.position.y
-                val swipeSlop = viewConfiguration.touchSlop * 3f
+                val swipeSlop = viewConfiguration.touchSlop * 4f
 
-                // 0 = not a swipe, 1 = brightness, 2 = volume, 3 = leave fullscreen / ignore,
-                // 4 = a swipe on the small player, which the stage's own drag handles.
+                // 0 = not a swipe, 1 = brightness, 2 = volume, 3 = vertical swipe (fullscreen),
+                // 4 = vertical swipe on the player below the video (not fullscreen).
                 var swipe = 0
                 var swipeUp = false
+                var pinching = false
                 val upEarly = withTimeoutOrNull(holdSpeedMs) {
                     var event = awaitPointerEvent()
                     while (event.changes.any { it.pressed }) {
                         val change = event.changes.firstOrNull { it.pressed }
-                        if (change != null) {
+                        // Two fingers is a pinch to zoom, never a swipe.
+                        if (event.changes.count { it.pressed } > 1) pinching = true
+                        if (change != null && !pinching) {
                             val totalDy = downY - change.position.y
                             val totalDx = down.position.x - change.position.x
                             val verticalIntent = abs(totalDy) > abs(totalDx) * 1.5f
                             if (verticalIntent && abs(totalDy) > swipeSlop) {
                                 if (!fullscreen) {
-                                    // Swipe down minimizes and swipe up goes fullscreen; the stage
-                                    // (VideoStage) follows the finger for both, so leave it alone.
                                     swipe = 4
+                                    swipeUp = totalDy > 0f
+                                    change.consume()
                                 } else {
                                     val gesturesOn = VideoGestureSettings.enabled
                                     swipe = when {
@@ -360,11 +363,21 @@ fun VideoContent(
                     event.changes.firstOrNull()
                 }
 
-                if (swipe == 4) return@awaitEachGesture
+                if (swipe == 4) {
+                    // Like YouTube: swipe up goes fullscreen, swipe down minimizes. This used to be
+                    // left to a drag handler around the stage, but the pinch-zoom handler inside
+                    // swallowed the finger first, so neither ever fired.
+                    currentView.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                    if (swipeUp) onToggleFullscreen() else onCollapse()
+                    return@awaitEachGesture
+                }
                 if (swipe == 3) {
                     // Like YouTube: a swipe down leaves fullscreen (it works with the edge
                     // gestures turned off too).
-                    if (!swipeUp) onToggleFullscreen()
+                    if (!swipeUp) {
+                        currentView.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                        onToggleFullscreen()
+                    }
                     return@awaitEachGesture
                 }
                 if (swipe == 1 || swipe == 2) {
