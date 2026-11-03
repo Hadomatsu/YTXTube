@@ -81,6 +81,7 @@ import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Translate
+import androidx.compose.material.icons.rounded.VideoLibrary
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -128,6 +129,8 @@ fun SettingsScreen(
     onAccountSwitched: () -> Unit = {},
     contentPadding: PaddingValues = PaddingValues(0.dp),
     onCheckUpdate: () -> Unit = {},
+    onOpenLibrary: () -> Unit = {},
+    onOpenDownloads: () -> Unit = {},
 ) {
     val c = MaterialTheme.colorScheme
     val context = LocalContext.current
@@ -181,6 +184,23 @@ fun SettingsScreen(
                     onRequestSignOut = { showSignOutConfirm = true },
                     onAccountSwitched = onAccountSwitched,
                 )
+
+                // Library and Saved used to be tabs in the bottom bar; they live here now.
+                SettingsSectionHeader(I18n.t("tab_library", "Library"))
+                SettingsCard {
+                    SettingsRow(
+                        icon = Icons.Rounded.VideoLibrary,
+                        title = I18n.t("tab_library", "Library"),
+                        subtitle = I18n.t("library_sub", "History, playlists and liked videos"),
+                        onClick = onOpenLibrary,
+                    )
+                    SettingsRow(
+                        icon = Icons.Rounded.Download,
+                        title = I18n.t("tab_downloads", "Saved"),
+                        subtitle = I18n.t("downloads_sub", "Videos downloaded to watch offline"),
+                        onClick = onOpenDownloads,
+                    )
+                }
 
                 SettingsSectionHeader(I18n.t("customization", "Customization"))
                 SettingsCard {

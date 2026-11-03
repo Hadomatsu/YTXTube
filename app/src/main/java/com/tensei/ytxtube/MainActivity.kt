@@ -248,13 +248,18 @@ enum class Tab(val defaultLabel: String, val icon: ImageVector, val selectedIcon
             Library -> I18n.t("tab_library", defaultLabel)
             Downloads -> I18n.t("tab_downloads", defaultLabel)
         }
+
+    companion object {
+        /** The pages in the bottom bar. Library and Saved are reached from the profile screen. */
+        val bar = listOf(Home, Music, Shorts)
+    }
 }
 
 
 private val NavHeight = 64.dp
-private val NavWidth = 420.dp
+private val NavWidth = 368.dp
 private val NavLift = 10.dp
-private val MiniWidth = 420.dp
+private val MiniWidth = 368.dp
 private val MiniGap = 8.dp
 
 @Composable
@@ -748,6 +753,22 @@ fun YtxTubeApp() {
                 },
                 contentPadding = PaddingValues(bottom = navBottom),
                 onCheckUpdate = { updateState.check(manual = true) },
+                onOpenLibrary = {
+                    openSettings = false
+                    openPlaylist = null
+                    openChannel = null
+                    openAllSubscriptions = false
+                    openSearch = false
+                    tab = Tab.Library
+                },
+                onOpenDownloads = {
+                    openSettings = false
+                    openPlaylist = null
+                    openChannel = null
+                    openAllSubscriptions = false
+                    openSearch = false
+                    tab = Tab.Downloads
+                },
             )
         }
 
@@ -887,27 +908,37 @@ fun YtxTubeApp() {
                 .fillMaxWidth(),
         ) {
             // The pages come first, then Search and the profile (they open a screen, not a page).
-            val searchIndex = Tab.entries.size
-            val profileIndex = Tab.entries.size + 1
+            val barTabs = Tab.bar
+            val searchIndex = barTabs.size
+            val profileIndex = barTabs.size + 1
+            // Library and Saved open from the profile, so while one of them is showing the
+            // highlight sits on Profile.
+            val onProfilePage = tab !in barTabs
             LiquidBottomBar(
-                selectedTabIndex = { if (openSearch) searchIndex else Tab.entries.indexOf(tab) },
+                selectedTabIndex = {
+                    when {
+                        openSearch -> searchIndex
+                        tab in barTabs -> barTabs.indexOf(tab)
+                        else -> profileIndex
+                    }
+                },
                 onTabSelected = { index ->
                     when (index) {
                         searchIndex -> openSearch = true
                         profileIndex -> openSettings = true
-                        else -> Tab.entries.getOrNull(index)?.let(selectTab)
+                        else -> barTabs.getOrNull(index)?.let(selectTab)
                     }
                 },
                 backdrop = pageBackdrop,
-                tabsCount = Tab.entries.size + 2,
+                tabsCount = barTabs.size + 2,
                 isDarkSurface = tab == Tab.Shorts,
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Tab.entries.forEach { t ->
+                barTabs.forEach { t ->
                     LiquidNavTab(t, t == tab && !openSearch, isDarkSurface = tab == Tab.Shorts) { selectTab(t) }
                 }
                 LiquidSearchTab(selected = openSearch, isDarkSurface = tab == Tab.Shorts) { openSearch = true }
-                LiquidProfileTab(isDarkSurface = tab == Tab.Shorts) { openSettings = true }
+                LiquidProfileTab(selected = onProfilePage && !openSearch, isDarkSurface = tab == Tab.Shorts) { openSettings = true }
             }
         }
 

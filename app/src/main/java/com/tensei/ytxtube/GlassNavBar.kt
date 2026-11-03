@@ -510,6 +510,7 @@ fun RowScope.LiquidSearchTab(
 /** The profile in the bottom bar: the account picture when signed in, a generic icon otherwise. */
 @Composable
 fun RowScope.LiquidProfileTab(
+    selected: Boolean = false,
     isDarkSurface: Boolean = false,
     onClick: () -> Unit,
 ) {
@@ -528,6 +529,6 @@ fun RowScope.LiquidProfileTab(
                 )
             }
         }
-        NavLabel(I18n.t("tab_profile", "Profile"), false, contentColor)
+        NavLabel(I18n.t("tab_profile", "Profile"), selected, contentColor)
     }
 }
