@@ -833,16 +833,28 @@ object InnerTube {
         val cleanTitle = title.replace(Regex("(?i)\\(official.*?\\)|\\[official.*?\\]|\\(audio\\)|\\[audio\\]|\\(video\\)|\\[video\\]|\\(lyric.*?\\)"), "")
             .replace(Regex("(?i)ft\\..*|feat\\..*"), "")
             .trim()
-        val cleanArtist = artist.split(",", "·", "&", "feat.", "ft.", " - ").firstOrNull()?.trim() ?: artist.trim()
+        // A music item's subtitle is "Artist • Album • Year"; only the first part is the artist.
+        val parts = artist.split("•", "·").map { it.trim() }.filter { it.isNotEmpty() }
+        val artistName = parts.firstOrNull() ?: artist.trim()
+        val album = parts.drop(1).firstOrNull {
+            !it.matches(Regex("\\d{4}")) && !it.contains("view", ignoreCase = true) &&
+                !it.equals("Song", ignoreCase = true) && !it.equals("Video", ignoreCase = true)
+        }
+        val cleanArtist = artistName.split(",", "&", "feat.", "ft.", " - ").firstOrNull()?.trim() ?: artistName
 
 
-        // Apple Music word timing first (Settings, Music & Lyrics), as BitChord does.
+        var plainFromServices: LyricsDoc? = null
+        // Every lyrics service BitChord uses, asked at once, Apple Music word timing first
+        // (Settings, Music & Lyrics). The app's own LRCLIB and YouTube Music lookups follow.
         if (PlaybackPrefs.lyricsMode == LyricsMode.WORD_SYNCED) {
-            val words = kotlinx.coroutines.withTimeoutOrNull(7_000) { AppleLyrics.fetch(cleanTitle, cleanArtist, durationSec) }
-            if (!words.isNullOrEmpty()) return@withContext LyricsDoc(words, source = "BetterLyrics (Apple Music)")
+            val found = kotlinx.coroutines.withTimeoutOrNull(20_000) {
+                com.tensei.ytxtube.bclyrics.BitChordLyrics.lookup(videoId, title, artistName, durationSec * 1000L, album)
+            }
+            if (found != null && found.synced) return@withContext found
+            if (found != null) plainFromServices = found
         }
 
-        var plainFallback: LyricsDoc? = null
+        var plainFallback: LyricsDoc? = plainFromServices
         runCatching {
             val encT = java.net.URLEncoder.encode(cleanTitle, "UTF-8")
             val encA = java.net.URLEncoder.encode(cleanArtist, "UTF-8")

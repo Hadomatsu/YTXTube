@@ -1,6 +1,7 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
+    id("org.jetbrains.kotlin.plugin.serialization")
 }
 
 android {
@@ -10,8 +11,8 @@ android {
     defaultConfig {
         minSdk = 24
         targetSdk = 36
-        versionCode = 249
-        versionName = "2.3.13"
+        versionCode = 250
+        versionName = "2.3.14"
     }
 
     // Two apps from one codebase: the YouTube client and the TikTok client (own package, own icon, own APK).
@@ -148,6 +149,9 @@ dependencies {
 
     implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.26.5")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    // Lyrics providers ported from BitChord (bclyrics package).
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
+    implementation("org.jsoup:jsoup:1.21.1")
     implementation("io.coil-kt:coil-compose:2.7.0")
     "tokImplementation"("androidx.webkit:webkit:1.14.0")
     implementation("com.google.guava:guava:33.3.1-android")

@@ -18,8 +18,8 @@ enum class AudioQuality(val label: String, val detail: String) {
 
 /** Where the lyrics come from, tried in this order. */
 enum class LyricsMode(val label: String, val detail: String) {
-    WORD_SYNCED("Word by word first", "Apple Music style timing from BetterLyrics when it has the song, then line-synced lyrics"),
-    LINE_SYNCED("Line synced only", "LRCLIB line timing, then YouTube Music's own lyrics"),
+    WORD_SYNCED("All sources", "Like BitChord: Apple Music word timing (lrc.red, BiniLyrics, BetterLyrics, PaxSenix, LyricsPlus), then Unison, KuGou, LRCLIB, Musixmatch and Genius, then YouTube Music"),
+    LINE_SYNCED("Quick", "Only LRCLIB and YouTube Music's own lyrics, line by line"),
 }
 
 /**
