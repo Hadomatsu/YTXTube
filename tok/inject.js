@@ -17,6 +17,8 @@
     var s = getComputedStyle(e);
     return cls(e) + ' ' + box(e) + ' d:' + s.display + ' v:' + s.visibility + ' o:' + s.opacity + ' p:' + s.position +
       ' bg:' + s.backgroundColor.replace('rgba(0, 0, 0, 0)', '-').replace(/ /g, '') + ' c:' + s.color.replace(/ /g, '') +
+      ' ov:' + s.overflowX + '/' + s.overflowY + ' pe:' + s.pointerEvents + (s.contain !== 'none' ? ' ct:' + s.contain : '') +
+      (s.contentVisibility !== 'visible' ? ' cv:' + s.contentVisibility : '') + (s.clipPath !== 'none' ? ' CLIP' : '') +
       (s.filter !== 'none' ? ' F' : '') + (s.transform !== 'none' ? ' T' : '');
   }
   function lines() {
@@ -34,11 +36,14 @@
       if (vids[0]) {
         L.push('V ' + st(vids[0]));
         var e = vids[0].parentElement, n = 0;
-        while (e && e !== h && n < 6) { L.push(' ^' + st(e)); e = e.parentElement; n++; }
+        while (e && e !== h && n < 12) { L.push(' ^' + st(e)); e = e.parentElement; n++; }
+        var se = document.scrollingElement;
+        L.push('scroll ' + (se ? se.tagName + ' ' + se.scrollTop + '/' + se.scrollHeight + ' c' + se.clientHeight : 'none') + ' win ' + innerWidth + 'x' + innerHeight + ' vv ' + (window.visualViewport ? Math.round(window.visualViewport.width) + 'x' + Math.round(window.visualViewport.height) + ' s' + window.visualViewport.scale : '-'));
       }
       var cx = Math.round(innerWidth / 2), cy = Math.round(innerHeight / 2);
-      L.push('stack@center:');
-      document.elementsFromPoint(cx, cy).slice(0, 5).forEach(function (x) { L.push(' @' + st(x)); });
+      L.push('stack@center ' + cx + ',' + cy + ':');
+      document.elementsFromPoint(cx, cy).slice(0, 3).forEach(function (x) { L.push(' @' + st(x)); });
+      if (vids[0]) { var vr = vids[0].getBoundingClientRect(); var hit = document.elementsFromPoint(Math.round(vr.left + vr.width / 2), Math.round(vr.top + vr.height / 2)); L.push('stack@video ' + hit.length + ' ' + hit.slice(0, 3).map(cls).join(' ')); }
     } catch (x) { L.push('error ' + x); }
     return L;
   }
@@ -47,7 +52,7 @@
     if (!p) {
       p = document.createElement('div');
       p.id = 'ytx-dbg';
-      p.style.cssText = 'position:fixed;left:0;right:0;bottom:90px;z-index:2147483647;pointer-events:none;background:#000;border-top:2px solid #0f0;padding:2px';
+      p.style.cssText = 'position:fixed;left:0;right:0;top:0;z-index:2147483647;pointer-events:none;background:#000;border-top:2px solid #0f0;padding:2px';
       (document.body || document.documentElement).appendChild(p);
     }
     var html = '';
