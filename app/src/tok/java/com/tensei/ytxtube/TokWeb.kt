@@ -66,13 +66,35 @@ internal object TokWeb {
     }
 
     /**
-     * The identity Chrome on an Android phone sends (device name reduced to "K", no "wv" or "Build/"),
-     * with the Chrome version of this WebView, so TikTok serves its normal phone page.
+     * The identity Chrome sends, with the Chrome version of this WebView: the phone one (device name
+     * reduced to "K", no "wv" or "Build/") so TikTok serves its normal phone page, or the desktop one
+     * for pages the phone site does not offer, such as signing in.
      */
-    fun userAgent(context: Context): String {
+    fun userAgent(context: Context, desktop: Boolean = false): String {
         val default = WebSettings.getDefaultUserAgent(context)
         val chrome = Regex("Chrome/([0-9.]+)").find(default)?.groupValues?.get(1) ?: "138.0.0.0"
-        return "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/" + chrome + " Mobile Safari/537.36"
+        return if (desktop) {
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/" + chrome + " Safari/537.36"
+        } else {
+            "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/" + chrome + " Mobile Safari/537.36"
+        }
+    }
+
+    /**
+     * Starts TikTok's own theme cookies on dark the first time (when there is no choice yet), so the feed is
+     * black like the rest of the app. A theme picked later in TikTok's settings is never overwritten.
+     */
+    fun presetDarkTheme() {
+        val cookies = CookieManager.getInstance()
+        val existing = cookies.getCookie("https://www.tiktok.com") ?: ""
+        if (existing.contains("tiktok_webapp_theme=")) return
+        for (name in listOf("tiktok_webapp_theme", "tiktok_webapp_theme_source")) {
+            cookies.setCookie(
+                "https://www.tiktok.com",
+                name + "=dark; Domain=.tiktok.com; Path=/; Max-Age=31536000; Secure; SameSite=Lax",
+            )
+        }
+        cookies.flush()
     }
 
     /**
@@ -94,7 +116,7 @@ internal object TokWeb {
     '::-webkit-scrollbar{display:none}' +
     '[data-ytx-nav]{opacity:0 !important;pointer-events:none !important}' +
     '[data-ytx-hide]{display:none !important}' +
-    '[data-e2e="middle-cta-container"]{display:none !important}';
+    '[data-ytx-wall]{display:none !important}';
   function addStyle() {
     var host = document.head || document.documentElement;
     if (!host) return;
@@ -116,8 +138,34 @@ internal object TokWeb {
         e.setAttribute('data-ytx-nav', '1');
       }
     }
-    var no = document.querySelector('[data-e2e="alt-middle-cta-cancel-btn"]');
-    if (no) no.click();
+    // Only on pages that have TikTok's normal bottom bar. On other pages (sign-in) the same card can be the page itself.
+    if (h) {
+      var no = document.querySelector('[data-e2e="alt-middle-cta-cancel-btn"]');
+      if (no && !no.__ytxClicked) { no.__ytxClicked = true; no.click(); }
+      var cta = document.querySelector('[data-e2e="middle-cta-container"]');
+      if (cta && !cta.closest('[data-ytx-wall]')) {
+        // Hide the card together with the wrapper that holds its dimming layer, but never anything holding the feed.
+        var top = cta;
+        while (top.parentElement && top.parentElement !== document.body && top.parentElement !== document.documentElement) {
+          var par = top.parentElement;
+          if (par.querySelector('[data-e2e="video-card"],[data-e2e="home-icon"],[data-e2e="profile-icon"],[data-e2e="header-foryou"]')) break;
+          top = par;
+        }
+        top.setAttribute('data-ytx-wall', '1');
+      }
+    }
+    var vids = document.querySelectorAll('video');
+    for (var k = 0; k < vids.length; k++) {
+      var v = vids[k];
+      if (v.__ytxTried || v.readyState < 2) continue;
+      var vr = v.getBoundingClientRect();
+      if (!(vr.height > 0 && vr.top < innerHeight * 0.6 && vr.bottom > innerHeight * 0.4)) continue;
+      v.__ytxTried = true;
+      if (v.paused) {
+        var pr1 = v.play();
+        if (pr1 && pr1.catch) pr1.catch(function () { v.muted = true; var pr2 = v.play(); if (pr2 && pr2.catch) pr2.catch(function () {}); });
+      }
+    }
     var now = Date.now();
     if (now - lastScan > 1500 && !document.querySelector('[data-ytx-hide]')) {
       lastScan = now;
@@ -160,6 +208,7 @@ internal object TokWeb {
   document.addEventListener('readystatechange', schedule);
   document.addEventListener('DOMContentLoaded', schedule);
   try { addStyle(); observe(); } catch (x) {}
+  setInterval(schedule, 1500);
   schedule();
 })();
 """
@@ -168,6 +217,19 @@ internal object TokWeb {
     /** Clicks one of TikTok's own bottom-bar links; answers "1" when it found it, so the caller can fall back to loading the page. */
     fun clickScript(e2e: String): String =
         "(function(){var a=document.querySelector('[data-e2e=\"$e2e\"]');if(a){a.click();return '1';}return '0';})()"
+
+    /** One short line about the page and its video, shown in the strip at the top while this client is being tuned. */
+    const val DIAG_SCRIPT =
+        "(function(){try{var v=[].slice.call(document.querySelectorAll('video'));" +
+            "var a=v.filter(function(x){var r=x.getBoundingClientRect();return r.height>0&&r.top<innerHeight*0.6&&r.bottom>innerHeight*0.4})[0]||v[0];" +
+            "var s='v'+v.length;" +
+            "if(a){s+=' '+(a.paused?'paused':'play')+' rs'+a.readyState+' '+a.videoWidth+'x'+a.videoHeight+(a.error?' err'+a.error.code:'');}" +
+            "if(document.querySelector('[data-e2e=\\\"middle-cta-container\\\"]'))s+=' wall';" +
+            "s+=' '+location.pathname+' txt'+((document.body&&document.body.innerText)||'').length+' if'+document.querySelectorAll('iframe').length" +
+            "+' '+document.documentElement.getAttribute('data-theme')+' '+innerWidth+'w';" +
+            "var ms=window.MediaSource;" +
+            "s+=' mse'+(ms?(ms.isTypeSupported('video/mp4; codecs=\\'avc1.42E01E\\'')?'A':'a')+(ms.isTypeSupported('video/mp4; codecs=\\'hvc1.1.6.L93.B0\\'')?'H':'h'):'-');" +
+            "return s;}catch(x){return 'diag error '+x}})()"
 
     /** Stops every video, for when the app leaves the screen. */
     const val PAUSE_SCRIPT =
@@ -191,6 +253,9 @@ internal class TokState {
     var loadedOnce by mutableStateOf(false)
     var error by mutableStateOf(false)
     var errorDetail by mutableStateOf("")
+    var diag by mutableStateOf("")
+    /** Whether the page is loaded as the desktop site (needed for some sign-in screens). */
+    var desktop by mutableStateOf(false)
     var webView: WebView? = null
     var pendingUrl: String? = null
 
@@ -231,6 +296,17 @@ internal class TokState {
         progress = 0
         val web = webView ?: return
         if (web.url.isNullOrEmpty() || web.url == "about:blank") web.loadUrl(TokWeb.HOME) else web.reload()
+    }
+
+    /** Switches between the phone site and the desktop site and reloads; the choice is kept. */
+    fun setDesktop(value: Boolean) {
+        val web = webView ?: return
+        desktop = value
+        web.context.getSharedPreferences("tok", Context.MODE_PRIVATE).edit().putBoolean("desktop", value).apply()
+        applyTokMode(web, value)
+        error = false
+        progress = 0
+        web.reload()
     }
 
     fun load(url: String) {
@@ -302,20 +378,17 @@ internal fun createTokWebView(context: Context, state: TokState): WebView {
     s.javaScriptEnabled = true
     s.domStorageEnabled = true
     s.mediaPlaybackRequiresUserGesture = false
-    s.useWideViewPort = true
-    s.loadWithOverviewMode = false
     s.textZoom = 100
-    s.setSupportZoom(false)
-    s.builtInZoomControls = false
-    s.displayZoomControls = false
     s.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
     s.allowFileAccess = false
     s.allowContentAccess = false
-    s.userAgentString = TokWeb.userAgent(context)
+    state.desktop = context.getSharedPreferences("tok", Context.MODE_PRIVATE).getBoolean("desktop", false)
+    applyTokMode(web, state.desktop)
 
     val cookies = CookieManager.getInstance()
     cookies.setAcceptCookie(true)
     cookies.setAcceptThirdPartyCookies(web, true)
+    TokWeb.presetDarkTheme()
 
     web.webViewClient = TokClient(state, context)
     web.webChromeClient = object : WebChromeClient() {
@@ -338,4 +411,15 @@ internal fun createTokWebView(context: Context, state: TokState): WebView {
         runCatching { web.requestedFrameRate = View.REQUESTED_FRAME_RATE_CATEGORY_HIGH }
     }
     return web
+}
+
+/** The phone site (default) or the desktop site: identity, and whether the page can be pinched. */
+internal fun applyTokMode(web: WebView, desktop: Boolean) {
+    val s = web.settings
+    s.userAgentString = TokWeb.userAgent(web.context, desktop)
+    s.useWideViewPort = true
+    s.loadWithOverviewMode = desktop
+    s.setSupportZoom(desktop)
+    s.builtInZoomControls = desktop
+    s.displayZoomControls = false
 }

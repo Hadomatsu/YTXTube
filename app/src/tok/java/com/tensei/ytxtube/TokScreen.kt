@@ -10,6 +10,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
@@ -37,6 +38,7 @@ import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -47,12 +49,14 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.WindowCompat
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import kotlinx.coroutines.delay
 
 private val DockHeight = 64.dp
 private val DockGap = 12.dp
@@ -112,30 +116,32 @@ internal fun TokScreen(state: TokState, onExit: () -> Unit) {
         // The black page behind everything. The dock's glass reads from this layer, not from the web page.
         Box(Modifier.fillMaxSize().layerBackdrop(backdrop).background(Color.Black))
 
-        Box(
+        Column(
             Modifier
                 .fillMaxSize()
                 .statusBarsPadding()
                 .imePadding()
                 .padding(bottom = reserve),
-            contentAlignment = Alignment.TopCenter,
         ) {
-            AndroidView(
-                factory = { ctx ->
-                    createTokWebView(ctx, state).also { web ->
-                        state.webView = web
-                        val first = state.pendingUrl ?: TokWeb.HOME
-                        state.pendingUrl = null
-                        web.loadUrl(first)
-                    }
-                },
-                modifier = Modifier.widthIn(max = FeedMaxWidth).fillMaxSize(),
-                onRelease = { web ->
-                    if (state.webView === web) state.webView = null
-                    web.stopLoading()
-                    web.destroy()
-                },
-            )
+            TokDiagStrip(state)
+            Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.TopCenter) {
+                AndroidView(
+                    factory = { ctx ->
+                        createTokWebView(ctx, state).also { web ->
+                            state.webView = web
+                            val first = state.pendingUrl ?: TokWeb.HOME
+                            state.pendingUrl = null
+                            web.loadUrl(first)
+                        }
+                    },
+                    modifier = (if (state.desktop) Modifier else Modifier.widthIn(max = FeedMaxWidth)).fillMaxSize(),
+                    onRelease = { web ->
+                        if (state.webView === web) state.webView = null
+                        web.stopLoading()
+                        web.destroy()
+                    },
+                )
+            }
         }
 
         // A thin line under the status bar while a page loads; the page itself is never covered.
@@ -228,5 +234,49 @@ private fun RowScope.TokTab(
             )
         }
         NavLabel(spec.label, selected, Color.White)
+    }
+}
+
+/**
+ * A thin strip above the page while this client is being tuned: one line about the page and its video,
+ * and the switch to the desktop site (some sign-in screens only exist there).
+ */
+@Composable
+private fun TokDiagStrip(state: TokState) {
+    LaunchedEffect(state) {
+        while (true) {
+            delay(1200)
+            state.webView?.evaluateJavascript(TokWeb.DIAG_SCRIPT) { r -> state.diag = (r ?: "").trim('"') }
+        }
+    }
+    Row(
+        Modifier.fillMaxWidth().height(30.dp).padding(horizontal = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text(
+            (if (state.desktop) "desktop " else "mobile ") + state.diag,
+            color = Color.White.copy(alpha = 0.55f),
+            fontSize = 9.sp,
+            lineHeight = 11.sp,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        TokChip(if (state.desktop) "Mobile site" else "Desktop site") { state.setDesktop(!state.desktop) }
+        TokChip("Reload") { state.retry() }
+    }
+}
+
+@Composable
+private fun TokChip(text: String, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .clip(RoundedCornerShape(50))
+            .background(Color.White.copy(alpha = 0.14f))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 4.dp),
+    ) {
+        Text(text, color = Color.White, fontSize = 11.sp)
     }
 }
