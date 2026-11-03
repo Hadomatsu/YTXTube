@@ -63,6 +63,9 @@ object PlaybackPrefs {
         private set
     var keepScreenOnLyrics by mutableStateOf(true)
         private set
+    /** With YouTube Premium, ask YouTube Music for its 256 kbps streams. */
+    var premiumAudio by mutableStateOf(true)
+        private set
 
     val holdSpeeds = listOf(1.5f, 2f, 2.5f, 3f)
     /** Speed while a finger is held on the video. */
@@ -102,6 +105,7 @@ object PlaybackPrefs {
         lyricsOffsetMs = p.getInt("lyrics_offset", 0).coerceIn(-3000, 3000)
         lyricsTextLarge = p.getBoolean("lyrics_large", true)
         keepScreenOnLyrics = p.getBoolean("lyrics_screen_on", true)
+        premiumAudio = p.getBoolean("premium_audio", true)
         holdSpeed = p.getFloat("hold_speed", 2f).takeIf { it in holdSpeeds } ?: 2f
         showDislikes = p.getBoolean("show_dislikes", true)
         keepPlayingOnSwipe = p.getBoolean("keep_on_swipe", false)
@@ -134,6 +138,7 @@ object PlaybackPrefs {
     fun updateLyricsBlur(on: Boolean) { lyricsBlur = on; edit { putBoolean("lyrics_blur", on) } }
     fun updateLyricsOffset(ms: Int) { lyricsOffsetMs = ms.coerceIn(-3000, 3000); edit { putInt("lyrics_offset", lyricsOffsetMs) } }
     fun updateLyricsLarge(on: Boolean) { lyricsTextLarge = on; edit { putBoolean("lyrics_large", on) } }
+    fun updatePremiumAudio(on: Boolean) { premiumAudio = on; edit { putBoolean("premium_audio", on) } }
     fun updateKeepScreenOnLyrics(on: Boolean) { keepScreenOnLyrics = on; edit { putBoolean("lyrics_screen_on", on) } }
     fun updateHoldSpeed(v: Float) { holdSpeed = v; edit { putFloat("hold_speed", v) } }
     fun updateShowDislikes(on: Boolean) { showDislikes = on; edit { putBoolean("show_dislikes", on) } }

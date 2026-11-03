@@ -248,7 +248,10 @@ class PlaybackService : MediaSessionService() {
                         )
                         .build()
                 } else {
+                    // Premium 256 kbps audio is looked for alongside the normal extraction.
+                    val premium = PremiumAudio.prefetch(item.mediaId)
                     val info = StreamCache.getOrLoad(item.mediaId)
+                    runCatching { premium?.get(3, java.util.concurrent.TimeUnit.SECONDS) }
                     item.buildUpon()
                         .setUri(YouTube.watchUrl(item.mediaId))
                         .setMediaMetadata(
@@ -310,6 +313,8 @@ private class StreamRecoverer(
         StreamRecovery.failed = null
         StreamRecovery.recovering = id
         StreamCache.invalidate(id)
+        // If the refused stream was the Premium one, the retry uses the normal stream.
+        if (PremiumAudio.get(id) != null) PremiumAudio.markFailed(id)
         resolver.execute {
             // The refused stream may carry a stale token: start the retry from a fresh one.
             runCatching { YtxPoTokenProvider.current?.reset() }
@@ -583,6 +588,15 @@ private class YouTubeMediaSourceFactory(context: Context) : MediaSource.Factory 
             )
         }
         val picked = StreamSelection.pick(info)
+        val premium = PremiumAudio.get(mediaItem.mediaId)
+        fun audioSource(fallback: Stream): MediaSource =
+            if (premium != null) {
+                Log.i("YTXTube", "media source ${mediaItem.mediaId}: premium audio itag ${premium.itag}")
+                ProgressiveMediaSource.Factory(dataSourceFactory)
+                    .createMediaSource(mediaItem.buildUpon().setUri(premium.url).build())
+            } else {
+                source(fallback, info.duration, mediaItem)
+            }
 
         // Nothing separable or muxed was extracted: HLS is still better than a black screen.
         if (picked.video == null && picked.muxed == null && !hlsUrl.isNullOrBlank()) {
@@ -600,7 +614,7 @@ private class YouTubeMediaSourceFactory(context: Context) : MediaSource.Factory 
             val adaptive = adaptiveVideo(info, mediaItem)
             if (adaptive != null) {
                 Log.i("YTXTube", "media source ${mediaItem.mediaId}: adaptive video up to ${NetworkSpeed.linkHeight()}p + audio itag ${picked.audio.itag}")
-                return MergingMediaSource(true, true, adaptive, source(picked.audio, info.duration, mediaItem))
+                return MergingMediaSource(true, true, adaptive, audioSource(picked.audio))
             }
         }
         Log.i(
@@ -616,7 +630,7 @@ private class YouTubeMediaSourceFactory(context: Context) : MediaSource.Factory 
  true,
  true,
                 source(video, info.duration, mediaItem),
-                source(audio, info.duration, mediaItem),
+                audioSource(audio),
             )
             picked.muxed != null -> source(picked.muxed, info.duration, mediaItem)
 

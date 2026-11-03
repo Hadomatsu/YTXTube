@@ -73,9 +73,18 @@ object CaptionPreference {
         private set
     var languageTag by mutableStateOf("en")
         private set
+    /** Caption text size as a share of the normal size, 60 % to 250 %. */
+    var scale by androidx.compose.runtime.mutableFloatStateOf(1f)
+        private set
+
+    fun setScale(value: Float) {
+        scale = (Math.round(value.coerceIn(0.6f, 2.5f) * 10f) / 10f)
+        prefs?.edit()?.putFloat("captions_scale", scale)?.apply()
+    }
 
     fun init(context: Context) {
         prefs = context.getSharedPreferences("playback", Context.MODE_PRIVATE)
+        scale = (prefs?.getFloat("captions_scale", 1f) ?: 1f).coerceIn(0.6f, 2.5f)
         enabled = prefs?.getBoolean(KEY_ENABLED, false) == true
         languageTag = prefs?.getString(KEY_LANGUAGE, "en")?.ifBlank { "en" } ?: "en"
     }

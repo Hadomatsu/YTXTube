@@ -351,7 +351,37 @@ fun SubtitlesSheet(
                 .padding(bottom = 28.dp),
         ) {
             Text("Captions / Subtitles", fontFamily = RoundedHeavy, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
-            Spacer(Modifier.height(14.dp))
+            Spacer(Modifier.height(10.dp))
+
+            // Caption size, changed live: the captions on the video resize as you tap.
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(c.surfaceContainerHigh)
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Text size", fontWeight = FontWeight.SemiBold, fontSize = 14.5.sp, color = c.onSurface, modifier = Modifier.weight(1f))
+                Box(
+                    Modifier.size(36.dp).clip(CircleShape).background(c.surfaceContainerHighest)
+                        .pressable { CaptionPreference.setScale(CaptionPreference.scale - 0.1f) },
+                    contentAlignment = Alignment.Center,
+                ) { Text("A−", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = c.onSurface) }
+                Text(
+                    "${Math.round(CaptionPreference.scale * 100)} %",
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 14.sp,
+                    color = c.onSurface,
+                    modifier = Modifier.padding(horizontal = 12.dp),
+                )
+                Box(
+                    Modifier.size(36.dp).clip(CircleShape).background(c.surfaceContainerHighest)
+                        .pressable { CaptionPreference.setScale(CaptionPreference.scale + 0.1f) },
+                    contentAlignment = Alignment.Center,
+                ) { Text("A+", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = c.onSurface) }
+            }
+            Spacer(Modifier.height(10.dp))
 
             // Option 1: Off (Turn off captions)
             val isOff = player.selectedSubtitleLanguage == null

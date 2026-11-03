@@ -2424,6 +2424,14 @@ private fun PlaybackSettingsContent() {
         )
 
         SettingsGroupLabel("Video page")
+        val scales = listOf(0.6f, 0.8f, 1f, 1.2f, 1.4f, 1.6f, 1.8f, 2f, 2.5f)
+        SettingsChoiceRow(
+            title = "Caption size",
+            subtitle = "Also adjustable live from the captions button on a video",
+            options = scales.map { "${Math.round(it * 100)} %" },
+            selected = scales.indexOfFirst { kotlin.math.abs(it - CaptionPreference.scale) < 0.05f }.let { if (it < 0) 2 else it },
+            onSelect = { CaptionPreference.setScale(scales[it]) },
+        )
         SettingsSwitchRow(
             title = "Captions on by default",
             subtitle = "Turn subtitles on automatically when a video has them",
@@ -2451,6 +2459,13 @@ private fun MusicSettingsContent() {
             options = qualities.map { it.label },
             selected = qualities.indexOf(PlaybackPrefs.audioQuality),
             onSelect = { PlaybackPrefs.updateAudioQuality(qualities[it]) },
+        )
+
+        SettingsSwitchRow(
+            title = "Premium audio (256 kbps)",
+            subtitle = "With YouTube Premium, songs stream at 256 kbps from YouTube Music when it offers them; otherwise the normal stream plays",
+            checked = PlaybackPrefs.premiumAudio,
+            onCheckedChange = { PlaybackPrefs.updatePremiumAudio(it) },
         )
 
         SettingsGroupLabel("Equalizer")

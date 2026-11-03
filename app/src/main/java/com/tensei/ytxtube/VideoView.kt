@@ -845,7 +845,7 @@ fun VideoContent(
                 fullscreen -> 20.sp
                 state.wideStage -> 17.sp
                 else -> 15.sp
-            }
+            } * CaptionPreference.scale
             val density = androidx.compose.ui.platform.LocalDensity.current
             // Unfolded fullscreen letterboxes the picture: the captions then go into the black bar
             // that is already below it (just under the picture), and nothing is added. Anywhere
