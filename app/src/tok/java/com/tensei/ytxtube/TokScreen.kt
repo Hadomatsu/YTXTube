@@ -238,8 +238,9 @@ private fun RowScope.TokTab(
 }
 
 /**
- * A thin strip above the page while this client is being tuned: one line about the page and its video,
- * and the switch to the desktop site (some sign-in screens only exist there).
+ * A strip above the page while this client is being tuned: the switch to the desktop site (some sign-in
+ * screens only exist there), a reload, a plain video test, and a few lines about the page, its video and
+ * whatever the page failed to load.
  */
 @Composable
 private fun TokDiagStrip(state: TokState) {
@@ -249,22 +250,28 @@ private fun TokDiagStrip(state: TokState) {
             state.webView?.evaluateJavascript(TokWeb.DIAG_SCRIPT) { r -> state.diag = (r ?: "").trim('"') }
         }
     }
-    Row(
-        Modifier.fillMaxWidth().height(30.dp).padding(horizontal = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 2.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+            TokChip(if (state.desktop) "Mobile site" else "Desktop site") { state.switchSite(!state.desktop) }
+            TokChip("Reload") {
+                fetchRemoteScript(state)
+                state.retry()
+            }
+            TokChip("Test video") {
+                state.webView?.loadUrl("https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4")
+            }
+        }
         Text(
-            (if (state.desktop) "desktop " else "mobile ") + state.diag,
-            color = Color.White.copy(alpha = 0.55f),
+            (if (state.desktop) "desktop " else "mobile ") + state.diag +
+                (if (state.net.isNotEmpty()) "\nnet: " + state.net else "") +
+                (if (state.console.isNotEmpty()) "\njs: " + state.console else ""),
+            color = Color.White.copy(alpha = 0.6f),
             fontSize = 9.sp,
             lineHeight = 11.sp,
-            maxLines = 2,
+            maxLines = 5,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.padding(top = 3.dp),
         )
-        TokChip(if (state.desktop) "Mobile site" else "Desktop site") { state.switchSite(!state.desktop) }
-        TokChip("Reload") { state.retry() }
     }
 }
 

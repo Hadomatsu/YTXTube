@@ -8,6 +8,7 @@ import android.graphics.Color as AColor
 import android.net.Uri
 import android.os.Build
 import android.view.View
+import android.webkit.ConsoleMessage
 import android.webkit.CookieManager
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
@@ -81,13 +82,14 @@ internal object TokWeb {
     }
 
     /**
-     * Starts TikTok's own theme cookies on dark the first time (when there is no choice yet), so the feed is
-     * black like the rest of the app. A theme picked later in TikTok's settings is never overwritten.
+     * Starts TikTok's own theme cookies on dark the first time this install runs, so the feed is black like the
+     * rest of the app. After that a theme picked in TikTok's settings is never overwritten.
      */
-    fun presetDarkTheme() {
+    fun presetDarkTheme(context: Context) {
+        val prefs = context.getSharedPreferences("tok", Context.MODE_PRIVATE)
         val cookies = CookieManager.getInstance()
         val existing = cookies.getCookie("https://www.tiktok.com") ?: ""
-        if (existing.contains("tiktok_webapp_theme=")) return
+        if (prefs.getBoolean("dark_applied", false) && existing.contains("tiktok_webapp_theme=")) return
         for (name in listOf("tiktok_webapp_theme", "tiktok_webapp_theme_source")) {
             cookies.setCookie(
                 "https://www.tiktok.com",
@@ -95,6 +97,7 @@ internal object TokWeb {
             )
         }
         cookies.flush()
+        prefs.edit().putBoolean("dark_applied", true).apply()
     }
 
     /**
@@ -210,6 +213,34 @@ internal object TokWeb {
   try { addStyle(); observe(); } catch (x) {}
   setInterval(schedule, 1500);
   schedule();
+  window.__ytxDiag = function () {
+    try {
+      var v = [].slice.call(document.querySelectorAll('video'));
+      var a = v.filter(function (x) {
+        var r = x.getBoundingClientRect();
+        return r.height > 0 && r.top < innerHeight * 0.6 && r.bottom > innerHeight * 0.4;
+      })[0] || v[0];
+      var s = 'v' + v.length;
+      if (a) {
+        s += ' ' + (a.paused ? 'paused' : 'play') + ' rs' + a.readyState + ' ' + a.videoWidth + 'x' + a.videoHeight + (a.error ? ' err' + a.error.code : '');
+        try {
+          var c = document.createElement('canvas'); c.width = 8; c.height = 8;
+          var g = c.getContext('2d'); g.drawImage(a, 0, 0, 8, 8);
+          var d = g.getImageData(0, 0, 8, 8).data, r1 = 0, g1 = 0, b1 = 0;
+          for (var i = 0; i < d.length; i += 4) { r1 += d[i]; g1 += d[i + 1]; b1 += d[i + 2]; }
+          var n = d.length / 4;
+          s += ' px' + Math.round(r1 / n) + ',' + Math.round(g1 / n) + ',' + Math.round(b1 / n);
+        } catch (e) { s += ' px?'; }
+      }
+      if (document.querySelector('[data-e2e="middle-cta-container"]')) s += ' wall';
+      s += ' ' + location.pathname + ' txt' + ((document.body && document.body.innerText) || '').length +
+        ' if' + document.querySelectorAll('iframe').length + ' ' + document.documentElement.getAttribute('data-theme') + ' ' + innerWidth + 'w';
+      var ms = window.MediaSource;
+      s += ' mse' + (ms ? (ms.isTypeSupported('video/mp4; codecs="avc1.42E01E"') ? 'A' : 'a') + (ms.isTypeSupported('video/mp4; codecs="hvc1.1.6.L93.B0"') ? 'H' : 'h') : '-');
+      s += ' ua:' + (navigator.userAgentData ? navigator.userAgentData.brands.map(function (b) { return b.brand.slice(0, 8); }).join('/') : 'none');
+      return s;
+    } catch (x) { return 'diag error ' + x; }
+  };
 })();
 """
     val script: String = SCRIPT_BODY
@@ -219,17 +250,10 @@ internal object TokWeb {
         "(function(){var a=document.querySelector('[data-e2e=\"$e2e\"]');if(a){a.click();return '1';}return '0';})()"
 
     /** One short line about the page and its video, shown in the strip at the top while this client is being tuned. */
-    const val DIAG_SCRIPT =
-        "(function(){try{var v=[].slice.call(document.querySelectorAll('video'));" +
-            "var a=v.filter(function(x){var r=x.getBoundingClientRect();return r.height>0&&r.top<innerHeight*0.6&&r.bottom>innerHeight*0.4})[0]||v[0];" +
-            "var s='v'+v.length;" +
-            "if(a){s+=' '+(a.paused?'paused':'play')+' rs'+a.readyState+' '+a.videoWidth+'x'+a.videoHeight+(a.error?' err'+a.error.code:'');}" +
-            "if(document.querySelector('[data-e2e=\\\"middle-cta-container\\\"]'))s+=' wall';" +
-            "s+=' '+location.pathname+' txt'+((document.body&&document.body.innerText)||'').length+' if'+document.querySelectorAll('iframe').length" +
-            "+' '+document.documentElement.getAttribute('data-theme')+' '+innerWidth+'w';" +
-            "var ms=window.MediaSource;" +
-            "s+=' mse'+(ms?(ms.isTypeSupported('video/mp4; codecs=\\'avc1.42E01E\\'')?'A':'a')+(ms.isTypeSupported('video/mp4; codecs=\\'hvc1.1.6.L93.B0\\'')?'H':'h'):'-');" +
-            "return s;}catch(x){return 'diag error '+x}})()"
+    const val DIAG_SCRIPT = "(window.__ytxDiag ? window.__ytxDiag() : 'no diag')"
+
+    /** While this client is being tuned, a script from the repo is loaded at start so JS and CSS experiments need no rebuild. */
+    const val REMOTE_JS = "https://raw.githubusercontent.com/Hadomatsu/YTXTube/main/tok/inject.js"
 
     /** Stops every video, for when the app leaves the screen. */
     const val PAUSE_SCRIPT =
@@ -254,6 +278,16 @@ internal class TokState {
     var error by mutableStateOf(false)
     var errorDetail by mutableStateOf("")
     var diag by mutableStateOf("")
+    var net by mutableStateOf("")
+    var console by mutableStateOf("")
+    @Volatile var remoteJs: String = ""
+    private val netCounts = LinkedHashMap<String, Int>()
+
+    /** Counts a failed page request by host and status, so the strip can show what is being blocked. */
+    fun recordNet(key: String) {
+        netCounts[key] = (netCounts[key] ?: 0) + 1
+        net = netCounts.entries.sortedByDescending { it.value }.take(4).joinToString("  ") { it.value.toString() + "x " + it.key }
+    }
     /** Whether the page is loaded as the desktop site (needed for some sign-in screens). */
     var desktop by mutableStateOf(false)
     var webView: WebView? = null
@@ -337,10 +371,12 @@ private class TokClient(private val state: TokState, private val context: Contex
         state.progress = 0
         state.error = false
         view.evaluateJavascript(TokWeb.script, null)
+        if (state.remoteJs.isNotEmpty()) view.evaluateJavascript(state.remoteJs, null)
     }
 
     override fun onPageFinished(view: WebView, url: String?) {
         view.evaluateJavascript(TokWeb.script, null)
+        if (state.remoteJs.isNotEmpty()) view.evaluateJavascript(state.remoteJs, null)
         state.loadedOnce = true
     }
 
@@ -352,6 +388,8 @@ private class TokClient(private val state: TokState, private val context: Contex
         if (request.isForMainFrame) {
             state.errorDetail = error.errorCode.toString() + " " + error.description
             state.error = true
+        } else {
+            state.recordNet("err" + error.errorCode + " " + (request.url.host ?: "").takeLast(26))
         }
     }
 
@@ -359,6 +397,8 @@ private class TokClient(private val state: TokState, private val context: Contex
         if (request.isForMainFrame && errorResponse.statusCode >= 400) {
             state.errorDetail = "HTTP " + errorResponse.statusCode + " " + (errorResponse.reasonPhrase ?: "")
             state.error = true
+        } else if (errorResponse.statusCode >= 400) {
+            state.recordNet("" + errorResponse.statusCode + " " + (request.url.host ?: "").takeLast(26))
         }
     }
 }
@@ -388,12 +428,17 @@ internal fun createTokWebView(context: Context, state: TokState): WebView {
     val cookies = CookieManager.getInstance()
     cookies.setAcceptCookie(true)
     cookies.setAcceptThirdPartyCookies(web, true)
-    TokWeb.presetDarkTheme()
+    TokWeb.presetDarkTheme(context)
 
     web.webViewClient = TokClient(state, context)
     web.webChromeClient = object : WebChromeClient() {
         override fun onProgressChanged(view: WebView, newProgress: Int) {
             state.progress = newProgress
+        }
+
+        override fun onConsoleMessage(m: ConsoleMessage): Boolean {
+            if (m.messageLevel() == ConsoleMessage.MessageLevel.ERROR) state.console = m.message().take(120)
+            return false
         }
     }
 
@@ -410,7 +455,24 @@ internal fun createTokWebView(context: Context, state: TokState): WebView {
     if (Build.VERSION.SDK_INT >= 35) {
         runCatching { web.requestedFrameRate = View.REQUESTED_FRAME_RATE_CATEGORY_HIGH }
     }
+    fetchRemoteScript(state)
     return web
+}
+
+/** Fetches the experiment script from the repo (see REMOTE_JS) and runs it on the page that is open. */
+internal fun fetchRemoteScript(state: TokState) {
+    Thread {
+        val text = runCatching {
+            val c = java.net.URL(TokWeb.REMOTE_JS + "?t=" + System.currentTimeMillis()).openConnection() as java.net.HttpURLConnection
+            c.connectTimeout = 6000
+            c.readTimeout = 6000
+            c.inputStream.bufferedReader().use { it.readText() }
+        }.getOrDefault("")
+        state.remoteJs = text
+        if (text.isNotEmpty()) {
+            state.webView?.post { state.webView?.evaluateJavascript(text, null) }
+        }
+    }.start()
 }
 
 /** The phone site (default) or the desktop site: identity, and whether the page can be pinched. */
