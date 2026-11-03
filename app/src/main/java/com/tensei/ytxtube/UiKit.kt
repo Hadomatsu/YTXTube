@@ -157,12 +157,13 @@ fun BackScreenHeader(
     }
 }
 
+/** The same red play logo as the launcher icon, drawn from a sharp 501x348 source. */
 @Composable
 fun BrandMark() {
     Image(
-        painter = painterResource(R.drawable.ic_brand),
+        painter = painterResource(R.drawable.ic_brand_logo),
         contentDescription = null,
-        modifier = Modifier.size(26.dp),
+        modifier = Modifier.height(36.dp).aspectRatio(501f / 348f),
     )
 }
 
