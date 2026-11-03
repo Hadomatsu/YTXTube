@@ -1,66 +1,74 @@
-// Experiment script for YTXTok (v4): lists, in big readable lines on a solid panel, what the page holds
-// and why the feed is not visible (hidden parents, covering elements, text colours).
+// Experiment script for YTXTok (v6): mirrors every video onto a canvas that sits right above it.
+// The video decodes (a canvas can read its frames) but the web view does not paint it, so the canvas
+// shows the picture instead, and TikTok's own captions and buttons stay where they are.
 (function () {
-  if (window.__ytxDbgTimer) clearInterval(window.__ytxDbgTimer);
   ['ytx-dbg', 'ytx-paint'].forEach(function (id) { var o = document.getElementById(id); if (o) o.remove(); });
-  function cls(e) {
-    if (!e || !e.tagName) return 'none';
-    var c = (typeof e.className === 'string' ? e.className : '').split(' ')[0] || '';
-    var d = e.getAttribute && e.getAttribute('data-e2e');
-    return e.tagName.toLowerCase() + (c ? '.' + c.slice(-12) : '') + (d ? '[' + d.slice(0, 14) + ']' : '');
+  if (window.__ytxDbgTimer) { clearInterval(window.__ytxDbgTimer); window.__ytxDbgTimer = 0; }
+  var M = window.__ytxMir;
+  if (M && M.stop) M.stop();
+  M = window.__ytxMir = { n: 0, f: 0, err: '', alive: true };
+  M.stop = function () { M.alive = false; clearInterval(M.timer); [].forEach.call(document.querySelectorAll('canvas[data-ytx-mirror]'), function (c) { c.remove(); }); [].forEach.call(document.querySelectorAll('video'), function (v) { v.__ytxC = null; }); };
+
+  function attach(v) {
+    if (v.__ytxC) return;
+    var c = document.createElement('canvas');
+    c.setAttribute('data-ytx-mirror', '1');
+    c.style.pointerEvents = 'none';
+    c.style.position = 'absolute';
+    c.style.boxShadow = 'inset 0 0 0 2px #0ff';
+    v.__ytxC = c;
+    v.parentNode.insertBefore(c, v.nextSibling);
   }
-  function box(e) {
-    var r = e.getBoundingClientRect();
-    return Math.round(r.left) + ',' + Math.round(r.top) + ' ' + Math.round(r.width) + 'x' + Math.round(r.height);
+  function place(v, c) {
+    var cs = getComputedStyle(v);
+    var s = c.style;
+    var l = v.offsetLeft + 'px', t = v.offsetTop + 'px', w = v.offsetWidth + 'px', h = v.offsetHeight + 'px';
+    if (s.left !== l) s.left = l;
+    if (s.top !== t) s.top = t;
+    if (s.width !== w) s.width = w;
+    if (s.height !== h) s.height = h;
+    if (s.objectFit !== cs.objectFit) s.objectFit = cs.objectFit;
+    if (s.objectPosition !== cs.objectPosition) s.objectPosition = cs.objectPosition;
+    if (s.zIndex !== cs.zIndex && cs.zIndex !== 'auto') s.zIndex = cs.zIndex;
   }
-  function st(e) {
-    var s = getComputedStyle(e);
-    return cls(e) + ' ' + box(e) + ' d:' + s.display + ' v:' + s.visibility + ' o:' + s.opacity + ' p:' + s.position +
-      ' bg:' + s.backgroundColor.replace('rgba(0, 0, 0, 0)', '-').replace(/ /g, '') + ' c:' + s.color.replace(/ /g, '') +
-      ' ov:' + s.overflowX + '/' + s.overflowY + ' pe:' + s.pointerEvents + (s.contain !== 'none' ? ' ct:' + s.contain : '') +
-      (s.contentVisibility !== 'visible' ? ' cv:' + s.contentVisibility : '') + (s.clipPath !== 'none' ? ' CLIP' : '') +
-      (s.filter !== 'none' ? ' F' : '') + (s.transform !== 'none' ? ' T' : '');
-  }
-  function lines() {
-    var L = [];
+  function tick() {
+    if (!M.alive) return;
     try {
-      var b = document.body, h = document.documentElement;
-      L.push('html ' + st(h));
-      L.push('body ' + st(b));
-      L.push('kids ' + [].slice.call(b.children).slice(0, 6).map(cls).join(' '));
-      var root = b.querySelector('#app,#root,#__next,[id^="app"]') || b.firstElementChild;
-      if (root) { L.push('root ' + st(root)); [].slice.call(root.children).slice(0, 4).forEach(function (c) { L.push(' >' + st(c)); }); }
-      L.push('text: ' + (b.innerText || '').replace(/\s+/g, ' ').slice(0, 90));
-      var vids = [].slice.call(document.querySelectorAll('video'));
-      L.push('videos ' + vids.length);
-      if (vids[0]) {
-        L.push('V ' + st(vids[0]));
-        var e = vids[0].parentElement, n = 0;
-        while (e && e !== h && n < 12) { L.push(' ^' + st(e)); e = e.parentElement; n++; }
-        var se = document.scrollingElement;
-        L.push('scroll ' + (se ? se.tagName + ' ' + se.scrollTop + '/' + se.scrollHeight + ' c' + se.clientHeight : 'none') + ' win ' + innerWidth + 'x' + innerHeight + ' vv ' + (window.visualViewport ? Math.round(window.visualViewport.width) + 'x' + Math.round(window.visualViewport.height) + ' s' + window.visualViewport.scale : '-'));
+      var vids = document.querySelectorAll('video');
+      var n = 0;
+      for (var i = 0; i < vids.length; i++) {
+        var v = vids[i];
+        if (!v.parentNode) continue;
+        if (!v.__ytxC) attach(v);
+        var c = v.__ytxC;
+        if (!c.isConnected) { v.parentNode.insertBefore(c, v.nextSibling); }
+        n++;
+        var vw = v.videoWidth, vh = v.videoHeight;
+        if (!vw || !vh) continue;
+        place(v, c);
+        if (c.width !== vw || c.height !== vh) { c.width = vw; c.height = vh; }
+        if (c.__t !== v.currentTime || !c.__d) {
+          c.getContext('2d').drawImage(v, 0, 0, vw, vh);
+          c.__t = v.currentTime; c.__d = true; M.f++;
+        }
       }
-      var cx = Math.round(innerWidth / 2), cy = Math.round(innerHeight / 2);
-      L.push('stack@center ' + cx + ',' + cy + ':');
-      document.elementsFromPoint(cx, cy).slice(0, 3).forEach(function (x) { L.push(' @' + st(x)); });
-      if (vids[0]) { var vr = vids[0].getBoundingClientRect(); var hit = document.elementsFromPoint(Math.round(vr.left + vr.width / 2), Math.round(vr.top + vr.height / 2)); L.push('stack@video ' + hit.length + ' ' + hit.slice(0, 3).map(cls).join(' ')); }
-    } catch (x) { L.push('error ' + x); }
-    return L;
+      M.n = n;
+    } catch (e) { M.err = String(e).slice(0, 60); }
+    requestAnimationFrame(tick);
   }
-  function draw() {
-    var p = document.getElementById('ytx-dbg');
-    if (!p) {
-      p = document.createElement('div');
-      p.id = 'ytx-dbg';
-      p.style.cssText = 'position:fixed;left:0;right:0;top:0;z-index:2147483647;pointer-events:none;background:#000;border-top:2px solid #0f0;padding:2px';
-      (document.body || document.documentElement).appendChild(p);
-    }
-    var html = '';
-    lines().forEach(function (t) {
-      html += '<div style="font:10px/11px monospace;color:#0f0;white-space:nowrap;overflow:hidden;text-overflow:clip">' + t.replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</div>';
+  requestAnimationFrame(tick);
+  // The page replaces whole video lists as it scrolls; drop canvases whose video is gone.
+  M.timer = setInterval(function () {
+    [].forEach.call(document.querySelectorAll('canvas[data-ytx-mirror]'), function (c) {
+      var p = c.previousSibling;
+      if (!p || p.tagName !== 'VIDEO') c.remove();
     });
-    p.innerHTML = html;
+  }, 1000);
+
+  var old = window.__ytxDiag;
+  if (typeof old === 'function' && !old.__m) {
+    var w = function () { return old() + ' mir' + M.n + '/' + M.f + (M.err ? ' E:' + M.err : ''); };
+    w.__m = true;
+    window.__ytxDiag = w;
   }
-  window.__ytxDbgTimer = setInterval(draw, 2000);
-  draw();
 })();
