@@ -2,6 +2,8 @@ name: Build & Release
 
 on:
   push:
+    branches:
+      - main
     tags:
       - 'v*'
   workflow_dispatch:
@@ -42,16 +44,18 @@ jobs:
           name: YTXTube
           path: YTXTube.apk
 
-      - name: Set Release Title
-        id: release_title
-        if: startsWith(github.ref, 'refs/tags/')
-        run: echo "title=YTXTube ${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+      - name: Read version
+        id: version
+        run: |
+          VER=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)
+          echo "name=$VER" >> $GITHUB_OUTPUT
 
       - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          name: ${{ steps.release_title.outputs.title }}
+          tag_name: v${{ steps.version.outputs.name }}
+          target_commitish: ${{ github.sha }}
+          name: YTXTube Custom ${{ steps.version.outputs.name }}
           files: YTXTube.apk
           body: |
             Custom build on top of YTXTube.
