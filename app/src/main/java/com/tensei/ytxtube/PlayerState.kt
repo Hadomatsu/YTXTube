@@ -299,6 +299,7 @@ class PlayerState(private val scope: CoroutineScope) {
         inWatchLater = false
         audioOptions = emptyList()
         captionText = null
+        timeline = null
         speedPanelOpen = false
         videoZoom = 1f
         portraitFullscreen = false
@@ -393,7 +394,7 @@ class PlayerState(private val scope: CoroutineScope) {
 
         replaceCurrent(player, item, positionMs = ResumeStore.startPosition(item.id))
         player.play()
-        if (selectedSubtitleLanguage != null) setSubtitleLanguage(selectedSubtitleLanguage)
+        if (selectedSubtitleLanguage != null) setSubtitleLanguage(selectedSubtitleLanguage, userInitiated = false)
         refreshTracks()
     }
 
@@ -696,7 +697,7 @@ class PlayerState(private val scope: CoroutineScope) {
         if (cached != null) {
             syncAudioPreference(cached)
             audioOptions = StreamSelection.audioOptions(cached)
-            if (selectedSubtitleLanguage != null) setSubtitleLanguage(selectedSubtitleLanguage)
+            prepareCaptions(id)
             return
         }
         scope.launch {
@@ -706,7 +707,7 @@ class PlayerState(private val scope: CoroutineScope) {
             if (current?.id != id) return@launch
             syncAudioPreference(info)
             audioOptions = StreamSelection.audioOptions(info)
-            if (selectedSubtitleLanguage != null) setSubtitleLanguage(selectedSubtitleLanguage)
+            prepareCaptions(id)
         }
     }
 
@@ -735,12 +736,26 @@ class PlayerState(private val scope: CoroutineScope) {
     var selectedSubtitleLanguage by mutableStateOf<String?>(null)
         private set
 
-    private var activeCues by mutableStateOf<List<ParsedCue>>(emptyList())
+    /**
+     * Word-by-word caption timeline for the selected track. Not Compose state on purpose:
+     * [captionText] is what the UI watches, and it only changes when a new word appears.
+     */
+    private var timeline: WordTimeline? = null
     private var subtitleFetchJob: kotlinx.coroutines.Job? = null
 
-    fun setSubtitleLanguage(code: String?, trackUrl: String? = null) {
+    /**
+     * Turn captions on for [code] (or off with null).
+     *
+     * [userInitiated] is false when the app re-applies the current choice (new video, tracks
+     * finished loading); those calls stay quiet and do not overwrite the saved preference.
+     */
+    fun setSubtitleLanguage(code: String?, trackUrl: String? = null, userInitiated: Boolean = true) {
         selectedSubtitleLanguage = code
         subtitleFetchJob?.cancel()
+        if (userInitiated) {
+            CaptionPreference.set(code != null)
+            if (code != null) CaptionPreference.setLanguage(code)
+        }
         val p = controller
         try {
             if (code == null) {
@@ -748,9 +763,9 @@ class PlayerState(private val scope: CoroutineScope) {
                     ?.buildUpon()
                     ?.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
                     ?.build() ?: return
-                activeCues = emptyList()
+                timeline = null
                 captionText = null
-                actionMessage = "Captions off"
+                if (userInitiated) actionMessage = "Captions off"
                 return
             } else {
                 p?.trackSelectionParameters = p?.trackSelectionParameters
@@ -758,7 +773,7 @@ class PlayerState(private val scope: CoroutineScope) {
                     ?.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
                     ?.setPreferredTextLanguage(code)
                     ?.build() ?: return
-                actionMessage = "Captions on"
+                if (userInitiated) actionMessage = "Captions on"
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error setting subtitle language", e)
@@ -768,16 +783,27 @@ class PlayerState(private val scope: CoroutineScope) {
         val url = trackUrl ?: run {
             val info = StreamCache.get(videoId)
             info?.subtitles?.firstOrNull { it.languageTag == code }?.content
-                ?: CaptionTracks.get(videoId)?.firstOrNull { it.languageTag == code }?.url
+                ?: CaptionTracks.get(videoId)?.let { CaptionTracks.pick(it, code) }?.url
         }
 
-        if (url != null) {
-            subtitleFetchJob = scope.launch(Dispatchers.IO) {
-                val cues = SubtitleParser.fetchAndParse(url)
-                withContext(Dispatchers.Main) {
-                    activeCues = cues
-                    val pos = controller?.currentPosition ?: 0L
-                    captionText = cues.firstOrNull { pos in it.startMs..it.endMs }?.text
+        // Already downloaded (prefetched when the video opened): show it right now.
+        val ready = url?.let { WordCaptionLoader.cached(it) }
+        if (ready != null) {
+            timeline = ready
+            updateCaption()
+            return
+        }
+
+        // Not downloaded yet. Whatever was loaded belongs to another video or language.
+        timeline = null
+        captionText = null
+        if (url == null) return
+        subtitleFetchJob = scope.launch(Dispatchers.IO) {
+            val loaded = WordCaptionLoader.load(url)
+            withContext(Dispatchers.Main) {
+                if (selectedSubtitleLanguage == code && current?.id == videoId && !loaded.isEmpty) {
+                    timeline = loaded
+                    updateCaption()
                 }
             }
         }
@@ -786,14 +812,64 @@ class PlayerState(private val scope: CoroutineScope) {
     fun setCaptions(on: Boolean) {
         if (!on) {
             setSubtitleLanguage(null)
-        } else {
-            val videoId = current?.id
-            val info = videoId?.let { StreamCache.get(it) }
-            val firstCode = info?.subtitles?.firstOrNull { it.isUrl && it.content.isNotBlank() }?.languageTag
-                ?: CaptionTracks.get(videoId.orEmpty())?.firstOrNull()?.languageTag
-                ?: "en"
-            setSubtitleLanguage(firstCode)
+        } else if (selectedSubtitleLanguage == null) {
+            toggleCaptions()
         }
+    }
+
+    /** Caption tracks the current video offers (empty until its streams have been resolved). */
+    private fun captionTracksFor(videoId: String): List<CaptionTrack> =
+        CaptionTracks.get(videoId)
+            ?: StreamCache.get(videoId)?.let { CaptionTracks.fromStreamInfo(it) }.orEmpty()
+
+    /**
+     * One tap on the CC button: off turns captions on in the language used last time (falling
+     * back to a human-written track, then whatever the video has); on turns them off.
+     */
+    fun toggleCaptions() {
+        if (selectedSubtitleLanguage != null) {
+            setSubtitleLanguage(null)
+            return
+        }
+        val videoId = current?.id ?: return
+        val tracks = captionTracksFor(videoId)
+        if (tracks.isEmpty()) {
+            actionMessage = if (StreamCache.get(videoId) == null) "Captions are still loading" else "No captions for this video"
+            return
+        }
+        val track = CaptionTracks.pick(tracks, CaptionPreference.languageTag)
+            ?: tracks.firstOrNull { !it.autoGenerated }
+            ?: tracks.first()
+        setSubtitleLanguage(track.languageTag, track.url)
+    }
+
+    /**
+     * Runs once a video's streams are known. Restores captions if they were on (so they follow
+     * you from video to video), otherwise quietly downloads the likely track so the CC button
+     * has no waiting time.
+     */
+    private fun prepareCaptions(videoId: String) {
+        if (current?.id != videoId) return
+        val tracks = captionTracksFor(videoId)
+        if (tracks.isEmpty()) return
+        val wanted = selectedSubtitleLanguage ?: CaptionPreference.languageTag
+        val track = CaptionTracks.pick(tracks, wanted)
+        if (selectedSubtitleLanguage != null || CaptionPreference.enabled) {
+            if (track != null) setSubtitleLanguage(track.languageTag, track.url, userInitiated = false)
+        } else if (track != null && WordCaptionLoader.cached(track.url) == null) {
+            scope.launch(Dispatchers.IO) { WordCaptionLoader.load(track.url) }
+        }
+    }
+
+    /** Recomputes the word-by-word caption for the current playback position. */
+    internal fun updateCaption() {
+        if (selectedSubtitleLanguage == null) {
+            if (captionText != null) captionText = null
+            return
+        }
+        val tl = timeline ?: return
+        val pos = controller?.currentPosition ?: positionMs
+        captionText = tl.textAt(pos)
     }
 
 
@@ -985,12 +1061,7 @@ class PlayerState(private val scope: CoroutineScope) {
         speed = player.playbackParameters.speed
         loopEnabled = player.repeatMode == Player.REPEAT_MODE_ONE
 
-        if (selectedSubtitleLanguage != null && activeCues.isNotEmpty()) {
-            val pos = positionMs
-            captionText = activeCues.firstOrNull { pos in it.startMs..it.endMs }?.text
-        } else if (selectedSubtitleLanguage == null) {
-            captionText = null
-        }
+        updateCaption()
     }
 
     internal val listener = object : Player.Listener {
@@ -1016,14 +1087,17 @@ class PlayerState(private val scope: CoroutineScope) {
             if (mediaItem != null) onPlayerMovedTo(mediaItem)
             val lang = selectedSubtitleLanguage
             if (lang != null) {
-                setSubtitleLanguage(lang)
+                setSubtitleLanguage(lang, userInitiated = false)
             } else {
                 captionText = null
-                activeCues = emptyList()
+                timeline = null
             }
         }
 
         override fun onCues(cueGroup: androidx.media3.common.text.CueGroup) {
+            // Our own word-by-word timeline owns the caption plate. Media3's text track (full
+            // cues at once) is only a fallback while that timeline is not available.
+            if (timeline != null) return
             val text = cueGroup.cues
                 .mapNotNull { cue -> cue.text?.toString()?.takeIf { it.isNotBlank() } }
                 .joinToString("\n")
@@ -1139,9 +1213,18 @@ fun rememberPlayerState(): PlayerState {
             delay(250)
         }
     }
+    // Word-by-word captions need a much finer clock than the 250 ms UI sync above. Only the
+    // caption text is recomputed here, and it only triggers a redraw when the words change.
+    LaunchedEffect(state.isPlaying, state.selectedSubtitleLanguage) {
+        while (isActive && state.isPlaying && state.selectedSubtitleLanguage != null) {
+            state.updateCaption()
+            delay(CAPTION_TICK_MS)
+        }
+    }
     return state
 }
 
 enum class PlayerSheet { Quality, Comments, Queue, Settings, Speed, Audio, Subtitles }
 
 private const val TAG = "YTXTube"
+private const val CAPTION_TICK_MS = 50L

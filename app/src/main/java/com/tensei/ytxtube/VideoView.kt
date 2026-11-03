@@ -50,6 +50,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -84,6 +85,8 @@ import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.Subtitles
+import androidx.compose.material.icons.rounded.ClosedCaption
+import androidx.compose.material.icons.rounded.ClosedCaptionOff
 import androidx.compose.material.icons.rounded.ZoomIn
 import androidx.compose.ui.composed
 import androidx.compose.ui.graphics.luminance
@@ -136,6 +139,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
@@ -676,6 +680,18 @@ fun VideoContent(
                             SkipSegmentPill(segment, enabled = true) { touched(); state.skipSegment(segment) }
                             Spacer(Modifier.width(6.dp))
                         }
+                        // One-tap captions, always visible (it used to live in the settings menu).
+                        val captionsOn = state.selectedSubtitleLanguage != null
+                        GlassButton(
+                            if (captionsOn) Icons.Rounded.ClosedCaption else Icons.Rounded.ClosedCaptionOff,
+                            if (captionsOn) "Turn captions off" else "Turn captions on",
+                            enabled,
+                            size = 34.dp,
+                            iconSize = 20.dp,
+                            tinted = captionsOn,
+                            backdrop = videoBackdrop,
+                        ) { touched(); state.toggleCaptions() }
+                        Spacer(Modifier.width(4.dp))
                         if (PlayerControlSettings.showQuickControls) {
                             GlassButton(
                                 Icons.Rounded.Speed,
@@ -721,6 +737,7 @@ fun VideoContent(
             )
             CaptionOverlay(
                 text = captionText,
+                fontSize = if (fullscreen) 20.sp else 15.sp,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .padding(horizontal = 24.dp)
@@ -1354,9 +1371,11 @@ private const val SeekStepMs = 10_000L
 
 /** YouTube-style caption plate: black rounded box, white centred text, no chrome. */
 @Composable
-private fun CaptionOverlay(text: String, modifier: Modifier = Modifier) {
+private fun CaptionOverlay(text: String, fontSize: TextUnit, modifier: Modifier = Modifier) {
     Box(
         modifier = modifier
+            // Never wider than ~two lines of text, even in fullscreen on a big unfolded screen.
+            .widthIn(max = 720.dp)
             .clip(RoundedCornerShape(7.dp))
             .background(Color.Black.copy(alpha = 0.72f))
             .padding(horizontal = 10.dp, vertical = 4.dp),
@@ -1365,8 +1384,8 @@ private fun CaptionOverlay(text: String, modifier: Modifier = Modifier) {
         Text(
             text = text,
             color = Color.White,
-            fontSize = 15.sp,
-            lineHeight = 20.sp,
+            fontSize = fontSize,
+            lineHeight = fontSize * 1.33f,
             fontWeight = FontWeight.SemiBold,
             textAlign = TextAlign.Center,
         )

@@ -9,7 +9,10 @@ data class ParsedCue(val startMs: Long, val endMs: Long, val text: String)
 object SubtitleParser {
     private const val TAG = "SubtitleParser"
 
-    fun fetchAndParse(url: String): List<ParsedCue> {
+    fun fetchAndParse(url: String): List<ParsedCue> = parse(fetchRaw(url).orEmpty())
+
+    /** The caption file as text, or null when the request fails. Blocking: call off the main thread. */
+    fun fetchRaw(url: String): String? {
         return try {
             val req = Request.Builder()
                 .url(url)
@@ -17,16 +20,17 @@ object SubtitleParser {
                 .header("Origin", "https://www.youtube.com")
                 .header("Referer", "https://www.youtube.com/")
                 .build()
-            val response = Net.client.newCall(req).execute()
-            if (!response.isSuccessful) {
-                Log.w(TAG, "Subtitle fetch failed: HTTP ${response.code}")
-                return emptyList()
+            Net.client.newCall(req).execute().use { response ->
+                if (!response.isSuccessful) {
+                    Log.w(TAG, "Subtitle fetch failed: HTTP ${response.code}")
+                    null
+                } else {
+                    response.body?.string().orEmpty()
+                }
             }
-            val body = response.body?.string().orEmpty()
-            parse(body)
         } catch (e: Exception) {
             Log.w(TAG, "Failed to fetch subtitle cues from $url", e)
-            emptyList()
+            null
         }
     }
 

@@ -1294,6 +1294,15 @@ private fun GeneralModificationContent(context: Context) {
         HorizontalDivider(color = c.onSurface.copy(alpha = 0.08f))
 
         SettingsSwitchRow(
+            title = I18n.t("home_grid", "Grid layout on Home"),
+            subtitle = I18n.t("home_grid_sub", "Several videos per row instead of one big video at a time. Adapts to the screen: 2 per row when folded, more when unfolded"),
+            checked = HomeLayoutSettings.grid,
+            onCheckedChange = { HomeLayoutSettings.set(it) },
+        )
+
+        HorizontalDivider(color = c.onSurface.copy(alpha = 0.08f))
+
+        SettingsSwitchRow(
             title = I18n.t("video_gestures", "Video gestures"),
             subtitle = I18n.t("video_gestures_sub", "Swipe vertically on the left for brightness, right for volume"),
             checked = VideoGestureSettings.enabled,

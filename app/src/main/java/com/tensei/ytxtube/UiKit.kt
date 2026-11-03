@@ -414,6 +414,68 @@ fun VideoCard(video: VideoItem, onClick: () -> Unit, modifier: Modifier = Modifi
 }
 
 
+/**
+ * Compact card for the two-column home feed: rounded thumbnail on top, title and channel
+ * underneath. The channel avatar is left out so the title gets the full (narrow) column width.
+ */
+@Composable
+fun VideoCardGrid(video: VideoItem, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val c = MaterialTheme.colorScheme
+    val menu = LocalVideoMenu.current
+    Column(
+        modifier = modifier
+            .prefetchOnPress(video.id)
+            .pressable(pressedScale = 0.97f, onLongClick = { menu(video) }, onClick = onClick),
+    ) {
+        Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))) {
+            Thumbnail(
+                video.thumbnail,
+                Modifier.fillMaxWidth().aspectRatio(16f / 9f),
+                radius = 0,
+                videoId = video.id,
+            )
+            DurationPill(video.durationSec, Modifier.align(Alignment.BottomEnd).padding(6.dp), small = true, isLive = video.isLive)
+            ResumeBar(video.id, Modifier.align(Alignment.BottomStart))
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(start = 2.dp, top = 8.dp),
+            verticalAlignment = Alignment.Top,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    video.title,
+                    fontWeight = FontWeight.Medium,
+                    fontSize = 13.sp,
+                    lineHeight = 17.sp,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.height(3.dp))
+                Text(
+                    metaLine(video.channel, video.views, video.uploaded, video.isLive),
+                    color = c.onSurfaceVariant,
+                    fontSize = 11.sp,
+                    lineHeight = 14.sp,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Box(
+                modifier = Modifier.size(32.dp).pressable(onClick = { menu(video) }),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    Icons.Rounded.MoreVert,
+                    contentDescription = "Options",
+                    tint = c.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+        }
+    }
+}
+
+
 @Composable
 fun VideoRow(video: VideoItem, onClick: () -> Unit, trailing: (@Composable () -> Unit)? = null) {
     val c = MaterialTheme.colorScheme

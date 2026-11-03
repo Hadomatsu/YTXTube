@@ -24,6 +24,28 @@ object PlayerControlSettings {
     }
 }
 
+/**
+ * Home feed layout: a grid of videos side by side (default) or one big card per row. The
+ * number of columns is not stored; it follows the screen width (see [HomeGrid]).
+ */
+object HomeLayoutSettings {
+    private const val KEY_GRID = "home_grid"
+    private var prefs: SharedPreferences? = null
+
+    var grid by mutableStateOf(true)
+        private set
+
+    fun init(context: Context) {
+        prefs = context.getSharedPreferences("playback", Context.MODE_PRIVATE)
+        grid = prefs?.getBoolean(KEY_GRID, true) ?: true
+    }
+
+    fun set(on: Boolean) {
+        grid = on
+        prefs?.edit()?.putBoolean(KEY_GRID, on)?.apply()
+    }
+}
+
 object PipSettings {
     private const val KEY_ENABLED = "app_pip_enabled"
     private var prefs: SharedPreferences? = null

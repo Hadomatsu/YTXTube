@@ -44,6 +44,7 @@ class YTXTubeApplication : Application(), ImageLoaderFactory {
         CaptionPreference.init(this)
         VideoGestureSettings.init(this)
         PlayerControlSettings.init(this)
+        HomeLayoutSettings.init(this)
         PipSettings.init(this)
         MiniPlayerSettings.init(this)
         ResumeStore.init(this)

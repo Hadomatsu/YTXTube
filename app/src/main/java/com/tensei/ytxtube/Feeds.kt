@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -32,6 +33,7 @@ import androidx.compose.ui.layout.ContentScale
 import coil.compose.AsyncImage
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -218,6 +220,13 @@ fun FeedList(
     filterScrollKey: Any? = null,
 
     channelAvatarSeed: Map<String, String?> = emptyMap(),
+
+    /**
+     * Show videos side by side instead of one big card per row. How many per row follows the
+     * width the list actually gets (see [HomeGrid]), so a foldable shows 2 on the cover screen
+     * and more when unfolded.
+     */
+    grid: Boolean = false,
 ) {
     val c = MaterialTheme.colorScheme
     val listVideos = videos ?: feed.videos
@@ -236,14 +245,51 @@ fun FeedList(
     }
     LaunchedEffect(nearEnd, listVideos.size) { if (nearEnd && listVideos.isNotEmpty()) feed.loadMore() }
     PullToRefresh(enabled = pullToRefresh, refreshing = feed.refreshing, onRefresh = feed::refresh, topPadding = indicatorTop) {
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+    // The list stays a single LazyColumn (so headers, pull-to-refresh and paging keep working);
+    // in grid mode each item is simply one row holding [columns] videos.
+    val columns = if (grid) HomeGrid.columns(maxWidth.value) else 1
+    val rows = remember(listVideos, columns) { if (columns > 1) listVideos.chunked(columns) else emptyList() }
+
+    // Folding or unfolding changes the column count, which would shift the rows under the
+    // scroll position. Re-aim at the same video (SideEffect runs before the new layout, so the
+    // visible index still counts rows of the old width).
+    val lastColumns = remember { intArrayOf(columns) }
+    SideEffect {
+        val before = lastColumns[0]
+        if (before != columns) {
+            val target = (list.firstVisibleItemIndex * before / columns).coerceAtLeast(0)
+            lastColumns[0] = columns
+            scope.launch { list.scrollToItem(target) }
+        }
+    }
     LazyColumn(state = list, contentPadding = contentPadding) {
         header()
-        items(listVideos, key = { it.id }) { video ->
-            VideoCard(
-                video,
-                onClick = { onOpen(video) },
-                modifier = Modifier.animateItem(),
-            )
+        if (columns > 1) {
+            items(rows, key = { row -> row.first().id }) { row ->
+                Row(
+                    modifier = Modifier
+                        .animateItem()
+                        .fillMaxWidth()
+                        .padding(start = HomeGrid.EDGE_DP.dp, end = HomeGrid.EDGE_DP.dp, bottom = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(HomeGrid.GAP_DP.dp),
+                    verticalAlignment = Alignment.Top,
+                ) {
+                    row.forEach { video ->
+                        VideoCardGrid(video, onClick = { onOpen(video) }, modifier = Modifier.weight(1f))
+                    }
+                    // Keep a half-empty last row the same width as the rows above it.
+                    repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
+                }
+            }
+        } else {
+            items(listVideos, key = { it.id }) { video ->
+                VideoCard(
+                    video,
+                    onClick = { onOpen(video) },
+                    modifier = Modifier.animateItem(),
+                )
+            }
         }
         when {
 
@@ -262,6 +308,7 @@ fun FeedList(
                 }
             }
         }
+    }
     }
     }
 }

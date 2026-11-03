@@ -242,6 +242,7 @@ fun HomeScreen(
                 indicatorTop = top,
                 videos = filteredVideos,
                 filterScrollKey = activeFilter,
+                grid = HomeLayoutSettings.grid,
                 header = {
                     if (!signedIn) {
                         item(key = "anon_banner") {
