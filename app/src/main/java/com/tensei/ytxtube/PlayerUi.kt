@@ -1,5 +1,7 @@
 package com.tensei.ytxtube
 
+import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.ui.unit.IntOffset
@@ -1214,6 +1216,7 @@ fun BitChordMusicPlayer(
     val context = LocalContext.current
     var showTrackMenu by remember(item.id) { mutableStateOf(false) }
     var showLyrics by remember(item.id) { mutableStateOf(false) }
+    var showQueue by remember(item.id) { mutableStateOf(false) }
     var lyrics by remember(item.id) { mutableStateOf<LyricsDoc?>(null) }
     var lyricsLoading by remember(item.id) { mutableStateOf(false) }
     var englishScript by remember(item.id) { mutableStateOf(false) }
@@ -1265,319 +1268,305 @@ fun BitChordMusicPlayer(
                     ),
                 ),
         )
-        Column(
-            modifier = Modifier
+        BoxWithConstraints(
+            Modifier
                 .fillMaxSize()
-                .padding(top = top, bottom = bottom + 16.dp)
-                .padding(horizontal = 24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
+                .padding(top = top, bottom = bottom + 12.dp),
         ) {
-
-            Row(
+            // On the unfolded screen the controls keep a phone-like width in the middle and the cover takes
+            // whatever height is left, so the seek bar and every button always stay on screen.
+            val wide = maxWidth >= 600.dp
+            val controlsWidth = if (wide) 540.dp else maxWidth
+            Column(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp),
-                verticalAlignment = Alignment.CenterVertically,
+                    .fillMaxSize()
+                    .padding(horizontal = 24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                IconButton(onClick = onCollapse) {
-                    Icon(
-                        Icons.Rounded.KeyboardArrowDown,
-                        contentDescription = "Collapse",
-                        tint = c.onSurface,
-                        modifier = Modifier.size(32.dp),
-                    )
-                }
-                Column(
-                    modifier = Modifier.weight(1f),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Text(
-                        "YTX MUSIC",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 1.2.sp,
-                        color = c.onSurfaceVariant.copy(alpha = 0.85f),
-                    )
-                    Text(
-                        "Now Playing",
-                        fontSize = 13.5.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = c.onSurface,
-                    )
-                }
-                IconButton(onClick = { showTrackMenu = true }) {
-                    Icon(
-                        Icons.Rounded.MoreVert,
-                        contentDescription = "Options",
-                        tint = c.onSurface,
-                        modifier = Modifier.size(24.dp),
-                    )
-                }
-            }
-
-            Spacer(Modifier.weight(if (showLyrics) 0.12f else 0.5f))
-
-
-            if (showLyrics) {
-                MusicLyricsPanel(
-                    lyrics = lyrics,
-                    loading = lyricsLoading,
-                    positionMs = state.positionMs,
-                    englishScript = englishScript,
-                    onToggleEnglish = { englishScript = !englishScript },
-                    onSeek = { state.seekTo(it) },
-                    onDismiss = { showLyrics = false },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(if (showLyrics) 7f else 3.5f),
-                )
-            } else {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth(0.92f)
-                        .aspectRatio(1f)
-                        .graphicsLayer {
-                            scaleX = albumScale
-                            scaleY = albumScale
-                        }
-                        .shadow(
-                            elevation = 30.dp,
-                            shape = RoundedCornerShape(28.dp),
-                            ambientColor = dominantColor.copy(alpha = 0.55f),
-                            spotColor = Color.Black.copy(alpha = 0.7f),
-                        )
-                        .clip(RoundedCornerShape(28.dp))
-                        .background(c.surfaceContainerHighest)
-                        .border(
-                            width = 1.dp,
-                            brush = Brush.linearGradient(
-                                listOf(
-                                    Color.White.copy(alpha = 0.22f),
-                                    Color.Transparent,
-                                    Color.White.copy(alpha = 0.06f),
-                                ),
-                            ),
-                            shape = RoundedCornerShape(28.dp),
-                        ),
-                ) {
-                    AsyncImage(
-                        model = highResMusicThumbnail(item.thumbnail) ?: sharpenFeedThumbnail(null, item.id),
-                        contentDescription = item.title,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                }
-            }
-
-            Spacer(Modifier.weight(if (showLyrics) 0.12f else 0.5f))
-
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        item.title,
-                        fontFamily = RoundedHeavy,
-                        fontWeight = FontWeight.ExtraBold,
-                        fontSize = 22.sp,
-                        color = c.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Spacer(Modifier.height(3.dp))
-                    Text(
-                        item.channel,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = c.onSurfaceVariant.copy(alpha = 0.85f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                Spacer(Modifier.width(12.dp))
-                val liked = state.accountState?.like == LikeStatus.Like
-                IconButton(onClick = state::toggleLike) {
-                    Icon(
-                        if (liked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
-                        contentDescription = "Like",
-                        tint = if (liked) Color(0xFFFF2D55) else c.onSurfaceVariant,
-                        modifier = Modifier.size(28.dp),
-                    )
-                }
-            }
-
-            Spacer(Modifier.height(16.dp))
-
-
-            val duration = state.durationMs.coerceAtLeast(1L)
-            val currentPos = state.positionMs.coerceIn(0L, duration)
-            var dragPos by remember { mutableStateOf<Float?>(null) }
-            val sliderValue = dragPos ?: (currentPos.toFloat() / duration.toFloat())
-
-            Slider(
-                value = sliderValue.coerceIn(0f, 1f),
-                onValueChange = { dragPos = it },
-                onValueChangeFinished = {
-                    dragPos?.let {
-                        state.seekTo((it * duration).toLong())
-                    }
-                    dragPos = null
-                },
-                colors = SliderDefaults.colors(
-                    thumbColor = c.onSurface,
-                    activeTrackColor = c.onSurface,
-                    inactiveTrackColor = c.onSurface.copy(alpha = 0.2f),
-                ),
-                modifier = Modifier.fillMaxWidth(),
-            )
-
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 4.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Text(
-                    formatDuration((dragPos?.let { (it * duration).toLong() } ?: currentPos)),
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = c.onSurfaceVariant.copy(alpha = 0.75f),
-                )
-                Text(
-                    formatDuration(duration),
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = c.onSurfaceVariant.copy(alpha = 0.75f),
-                )
-            }
-
-            Spacer(Modifier.height(12.dp))
-
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-
-                IconButton(
-                    onClick = state::toggleShuffle,
-                    modifier = Modifier.size(48.dp),
-                ) {
-                    Icon(
-                        Icons.Rounded.Shuffle,
-                        contentDescription = "Shuffle",
-                        tint = if (state.shuffleEnabled) c.primary else c.onSurfaceVariant.copy(alpha = 0.7f),
-                        modifier = Modifier.size(24.dp),
-                    )
-                }
-
-
-                IconButton(
-                    onClick = state::skipPrevious,
-                    modifier = Modifier.size(48.dp),
-                ) {
-                    Icon(
-                        Icons.Rounded.SkipPrevious,
-                        contentDescription = "Previous",
-                        tint = c.onSurface,
-                        modifier = Modifier.size(36.dp),
-                    )
-                }
-
-
-                Box(
-                    modifier = Modifier
-                        .size(72.dp)
-                        .clip(CircleShape)
-                        .background(c.onSurface)
-                        .pressable(pressedScale = 0.92f, onClick = state::togglePlay),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    if (state.isBuffering) {
-                        CircularProgressIndicator(
-                            color = c.surface,
-                            strokeWidth = 3.dp,
-                            modifier = Modifier.size(32.dp),
-                        )
-                    } else {
-                        Icon(
-                            if (state.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                            contentDescription = if (state.isPlaying) "Pause" else "Play",
-                            tint = c.surface,
-                            modifier = Modifier.size(40.dp),
-                        )
-                    }
-                }
-
-
-                IconButton(
-                    onClick = state::skipNext,
-                    modifier = Modifier.size(48.dp),
-                ) {
-                    Icon(
-                        Icons.Rounded.SkipNext,
-                        contentDescription = "Next",
-                        tint = c.onSurface,
-                        modifier = Modifier.size(36.dp),
-                    )
-                }
-
-
-                IconButton(
-                    onClick = state::toggleLoop,
-                    modifier = Modifier.size(48.dp),
-                ) {
-                    Icon(
-                        if (state.loopEnabled) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
-                        contentDescription = "Repeat",
-                        tint = if (state.loopEnabled) c.primary else c.onSurfaceVariant.copy(alpha = 0.7f),
-                        modifier = Modifier.size(24.dp),
-                    )
-                }
-            }
-
-            if (!showLyrics) {
-                Spacer(Modifier.height(16.dp))
-
-
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 8.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                        .height(56.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(c.onSurface.copy(alpha = 0.08f))
-                            .padding(horizontal = 10.dp, vertical = 5.dp),
-                    ) {
-                        Text(
-                            "HQ AUDIO · 256 KBPS AAC",
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 0.8.sp,
-                            color = c.onSurfaceVariant,
+                    IconButton(onClick = onCollapse) {
+                        Icon(
+                            Icons.Rounded.KeyboardArrowDown,
+                            contentDescription = "Collapse",
+                            tint = c.onSurface,
+                            modifier = Modifier.size(32.dp),
                         )
                     }
-
-
-                    IconButton(
-                        onClick = { showLyrics = !showLyrics },
-                        modifier = Modifier.size(40.dp),
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
-                        Icon(
-                            Icons.Rounded.Lyrics,
-                            contentDescription = "Lyrics",
-                            tint = if (showLyrics) c.primary else c.onSurfaceVariant.copy(alpha = 0.7f),
-                            modifier = Modifier.size(22.dp),
+                        Text(
+                            "YTX MUSIC",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 1.2.sp,
+                            color = c.onSurfaceVariant.copy(alpha = 0.85f),
                         )
+                        Text(
+                            "Now Playing",
+                            fontSize = 13.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = c.onSurface,
+                        )
+                    }
+                    IconButton(onClick = { showTrackMenu = true }) {
+                        Icon(
+                            Icons.Rounded.MoreVert,
+                            contentDescription = "Options",
+                            tint = c.onSurface,
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
+                }
+
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .padding(vertical = if (wide) 18.dp else 12.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (showLyrics) {
+                        MusicLyricsPanel(
+                            lyrics = lyrics,
+                            loading = lyricsLoading,
+                            positionMs = state.positionMs,
+                            englishScript = englishScript,
+                            onToggleEnglish = { englishScript = !englishScript },
+                            onSeek = { state.seekTo(it) },
+                            onDismiss = { showLyrics = false },
+                            modifier = Modifier
+                                .widthIn(max = controlsWidth + 80.dp)
+                                .fillMaxSize(),
+                        )
+                    } else {
+                        BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            val side = minOf(maxWidth, maxHeight, controlsWidth)
+                            Box(
+                                modifier = Modifier
+                                    .size(side)
+                                    .graphicsLayer {
+                                        scaleX = albumScale
+                                        scaleY = albumScale
+                                    }
+                                    .shadow(
+                                        elevation = 30.dp,
+                                        shape = RoundedCornerShape(28.dp),
+                                        ambientColor = dominantColor.copy(alpha = 0.55f),
+                                        spotColor = Color.Black.copy(alpha = 0.7f),
+                                    )
+                                    .clip(RoundedCornerShape(28.dp))
+                                    .background(c.surfaceContainerHighest)
+                                    .border(
+                                        width = 1.dp,
+                                        brush = Brush.linearGradient(
+                                            listOf(
+                                                Color.White.copy(alpha = 0.22f),
+                                                Color.Transparent,
+                                                Color.White.copy(alpha = 0.06f),
+                                            ),
+                                        ),
+                                        shape = RoundedCornerShape(28.dp),
+                                    ),
+                            ) {
+                                AsyncImage(
+                                    model = highResMusicThumbnail(item.thumbnail) ?: sharpenFeedThumbnail(null, item.id),
+                                    contentDescription = item.title,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize(),
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Column(
+                    Modifier
+                        .widthIn(max = controlsWidth)
+                        .fillMaxWidth(),
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                item.title,
+                                fontFamily = RoundedHeavy,
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = if (wide) 24.sp else 22.sp,
+                                color = c.onSurface,
+                                maxLines = 1,
+                                modifier = Modifier.basicMarquee(),
+                            )
+                            Spacer(Modifier.height(3.dp))
+                            Text(
+                                item.channel,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = c.onSurfaceVariant.copy(alpha = 0.85f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        val liked = state.accountState?.like == LikeStatus.Like
+                        IconButton(onClick = state::toggleLike) {
+                            Icon(
+                                if (liked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                                contentDescription = "Like",
+                                tint = if (liked) Color(0xFFFF2D55) else c.onSurfaceVariant,
+                                modifier = Modifier.size(28.dp),
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.height(10.dp))
+
+                    MusicSeekBar(
+                        positionMs = state.positionMs,
+                        durationMs = state.durationMs,
+                        onSeek = { state.seekTo(it) },
+                        color = c.onSurface,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+
+                    Spacer(Modifier.height(10.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+
+                        IconButton(
+                            onClick = state::toggleShuffle,
+                            modifier = Modifier.size(48.dp),
+                        ) {
+                            Icon(
+                                Icons.Rounded.Shuffle,
+                                contentDescription = "Shuffle",
+                                tint = if (state.shuffleEnabled) c.primary else c.onSurfaceVariant.copy(alpha = 0.7f),
+                                modifier = Modifier.size(24.dp),
+                            )
+                        }
+
+
+                        IconButton(
+                            onClick = state::skipPrevious,
+                            modifier = Modifier.size(48.dp),
+                        ) {
+                            Icon(
+                                Icons.Rounded.SkipPrevious,
+                                contentDescription = "Previous",
+                                tint = c.onSurface,
+                                modifier = Modifier.size(36.dp),
+                            )
+                        }
+
+
+                        Box(
+                            modifier = Modifier
+                                .size(72.dp)
+                                .clip(CircleShape)
+                                .background(c.onSurface)
+                                .pressable(pressedScale = 0.92f, onClick = state::togglePlay),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            if (state.isBuffering) {
+                                CircularProgressIndicator(
+                                    color = c.surface,
+                                    strokeWidth = 3.dp,
+                                    modifier = Modifier.size(32.dp),
+                                )
+                            } else {
+                                Icon(
+                                    if (state.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                                    contentDescription = if (state.isPlaying) "Pause" else "Play",
+                                    tint = c.surface,
+                                    modifier = Modifier.size(40.dp),
+                                )
+                            }
+                        }
+
+
+                        IconButton(
+                            onClick = state::skipNext,
+                            modifier = Modifier.size(48.dp),
+                        ) {
+                            Icon(
+                                Icons.Rounded.SkipNext,
+                                contentDescription = "Next",
+                                tint = c.onSurface,
+                                modifier = Modifier.size(36.dp),
+                            )
+                        }
+
+
+                        IconButton(
+                            onClick = state::toggleLoop,
+                            modifier = Modifier.size(48.dp),
+                        ) {
+                            Icon(
+                                if (state.loopEnabled) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
+                                contentDescription = "Repeat",
+                                tint = if (state.loopEnabled) c.primary else c.onSurfaceVariant.copy(alpha = 0.7f),
+                                modifier = Modifier.size(24.dp),
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.height(14.dp))
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(c.onSurface.copy(alpha = 0.08f))
+                                .padding(horizontal = 10.dp, vertical = 5.dp),
+                        ) {
+                            Text(
+                                "HQ AUDIO · 256 KBPS AAC",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 0.8.sp,
+                                color = c.onSurfaceVariant,
+                            )
+                        }
+                        Spacer(Modifier.weight(1f))
+                        IconButton(
+                            onClick = { showQueue = true },
+                            modifier = Modifier.size(44.dp),
+                        ) {
+                            Icon(
+                                Icons.Rounded.QueueMusic,
+                                contentDescription = "Up next",
+                                tint = c.onSurfaceVariant.copy(alpha = 0.8f),
+                                modifier = Modifier.size(24.dp),
+                            )
+                        }
+                        IconButton(
+                            onClick = { showLyrics = !showLyrics },
+                            modifier = Modifier.size(44.dp),
+                        ) {
+                            Icon(
+                                Icons.Rounded.Lyrics,
+                                contentDescription = "Lyrics",
+                                tint = if (showLyrics) c.primary else c.onSurfaceVariant.copy(alpha = 0.8f),
+                                modifier = Modifier.size(22.dp),
+                            )
+                        }
                     }
                 }
             }
@@ -1603,6 +1592,17 @@ fun BitChordMusicPlayer(
                 context.startActivity(Intent.createChooser(send, item.title))
             },
             onDismiss = { showTrackMenu = false },
+        )
+    }
+
+    if (showQueue) {
+        MusicQueueSheet(
+            queue = state.musicQueue,
+            onPlay = { i ->
+                showQueue = false
+                state.openMusicQueue(state.musicQueue, i, expand = true)
+            },
+            onDismiss = { showQueue = false },
         )
     }
 }
