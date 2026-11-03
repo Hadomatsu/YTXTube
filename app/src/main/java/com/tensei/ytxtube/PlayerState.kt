@@ -227,6 +227,7 @@ class PlayerState(private val scope: CoroutineScope) {
 
     private var loadJob: Job? = null
     private var relatedJob: Job? = null
+    private val RELATED_MIN = 8
 
     /** True while the related videos are being fetched separately (the extractor had none). */
     var relatedLoading by mutableStateOf(false)
@@ -360,7 +361,9 @@ class PlayerState(private val scope: CoroutineScope) {
                     Log.i("YTXTubeTime", "details +${android.os.SystemClock.elapsedRealtime() - openedAt}ms")
                     details = d
                     refreshTracks()
-                    if (d.related.isEmpty()) loadRelatedFallback(item.id, d.item.title)
+                    // The extractor sometimes hands back only a couple of related videos, so top
+                    // short lists up as well, not just empty ones.
+                    if (d.related.size < RELATED_MIN) loadRelatedFallback(item.id, d.item.title)
                     else prefetchRelated(d.related)
 
                     if (!aspectFromFrames) d.aspect?.let { videoAspect = it }
@@ -407,13 +410,17 @@ class PlayerState(private val scope: CoroutineScope) {
             }
             if (current?.id != id) return@launch
             relatedLoading = false
-            if (found.isEmpty()) {
+            val shown = details?.takeIf { it.item.id == id } ?: return@launch
+            // Keep what the extractor gave (it comes first) and add what was found after it.
+            val merged = (shown.related + found).distinctBy { it.id }.filter { it.id != id }
+            if (merged.isEmpty()) {
                 relatedFailed = true
                 return@launch
             }
-            found.forEach { known[it.id] = it }
-            details = details?.takeIf { it.item.id == id }?.copy(related = found)
-            prefetchRelated(found)
+            if (found.isEmpty()) return@launch
+            merged.forEach { known[it.id] = it }
+            details = shown.copy(related = merged)
+            prefetchRelated(merged)
         }
     }
 

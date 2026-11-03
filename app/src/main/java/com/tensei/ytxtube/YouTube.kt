@@ -279,6 +279,10 @@ object YouTube {
     private suspend fun fetchFallbackRelated(id: String, title: String): List<VideoItem> {
         val parsed = runCatching {
             val next = InnerTube.postAny("next", org.json.JSONObject().put("videoId", id))
+            // The same parser the home feed uses: it also understands the newer lockup cards, which
+            // the hand-rolled one below does not (and it keeps views, duration and the channel).
+            val viaFeed = runCatching { InnerTube.parseFeed(next).videos.filter { it.id != id } }.getOrNull()
+            if (!viaFeed.isNullOrEmpty()) return@runCatching viaFeed
             val list = mutableListOf<VideoItem>()
             next.walk { key, obj ->
                 if (key == "compactVideoRenderer" || key == "videoRenderer") {

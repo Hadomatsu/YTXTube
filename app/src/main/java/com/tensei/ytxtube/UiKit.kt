@@ -42,6 +42,8 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
@@ -248,12 +250,20 @@ val LocalVideoMenu = staticCompositionLocalOf<(VideoItem) -> Unit> { {} }
 
 @Composable
 fun Thumbnail(url: String?, modifier: Modifier = Modifier, radius: Int = 22, videoId: String? = null) {
-    val model = remember(url, videoId) {
+    // The sharpened address (hq720) does not exist for old or low-resolution videos, which left a
+    // blank card. If it fails, fall back to the address YouTube gave, then to hqdefault.
+    val candidates = remember(url, videoId) {
         val id = videoId ?: url?.let(::ytVideoIdFromThumbUrl)
-        if (id != null) sharpenFeedThumbnail(url, id) else url
+        buildList {
+            add(if (id != null) sharpenFeedThumbnail(url, id) else url)
+            add(url)
+            if (id != null) add("https://i.ytimg.com/vi/$id/hqdefault.jpg")
+        }.filterNotNull().distinct()
     }
+    var attempt by remember(candidates) { androidx.compose.runtime.mutableIntStateOf(0) }
     AsyncImage(
-        model = model,
+        model = candidates.getOrNull(attempt),
+        onError = { if (attempt < candidates.lastIndex) attempt++ },
         contentDescription = null,
         contentScale = ContentScale.Crop,
         modifier = modifier
