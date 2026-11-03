@@ -132,6 +132,7 @@ internal object TokWeb {
     host.appendChild(s);
   }
   var lastScan = 0;
+  var APP_PILLS = ['open app', 'open on tiktok', 'open tiktok', 'open in app', 'discover more', 'watch on tiktok', 'get app', 'get the app', 'use the app'];
   function sweep() {
     addStyle();
     var h = document.querySelector('[data-e2e="home-icon"]');
@@ -172,24 +173,25 @@ internal object TokWeb {
       }
     }
     var now = Date.now();
-    if (now - lastScan > 1500 && !document.querySelector('[data-ytx-hide]')) {
+    if (now - lastScan > 1500) {
       lastScan = now;
+      // TikTok's floating "open the app" pills (their wording differs per page). Only small pills are hidden.
       var all = document.querySelectorAll('a,button,span,div');
       for (var i = 0; i < all.length; i++) {
         var c = all[i];
         if (c.childElementCount > 4) continue;
         var t = (c.textContent || '').trim().toLowerCase();
-        if (t !== 'open app') continue;
+        if (APP_PILLS.indexOf(t) < 0) continue;
+        if (c.closest('[data-ytx-hide]')) continue;
         var cr = c.getBoundingClientRect();
-        if (cr.width > 220 || cr.height > 64 || cr.width === 0) continue;
+        if (cr.width > 260 || cr.height > 64 || cr.width === 0) continue;
         var r = c;
         while (r.parentElement && r.parentElement !== document.body) {
           var pr = r.parentElement.getBoundingClientRect();
-          if ((r.parentElement.textContent || '').trim().toLowerCase() !== 'open app' || pr.width > 220 || pr.height > 64) break;
+          if ((r.parentElement.textContent || '').trim().toLowerCase() !== t || pr.width > 260 || pr.height > 64) break;
           r = r.parentElement;
         }
         r.setAttribute('data-ytx-hide', '1');
-        break;
       }
     }
   }
