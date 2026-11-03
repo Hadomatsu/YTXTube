@@ -2,8 +2,8 @@
 // The video decodes (a canvas can read its frames) but the web view does not paint it, so the canvas
 // shows the picture instead, and TikTok's own captions and buttons stay where they are.
 (function () {
-  if (window.__ytxMirV === 'v8') return;
-  window.__ytxMirV = 'v8';
+  if (window.__ytxMirV === 'v9') return;
+  window.__ytxMirV = 'v9';
   ['ytx-dbg', 'ytx-paint'].forEach(function (id) { var o = document.getElementById(id); if (o) o.remove(); });
   if (window.__ytxDbgTimer) { clearInterval(window.__ytxDbgTimer); window.__ytxDbgTimer = 0; }
   var M = window.__ytxMir;
@@ -67,6 +67,48 @@
       if (!p || p.tagName !== 'VIDEO') c.remove();
     });
   }, 1000);
+
+  // ---- layout panel: where the video sits and which ancestor could be clipping it ----
+  function cls(e) {
+    if (!e || !e.tagName) return 'none';
+    var c = (typeof e.className === 'string' ? e.className : '').split(' ')[0] || '';
+    var d = e.getAttribute && e.getAttribute('data-e2e');
+    return e.tagName.toLowerCase() + (e.id ? '#' + e.id.slice(0, 8) : '') + (c ? '.' + c.slice(-10) : '') + (d ? '[' + d.slice(0, 12) + ']' : '');
+  }
+  function st(e) {
+    var s = getComputedStyle(e), r = e.getBoundingClientRect();
+    return cls(e) + ' ' + Math.round(r.left) + ',' + Math.round(r.top) + ' ' + Math.round(r.width) + 'x' + Math.round(r.height) +
+      ' d:' + s.display + ' p:' + s.position + ' ov:' + s.overflowX + '/' + s.overflowY + ' h:' + s.height + ' mh:' + s.maxHeight +
+      (e.getAttribute('style') ? ' st:' + e.getAttribute('style').slice(0, 40) : '') +
+      (s.contain !== 'none' ? ' ct:' + s.contain : '') + (s.contentVisibility !== 'visible' ? ' cv:' + s.contentVisibility : '') +
+      (s.clipPath !== 'none' ? ' CLIP' : '') + (s.transform !== 'none' ? ' T' : '') + (s.opacity !== '1' ? ' o:' + s.opacity : '');
+  }
+  function lines() {
+    var L = [];
+    try {
+      var h = document.documentElement, b = document.body;
+      L.push('html ' + st(h)); L.push('body ' + st(b));
+      L.push('inner ' + innerWidth + 'x' + innerHeight + ' client ' + h.clientWidth + 'x' + h.clientHeight + ' vv ' + (window.visualViewport ? Math.round(window.visualViewport.width) + 'x' + Math.round(window.visualViewport.height) : '-'));
+      var v = document.querySelector('video');
+      if (v) { L.push('V ' + st(v)); var e = v.parentElement, n = 0; while (e && e !== h && n < 14) { L.push(' ^' + st(e)); e = e.parentElement; n++; } }
+      var c = document.querySelector('canvas[data-ytx-mirror]');
+      if (c) L.push('C ' + st(c));
+    } catch (x) { L.push('err ' + x); }
+    return L;
+  }
+  function draw() {
+    var p = document.getElementById('ytx-dbg');
+    if (!p) {
+      p = document.createElement('div'); p.id = 'ytx-dbg';
+      p.style.cssText = 'position:fixed;left:0;right:0;bottom:60px;z-index:2147483647;pointer-events:none;background:rgba(0,0,0,.9);border-top:2px solid #0f0;padding:2px';
+      (document.body || document.documentElement).appendChild(p);
+    }
+    var html = '';
+    lines().forEach(function (t) { html += '<div style="font:9px/10px monospace;color:#0f0;white-space:nowrap;overflow:hidden">' + t.replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</div>'; });
+    p.innerHTML = html;
+  }
+  window.__ytxDbgTimer = setInterval(draw, 2000);
+  draw();
 
   var old = window.__ytxDiag;
   if (typeof old === 'function' && !old.__m) {
