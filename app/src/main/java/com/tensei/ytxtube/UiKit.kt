@@ -58,6 +58,8 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onPlaced
+import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -369,11 +371,14 @@ fun VideoCard(video: VideoItem, onClick: () -> Unit, modifier: Modifier = Modifi
             DurationPill(video.durationSec, Modifier.align(Alignment.BottomEnd).padding(8.dp), isLive = video.isLive)
             ResumeBar(video.id, Modifier.align(Alignment.BottomStart))
         }
-        // The thumbnail's colour runs down under the title and fades to the page at the card's end.
+        // The thumbnail's colour runs down under the title and has faded to the page by the time
+        // the channel line starts, so the card has no visible edge.
+        val density = LocalDensity.current
+        var metaTop by remember { androidx.compose.runtime.mutableFloatStateOf(Float.NaN) }
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .thumbnailGlow(video.id, video.thumbnail)
+                .thumbnailGlow(video.id, video.thumbnail) { metaTop }
                 .padding(start = 12.dp, end = 4.dp, top = 12.dp, bottom = 16.dp),
             verticalAlignment = Alignment.Top,
         ) {
@@ -394,6 +399,7 @@ fun VideoCard(video: VideoItem, onClick: () -> Unit, modifier: Modifier = Modifi
                 Spacer(Modifier.height(4.dp))
                 Text(
                     metaLine(video.channel, video.views, video.uploaded, video.isLive),
+                    modifier = Modifier.onPlaced { metaTop = with(density) { 12.dp.toPx() } + it.positionInParent().y },
                     color = c.onSurfaceVariant,
                     fontSize = 12.sp,
                     lineHeight = 16.sp,
@@ -443,10 +449,12 @@ fun VideoCardGrid(video: VideoItem, onClick: () -> Unit, modifier: Modifier = Mo
             DurationPill(video.durationSec, Modifier.align(Alignment.BottomEnd).padding(6.dp), small = true, isLive = video.isLive)
             ResumeBar(video.id, Modifier.align(Alignment.BottomStart))
         }
+        val density = LocalDensity.current
+        var metaTop by remember { androidx.compose.runtime.mutableFloatStateOf(Float.NaN) }
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .thumbnailGlow(video.id, video.thumbnail)
+                .thumbnailGlow(video.id, video.thumbnail) { metaTop }
                 .padding(start = 8.dp, top = 8.dp, bottom = 10.dp),
             verticalAlignment = Alignment.Top,
         ) {
@@ -462,6 +470,7 @@ fun VideoCardGrid(video: VideoItem, onClick: () -> Unit, modifier: Modifier = Mo
                 Spacer(Modifier.height(3.dp))
                 Text(
                     metaLine(video.channel, video.views, video.uploaded, video.isLive),
+                    modifier = Modifier.onPlaced { metaTop = with(density) { 8.dp.toPx() } + it.positionInParent().y },
                     color = c.onSurfaceVariant,
                     fontSize = 11.sp,
                     lineHeight = 14.sp,

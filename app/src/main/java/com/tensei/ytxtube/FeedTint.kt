@@ -106,11 +106,17 @@ object ThumbTint {
 }
 
 /**
- * Paints the card's info area with the thumbnail's colour at the top, fading into the page
- * background at the bottom of the card. Until the colour is known it is just the background.
+ * Paints the card's info area with the thumbnail's colour at the top, fading smoothly into the
+ * page background by [fadeEndPx] (measured from the top of the area; the whole area when it is not
+ * known yet), so the card's edge never shows. Until the colour is known it is just the background.
  */
 @Composable
-fun Modifier.thumbnailGlow(videoId: String, url: String?, strength: Float = 0.62f): Modifier {
+fun Modifier.thumbnailGlow(
+    videoId: String,
+    url: String?,
+    strength: Float = 0.62f,
+    fadeEndPx: () -> Float = { Float.NaN },
+): Modifier {
     val context = LocalContext.current
     val background = MaterialTheme.colorScheme.background
     val raw by produceState(ThumbTint.cached(videoId), videoId, url) {
@@ -121,6 +127,17 @@ fun Modifier.thumbnailGlow(videoId: String, url: String?, strength: Float = 0.62
     }
     val top by animateColorAsState(target, tween(420), label = "thumb-glow")
     return drawBehind {
-        drawRect(Brush.verticalGradient(listOf(top, background)))
+        val end = fadeEndPx().takeIf { !it.isNaN() && it > 0f }?.coerceAtMost(size.height) ?: size.height
+        // An eased fade, so there is no visible line where the colour runs out.
+        val brush = Brush.verticalGradient(
+            0f to top,
+            0.3f to lerp(background, top, 0.55f),
+            0.6f to lerp(background, top, 0.2f),
+            0.85f to lerp(background, top, 0.04f),
+            1f to background,
+            startY = 0f,
+            endY = end,
+        )
+        drawRect(brush)
     }
 }
