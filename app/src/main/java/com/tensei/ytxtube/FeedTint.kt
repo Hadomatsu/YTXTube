@@ -15,6 +15,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import androidx.core.graphics.ColorUtils
 import androidx.core.graphics.drawable.toBitmap
 import coil.imageLoader
@@ -108,7 +109,7 @@ object ThumbTint {
 /**
  * Paints the card's info area with the thumbnail's colour at the top, fading smoothly into the
  * page background by [fadeEndPx] (measured from the top of the area; the whole area when it is not
- * known yet), so the card's edge never shows. Until the colour is known it is just the background.
+ * known yet) and towards both sides, so the card's edge never shows. Until the colour is known it is just the background.
  */
 @Composable
 fun Modifier.thumbnailGlow(
@@ -139,5 +140,19 @@ fun Modifier.thumbnailGlow(
             endY = end,
         )
         drawRect(brush)
+        // Soften the left and right sides too, so the colour has no hard edge where the card ends.
+        val edge = 26.dp.toPx().coerceAtMost(size.width / 3f)
+        val f = edge / size.width
+        val clear = background.copy(alpha = 0f)
+        drawRect(
+            Brush.horizontalGradient(
+                0f to background,
+                f * 0.45f to background.copy(alpha = 0.6f),
+                f to clear,
+                1f - f to clear,
+                1f - f * 0.45f to background.copy(alpha = 0.6f),
+                1f to background,
+            ),
+        )
     }
 }
