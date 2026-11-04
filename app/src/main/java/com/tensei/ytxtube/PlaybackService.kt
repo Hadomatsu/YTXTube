@@ -303,6 +303,22 @@ private class StreamRecoverer(
         if (item.localConfiguration?.uri?.scheme == "file") return
         val id = item.mediaId
         val position = player.currentPosition
+        if (PremiumAudio.get(id) != null) {
+            // The Premium 256 kbps stream was cut off. The normal stream is still good, so carry
+            // straight on with it from the same spot, without a new extraction, and leave Premium
+            // audio alone for a while so the next songs do not stall the same way.
+            Log.w("YTXTube", "premium audio for $id refused at ${position / 1000}s; continuing with the normal stream")
+            PremiumAudio.markFailed(id)
+            lastId = null
+            StreamRecovery.failed = null
+            StreamRecovery.recovering = id
+            main.post {
+                StreamRecovery.recovering = null
+                if (player.currentMediaItem?.mediaId != id || player.playerError == null) return@post
+                resume(item, position)
+            }
+            return
+        }
         if (id == lastId && position < lastPositionMs + PROGRESS_MS) {
             Log.w("YTXTube", "stream refused again for $id at ${position / 1000}s; giving up")
             return
@@ -313,8 +329,6 @@ private class StreamRecoverer(
         StreamRecovery.failed = null
         StreamRecovery.recovering = id
         StreamCache.invalidate(id)
-        // If the refused stream was the Premium one, the retry uses the normal stream.
-        if (PremiumAudio.get(id) != null) PremiumAudio.markFailed(id)
         resolver.execute {
             // The refused stream may carry a stale token: start the retry from a fresh one.
             runCatching { YtxPoTokenProvider.current?.reset() }
@@ -592,7 +606,17 @@ private class YouTubeMediaSourceFactory(context: Context) : MediaSource.Factory 
         fun audioSource(fallback: Stream): MediaSource =
             if (premium != null) {
                 Log.i("YTXTube", "media source ${mediaItem.mediaId}: premium audio itag ${premium.itag}")
-                ProgressiveMediaSource.Factory(dataSourceFactory)
+                // Loaded in short ranges through a DASH description, like the normal streams:
+                // one long open request is what YouTube cuts off after a couple of minutes.
+                val dash = premium.itagItem?.let { itagItem ->
+                    runCatching {
+                        val xml = YoutubeProgressiveDashManifestCreator.fromProgressiveStreamingUrl(premium.url, itagItem, info.duration)
+                        val manifest = DashManifestParser().parse(Uri.parse(premium.url), ByteArrayInputStream(xml.toByteArray()))
+                        DashMediaSource.Factory(dataSourceFactory).createMediaSource(manifest, mediaItem)
+                    }.onFailure { Log.w("YTXTube", "premium audio manifest failed for ${mediaItem.mediaId}: ${it.message}") }
+                        .getOrNull()
+                }
+                dash ?: ProgressiveMediaSource.Factory(dataSourceFactory)
                     .createMediaSource(mediaItem.buildUpon().setUri(premium.url).build())
             } else {
                 source(fallback, info.duration, mediaItem)

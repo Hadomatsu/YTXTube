@@ -3,6 +3,8 @@ package com.tensei.ytxtube
 import android.util.Log
 import okhttp3.Request
 import org.json.JSONObject
+import org.schabi.newpipe.extractor.MediaFormat
+import org.schabi.newpipe.extractor.services.youtube.ItagItem
 import org.schabi.newpipe.extractor.services.youtube.YoutubeJavaScriptPlayerManager
 import java.net.URLDecoder
 import java.net.URLEncoder
@@ -15,14 +17,18 @@ import java.util.concurrent.Future
  * Music web client for a Premium account, never in the streams the normal extraction sees. So for
  * a signed-in account this asks YouTube Music's player for the song, unlocks the URL the way the
  * web player does (signature and n parameter, through NewPipe's player code), adds the
- * proof-of-origin token when YouTube wants one, and checks that the stream really answers before
- * it is used. Anything that fails leaves the normal stream in place.
+ * proof-of-origin token when YouTube wants one, and checks that the stream really answers, at the
+ * start and further in, before it is used. It is played in short ranges like the normal streams.
+ * Anything that fails leaves the normal stream in place, and a stream cut off while playing puts
+ * Premium audio on hold for a while so songs do not keep stopping.
  */
 object PremiumAudio {
     private const val TAG = "PremiumAudio"
     private const val MAX_AGE_MS = 4 * 60 * 60 * 1000L
+    private const val HOLD_AFTER_FAILURE_MS = 45 * 60 * 1000L
 
-    data class Stream(val url: String, val itag: Int)
+    /** [itagItem] describes the file (ranges, codec) so it can be played in short ranges. */
+    data class Stream(val url: String, val itag: Int, val itagItem: ItagItem?)
 
     private class Entry(val at: Long, val stream: Stream?)
 
@@ -30,9 +36,12 @@ object PremiumAudio {
     private val failed = ConcurrentHashMap.newKeySet<String>()
     private val pool = Executors.newFixedThreadPool(2)
 
+    @Volatile
+    private var heldUntil = 0L
+
     private fun wanted(): Boolean =
         PlaybackPrefs.premiumAudio && Account.signedIn && PlaybackPrefs.audioQuality != AudioQuality.DATA_SAVER &&
-            AudioTrackPreference.key == null
+            AudioTrackPreference.key == null && System.currentTimeMillis() >= heldUntil
 
     /** The unlocked stream for this video, if one was found and is still fresh. */
     fun get(videoId: String): Stream? {
@@ -58,7 +67,9 @@ object PremiumAudio {
     /** The Premium stream was refused while playing: use the normal stream for this video from now on. */
     fun markFailed(videoId: String) {
         failed += videoId
-        cache.remove(videoId)
+        cache.clear()
+        heldUntil = System.currentTimeMillis() + HOLD_AFTER_FAILURE_MS
+        Log.w(TAG, "premium audio cut off for $videoId; using the normal streams for a while")
     }
 
     private fun resolve(videoId: String): Stream? {
@@ -97,18 +108,45 @@ object PremiumAudio {
             url = runCatching { YoutubeJavaScriptPlayerManager.getUrlWithThrottlingParameterDeobfuscated(videoId, url) }
                 .getOrDefault(url)
             val withToken = po?.streamingDataPoToken?.takeIf { it.isNotBlank() }?.let { url + "&pot=" + URLEncoder.encode(it, "UTF-8") }
+            val length = f.optString("contentLength").toLongOrNull() ?: 0L
             for (candidate in listOfNotNull(withToken, url)) {
-                if (answers(candidate)) return Stream(candidate, itag)
+                // The start and a spot three quarters in: a stream YouTube means to cut off
+                // answers the first but not the second.
+                if (answers(candidate, 0L) && (length < 400_000L || answers(candidate, length * 3 / 4))) {
+                    return Stream(candidate, itag, itagItemOf(f, itag))
+                }
             }
         }
         return null
     }
 
-    /** A two-byte read: YouTube answers it only for a URL it will really serve. */
-    private fun answers(url: String): Boolean = runCatching {
+    /** What the DASH description needs: codec, bitrate, channels and the init and index ranges. */
+    private fun itagItemOf(f: JSONObject, itag: Int): ItagItem? = runCatching {
+        val mime = f.optString("mimeType")
+        val codec = Regex("codecs=\"([^\"]+)\"").find(mime)?.groupValues?.get(1) ?: return null
+        val init = f.optJSONObject("initRange") ?: return null
+        val index = f.optJSONObject("indexRange") ?: return null
+        val format = if (mime.startsWith("audio/webm")) MediaFormat.WEBMA_OPUS else MediaFormat.M4A
+        val bitrate = f.optInt("bitrate").takeIf { it > 0 } ?: return null
+        ItagItem(itag, ItagItem.ItagType.AUDIO, format, f.optInt("averageBitrate", bitrate) / 1000).apply {
+            setBitrate(bitrate)
+            setCodec(codec)
+            setAudioChannels(f.optInt("audioChannels", 2).takeIf { it > 0 } ?: 2)
+            f.optString("audioSampleRate").toIntOrNull()?.let { setSampleRate(it) }
+            setInitStart(init.optString("start").toInt())
+            setInitEnd(init.optString("end").toInt())
+            setIndexStart(index.optString("start").toInt())
+            setIndexEnd(index.optString("end").toInt())
+            f.optString("approxDurationMs").toLongOrNull()?.let { setApproxDurationMs(it) }
+            f.optString("contentLength").toLongOrNull()?.let { setContentLength(it) }
+        }
+    }.getOrNull()
+
+    /** A two-byte read at [from]: YouTube answers it only for a URL it will really serve there. */
+    private fun answers(url: String, from: Long): Boolean = runCatching {
         val request = Request.Builder()
             .url(url)
-            .header("Range", "bytes=0-1")
+            .header("Range", "bytes=$from-${from + 1}")
             .header("User-Agent", Net.USER_AGENT)
             .build()
         Net.client.newCall(request).execute().use { it.code == 206 || it.code == 200 }

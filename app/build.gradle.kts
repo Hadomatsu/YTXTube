@@ -11,8 +11,8 @@ android {
     defaultConfig {
         minSdk = 24
         targetSdk = 36
-        versionCode = 255
-        versionName = "2.3.19"
+        versionCode = 256
+        versionName = "2.3.20"
     }
 
     // Two apps from one codebase: the YouTube client and the TikTok client (own package, own icon, own APK).
