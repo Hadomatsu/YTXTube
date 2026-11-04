@@ -152,9 +152,8 @@ internal fun AppleLyricsScreen(
         ) {
             Box(
                 Modifier
-                    .widthIn(max = 680.dp)
-                    .fillMaxSize()
-                    .padding(horizontal = 26.dp),
+                    .widthIn(max = 732.dp)
+                    .fillMaxSize(),
             ) {
                 when {
                     loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -177,8 +176,11 @@ internal fun AppleLyricsScreen(
                         onSeek = { state.seekTo(it) },
                         contentColor = Color.White,
                         alignTo = 0.3f,
+                        horizontalPadding = 26.dp,
                     )
-                    else -> PlainLyricsView(lyrics, romanized, contentColor = Color.White)
+                    else -> Box(Modifier.padding(horizontal = 26.dp)) {
+                        PlainLyricsView(lyrics, romanized, contentColor = Color.White)
+                    }
                 }
             }
         }

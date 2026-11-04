@@ -69,18 +69,26 @@ class WordTimeline(words: List<CaptionWord>) {
     /** Display line of every word. */
     private val lineOf: IntArray
 
+    /** First line of the two-line page every line belongs to. */
+    private val pageOf: IntArray
+
     init {
         val starts = ArrayList<Int>()
+        val pausedBefore = ArrayList<Boolean>()
         val owner = IntArray(this.words.size)
         var chars = 0
         for (i in this.words.indices) {
             val w = this.words[i]
-            val newLine = i == 0 ||
-                w.lineStart ||
-                chars + 1 + w.text.length > WordCaptionStyle.MAX_LINE_CHARS ||
-                w.startMs - this.words[i - 1].endMs > WordCaptionStyle.MAX_GAP_MS
+            val gap = i > 0 && w.startMs - this.words[i - 1].endMs > WordCaptionStyle.MAX_GAP_MS
+            // YouTube's own line breaks in automatic captions fall anywhere ("touching" / "that."), so
+            // lines are packed to the width instead; a source break only counts after a sentence end.
+            val sentenceBreak = i > 0 && w.lineStart &&
+                (this.words[i - 1].text.trimEnd('"', '\'', ')', ']').lastOrNull() ?: ' ') in SENTENCE_ENDS
+            val newLine = i == 0 || gap || sentenceBreak ||
+                chars + 1 + w.text.length > WordCaptionStyle.MAX_LINE_CHARS
             if (newLine) {
                 starts += i
+                pausedBefore += (i == 0 || gap)
                 chars = w.text.length
             } else {
                 chars += 1 + w.text.length
@@ -89,6 +97,17 @@ class WordTimeline(words: List<CaptionWord>) {
         }
         lineStarts = starts.toIntArray()
         lineOf = owner
+        // Lines are shown two at a time, filled top to bottom and left to right; a full page clears
+        // and the next one starts at the top. A pause always starts a new page.
+        val pages = IntArray(starts.size)
+        for (l in starts.indices) {
+            pages[l] = when {
+                l == 0 || pausedBefore[l] -> l
+                l - pages[l - 1] >= 2 -> l
+                else -> pages[l - 1]
+            }
+        }
+        pageOf = pages
     }
 
     val isEmpty: Boolean get() = words.isEmpty()
@@ -123,16 +142,14 @@ class WordTimeline(words: List<CaptionWord>) {
 
         val line = lineOf[anchor]
         val first = lineStarts[line]
-        val bottom = join(first, anchor)
-
-        var top = ""
-        if (line > 0) {
-            val previousFirst = lineStarts[line - 1]
-            val previousLast = first - 1
-            val silence = words[first].startMs - words[previousLast].endMs
-            if (silence <= WordCaptionStyle.MAX_GAP_MS) top = join(previousFirst, previousLast)
+        val page = pageOf[line]
+        return if (line == page) {
+            // First line of the page, still being spoken: it fills the top slot.
+            join(first, anchor) + "\n"
+        } else {
+            // Second line: the first one stays whole above it.
+            join(lineStarts[page], first - 1) + "\n" + join(first, anchor)
         }
-        return top + "\n" + bottom
     }
 
     private fun join(from: Int, to: Int): String {
@@ -146,6 +163,7 @@ class WordTimeline(words: List<CaptionWord>) {
 
     private companion object {
         const val ANCHOR_LOOKBACK = 32
+        val SENTENCE_ENDS = setOf('.', '?', '!', '♪')
     }
 }
 

@@ -253,14 +253,7 @@ val LocalVideoMenu = staticCompositionLocalOf<(VideoItem) -> Unit> { {} }
 fun Thumbnail(url: String?, modifier: Modifier = Modifier, radius: Int = 22, videoId: String? = null) {
     // The sharpened address (hq720) does not exist for old or low-resolution videos, which left a
     // blank card. If it fails, fall back to the address YouTube gave, then to hqdefault.
-    val candidates = remember(url, videoId) {
-        val id = videoId ?: url?.let(::ytVideoIdFromThumbUrl)
-        buildList {
-            add(if (id != null) sharpenFeedThumbnail(url, id) else url)
-            add(url)
-            if (id != null) add("https://i.ytimg.com/vi/$id/hqdefault.jpg")
-        }.filterNotNull().distinct()
-    }
+    val candidates = remember(url, videoId) { ThumbTint.candidates(url, videoId) }
     var attempt by remember(candidates) { androidx.compose.runtime.mutableIntStateOf(0) }
     AsyncImage(
         model = candidates.getOrNull(attempt),
@@ -364,8 +357,7 @@ fun VideoCard(video: VideoItem, onClick: () -> Unit, modifier: Modifier = Modifi
         modifier = modifier
             .fillMaxWidth()
             .prefetchOnPress(video.id)
-            .pressable(pressedScale = 0.98f, onLongClick = { menu(video) }, onClick = onClick)
-            .padding(bottom = 16.dp),
+            .pressable(pressedScale = 0.98f, onLongClick = { menu(video) }, onClick = onClick),
     ) {
         Box(Modifier.fillMaxWidth()) {
             Thumbnail(
@@ -377,10 +369,12 @@ fun VideoCard(video: VideoItem, onClick: () -> Unit, modifier: Modifier = Modifi
             DurationPill(video.durationSec, Modifier.align(Alignment.BottomEnd).padding(8.dp), isLive = video.isLive)
             ResumeBar(video.id, Modifier.align(Alignment.BottomStart))
         }
+        // The thumbnail's colour runs down under the title and fades to the page at the card's end.
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 12.dp, end = 4.dp, top = 12.dp),
+                .thumbnailGlow(video.id, video.thumbnail)
+                .padding(start = 12.dp, end = 4.dp, top = 12.dp, bottom = 16.dp),
             verticalAlignment = Alignment.Top,
         ) {
             val openChannel = LocalChannelOpener.current
@@ -436,9 +430,10 @@ fun VideoCardGrid(video: VideoItem, onClick: () -> Unit, modifier: Modifier = Mo
     Column(
         modifier = modifier
             .prefetchOnPress(video.id)
-            .pressable(pressedScale = 0.97f, onLongClick = { menu(video) }, onClick = onClick),
+            .pressable(pressedScale = 0.97f, onLongClick = { menu(video) }, onClick = onClick)
+            .clip(RoundedCornerShape(12.dp)),
     ) {
-        Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))) {
+        Box(Modifier.fillMaxWidth()) {
             Thumbnail(
                 video.thumbnail,
                 Modifier.fillMaxWidth().aspectRatio(16f / 9f),
@@ -449,7 +444,10 @@ fun VideoCardGrid(video: VideoItem, onClick: () -> Unit, modifier: Modifier = Mo
             ResumeBar(video.id, Modifier.align(Alignment.BottomStart))
         }
         Row(
-            modifier = Modifier.fillMaxWidth().padding(start = 2.dp, top = 8.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .thumbnailGlow(video.id, video.thumbnail)
+                .padding(start = 8.dp, top = 8.dp, bottom = 10.dp),
             verticalAlignment = Alignment.Top,
         ) {
             Column(Modifier.weight(1f)) {

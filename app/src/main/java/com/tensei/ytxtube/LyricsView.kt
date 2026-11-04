@@ -80,6 +80,7 @@ internal fun AppleSyncedLyrics(
     onSeek: (Long) -> Unit,
     contentColor: Color = MaterialTheme.colorScheme.onSurface,
     alignTo: Float = 0.4f,
+    horizontalPadding: androidx.compose.ui.unit.Dp = 0.dp,
 ) {
     val lines = lyrics.lines
     val offset = PlaybackPrefs.lyricsOffsetMs
@@ -109,7 +110,14 @@ internal fun AppleSyncedLyrics(
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(top = maxHeight * 0.35f, bottom = maxHeight * 0.6f),
+            // The side padding sits inside the list, so a blurred line has room for its soft edge
+            // instead of being cut off straight at the list's border.
+            contentPadding = PaddingValues(
+                start = horizontalPadding,
+                end = horizontalPadding,
+                top = maxHeight * 0.35f,
+                bottom = maxHeight * 0.6f,
+            ),
         ) {
             itemsIndexed(lines, key = { i, line -> "$i-${line.timeMs}" }) { index, line ->
                 val active = index == current
