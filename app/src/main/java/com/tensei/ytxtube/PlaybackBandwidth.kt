@@ -21,6 +21,7 @@ import androidx.media3.exoplayer.upstream.DefaultBandwidthMeter
 @OptIn(UnstableApi::class)
 object PlaybackBandwidth {
     private const val INITIAL_BITRATE_BPS = 2_500_000L
+    private const val WIFI_INITIAL_BITRATE_BPS = 12_000_000L
 
     @Volatile
     private var meter: DefaultBandwidthMeter? = null
@@ -37,6 +38,10 @@ object PlaybackBandwidth {
             meter?.let { return it }
             val built = DefaultBandwidthMeter.Builder(context)
                 .setInitialBitrateEstimate(INITIAL_BITRATE_BPS)
+                // On Wi-Fi or a cable, start from a Full HD guess instead of a mobile one, so a
+                // video opens near the quality the connection can carry and climbs from there.
+                .setInitialBitrateEstimate(androidx.media3.common.C.NETWORK_TYPE_WIFI, WIFI_INITIAL_BITRATE_BPS)
+                .setInitialBitrateEstimate(androidx.media3.common.C.NETWORK_TYPE_ETHERNET, WIFI_INITIAL_BITRATE_BPS)
                 .setResetOnNetworkTypeChange(true)
                 .build()
             meter = built

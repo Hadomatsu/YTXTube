@@ -150,10 +150,7 @@ object MediaCache {
     @Synchronized
     fun dataSourceFactory(context: Context): DataSource.Factory {
         factory?.let { return it }
-        val upstream = DefaultDataSource.Factory(
-            context,
-            OkHttpDataSource.Factory(Net.client).setUserAgent(Net.USER_AGENT),
-        )
+        val upstream = StreamRequests.factory(context)
         val made = runCatching {
             cache(context)?.let { simple ->
                 CacheDataSource.Factory()

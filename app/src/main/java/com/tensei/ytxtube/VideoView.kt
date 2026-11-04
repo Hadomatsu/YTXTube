@@ -1211,6 +1211,7 @@ fun QualitySheet(state: PlayerState, onDismiss: () -> Unit) {
                     onDismiss()
                 }
             }
+            PlaybackStatsBlock(state)
         }
     }
 }
@@ -1908,6 +1909,43 @@ private fun GestureHUD(
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Bold,
             )
+        }
+    }
+}
+
+
+/** Live stats under the quality list, refreshed every second while the sheet is open. */
+@Composable
+private fun PlaybackStatsBlock(state: PlayerState) {
+    val c = MaterialTheme.colorScheme
+    var stats by remember { mutableStateOf(state.playbackStats()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            kotlinx.coroutines.delay(1_000)
+            stats = state.playbackStats()
+        }
+    }
+    if (stats.isEmpty()) return
+    Spacer(Modifier.height(14.dp))
+    Text(
+        "Stats",
+        fontFamily = RoundedHeavy,
+        fontWeight = FontWeight.Bold,
+        fontSize = 15.sp,
+        modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
+    )
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(c.surfaceContainerHigh)
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+    ) {
+        stats.forEach { (label, value) ->
+            Row(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+                Text(label, color = c.onSurfaceVariant, fontSize = 12.5.sp, modifier = Modifier.width(112.dp))
+                Text(value, color = c.onSurface, fontSize = 12.5.sp, fontWeight = FontWeight.Medium)
+            }
         }
     }
 }

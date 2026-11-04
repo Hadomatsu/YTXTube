@@ -1287,6 +1287,54 @@ class PlayerState(private val scope: CoroutineScope) {
     }
 
 
+    /**
+     * What is really playing and how the connection keeps up, for the stats under the quality
+     * list: the picture and sound being decoded, how far ahead is loaded, the measured speed,
+     * dropped frames and stalls.
+     */
+    fun playbackStats(): List<Pair<String, String>> {
+        val c = controller ?: return emptyList()
+        fun selected(type: Int) = c.currentTracks.groups
+            .filter { it.type == type && it.isSelected }
+            .flatMap { g -> (0 until g.length).filter { g.isTrackSelected(it) }.map { g.getTrackFormat(it) } }
+            .firstOrNull()
+        fun codec(raw: String?): String? {
+            val s = raw?.lowercase(java.util.Locale.US) ?: return null
+            return when {
+                s.startsWith("av01") || "av1" in s -> "AV1"
+                s.startsWith("vp09") || "vp9" in s -> "VP9"
+                s.startsWith("avc") || "avc" in s -> "H.264"
+                s.startsWith("hev") || s.startsWith("hvc") -> "HEVC"
+                "opus" in s -> "Opus"
+                s.startsWith("mp4a") || "aac" in s -> "AAC"
+                else -> raw
+            }
+        }
+        fun mbps(bps: Int) = String.format(java.util.Locale.US, "%.1f Mbps", bps / 1_000_000f)
+        val out = ArrayList<Pair<String, String>>()
+        selected(C.TRACK_TYPE_VIDEO)?.let { f ->
+            out += "Video" to listOfNotNull(
+                if (f.width > 0 && f.height > 0) "${f.width}×${f.height}" else null,
+                f.frameRate.takeIf { it > 0f }?.let { "${it.roundToInt()} fps" },
+                codec(f.codecs ?: f.sampleMimeType),
+                f.bitrate.takeIf { it > 0 }?.let(::mbps),
+            ).joinToString(" · ")
+        }
+        selected(C.TRACK_TYPE_AUDIO)?.let { f ->
+            out += "Audio" to listOfNotNull(
+                codec(f.codecs ?: f.sampleMimeType),
+                f.bitrate.takeIf { it > 0 }?.let { "${it / 1000} kbps" },
+            ).joinToString(" · ")
+        }
+        val ahead = (c.bufferedPosition - c.currentPosition).coerceAtLeast(0L) / 1000f
+        out += "Loaded ahead" to String.format(java.util.Locale.US, "%.0f s", ahead)
+        val kbps = PlaybackBandwidth.measuredKbps()
+        out += "Connection" to if (kbps > 0) mbps(kbps * 1000) + " measured" else "measuring"
+        out += "Dropped frames" to PlaybackStats.droppedFrames.toString()
+        out += "Stalls" to PlaybackStats.stalls.toString()
+        return out
+    }
+
     /** Reads the codec and bitrate of the audio actually selected, for the music player's badge. */
     private fun describeAudio() {
         val format = controller?.currentTracks?.groups.orEmpty()

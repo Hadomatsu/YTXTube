@@ -147,13 +147,18 @@ class PlaybackService : MediaSessionService() {
 
             .setLoadControl(
                 DefaultLoadControl.Builder()
-                    // Start after a quarter second, keep a 30 s runway and a 10 s rewind
-                    // buffer. The old 15 s/50 s/1 s policy is what made every open sit on
-                    // a spinner before the first frame.
+                    // Start after a quarter second (quick opens), then keep loading steadily
+                    // towards a 50 s runway instead of letting it drain to 2.5 s before
+                    // fetching again. After a stall, wait for 2 s of video rather than 0.75 s,
+                    // so a slow stream pauses once instead of stuttering every second while
+                    // the quality steps down.
                     .setAllocator(androidx.media3.exoplayer.upstream.DefaultAllocator(true, 64 * 1024))
-                    .setBufferDurationsMs(2_500, 30_000, 250, 750)
+                    .setBufferDurationsMs(30_000, 50_000, 250, 2_000)
                     .setBackBuffer(10_000, false)
-                    .setPrioritizeTimeOverSizeThresholds(true)
+                    // A memory ceiling so a 4K stream cannot fill the app's memory: about 50 s
+                    // of 1080p60 fits, 4K stops a little earlier.
+                    .setTargetBufferBytes(96 * 1024 * 1024)
+                    .setPrioritizeTimeOverSizeThresholds(false)
                     .build(),
             )
             .setAudioAttributes(
@@ -190,6 +195,7 @@ class PlaybackService : MediaSessionService() {
         }
 
         player.addListener(StreamRecoverer(player, sources, resolver))
+        player.addAnalyticsListener(StatsCounter(player))
         resumeSaver = ResumeSaver(player).also(player::addListener)
         watchTime = WatchTimeReporter(player).also(player::addListener)
         session = MediaSession.Builder(this, player)
@@ -265,6 +271,46 @@ class PlaybackService : MediaSessionService() {
                 }
             }.toMutableList()
         }
+    }
+}
+
+
+/** Dropped frames and stalls of the video playing now, for the stats under the quality list. */
+@OptIn(UnstableApi::class)
+private class StatsCounter(private val player: ExoPlayer) : androidx.media3.exoplayer.analytics.AnalyticsListener {
+    private var seeking = false
+
+    override fun onMediaItemTransition(
+        eventTime: androidx.media3.exoplayer.analytics.AnalyticsListener.EventTime,
+        mediaItem: MediaItem?,
+        reason: Int,
+    ) = PlaybackStats.reset()
+
+    override fun onDroppedVideoFrames(
+        eventTime: androidx.media3.exoplayer.analytics.AnalyticsListener.EventTime,
+        droppedFrames: Int,
+        elapsedMs: Long,
+    ) {
+        PlaybackStats.droppedFrames += droppedFrames
+    }
+
+    override fun onPositionDiscontinuity(
+        eventTime: androidx.media3.exoplayer.analytics.AnalyticsListener.EventTime,
+        oldPosition: Player.PositionInfo,
+        newPosition: Player.PositionInfo,
+        reason: Int,
+    ) {
+        if (reason == Player.DISCONTINUITY_REASON_SEEK) seeking = true
+    }
+
+    override fun onPlaybackStateChanged(
+        eventTime: androidx.media3.exoplayer.analytics.AnalyticsListener.EventTime,
+        state: Int,
+    ) {
+        if (state == Player.STATE_BUFFERING && player.playWhenReady && !seeking && player.currentPosition > 1_000L) {
+            PlaybackStats.stalls++
+        }
+        if (state == Player.STATE_READY) seeking = false
     }
 }
 
@@ -563,10 +609,7 @@ private class SponsorSkipper(private val player: ExoPlayer) : Player.Listener {
 
 @OptIn(UnstableApi::class)
 private class YouTubeMediaSourceFactory(context: Context) : MediaSource.Factory {
-    private val dataSourceFactory: DataSource.Factory = DefaultDataSource.Factory(
-        context,
-        OkHttpDataSource.Factory(Net.client).setUserAgent(Net.USER_AGENT),
-    )
+    private val dataSourceFactory: DataSource.Factory = StreamRequests.factory(context)
     private val fallback = DefaultMediaSourceFactory(dataSourceFactory)
 
     override fun setDrmSessionManagerProvider(provider: DrmSessionManagerProvider): MediaSource.Factory =
