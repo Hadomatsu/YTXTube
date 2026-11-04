@@ -11,8 +11,8 @@ android {
     defaultConfig {
         minSdk = 24
         targetSdk = 36
-        versionCode = 256
-        versionName = "2.3.20"
+        versionCode = 257
+        versionName = "2.3.21"
     }
 
     // Two apps from one codebase: the YouTube client and the TikTok client (own package, own icon, own APK).
@@ -67,6 +67,8 @@ android {
         isCoreLibraryDesugaringEnabled = true
     }
     buildFeatures { compose = true; buildConfig = true }
+    // The release lint pass adds about a minute to every CI build and has never blocked one.
+    lint { checkReleaseBuilds = false }
 
 
 
