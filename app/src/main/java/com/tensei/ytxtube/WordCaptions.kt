@@ -8,11 +8,11 @@ import kotlin.math.roundToLong
  * Word-by-word captions, laid out like YouTube's own subtitles.
  *
  * The captions are cut into display lines once, up front, and a line never changes after that:
- * words are only ever added to the end of the line that is being spoken. At any moment there are
- * two fixed slots on screen, the line before (top, complete) and the line being spoken (bottom,
- * only the words already said). When the bottom line is full the next word starts a new line,
- * the old bottom line moves up and the old top line disappears. Nothing already on screen moves
- * sideways, and nothing from the future is ever shown.
+ * words are only ever added to the end of the line that is being spoken, left to right. The
+ * first line after a pause fills the top slot, the next one the bottom slot. When the bottom line
+ * is full, the top line vanishes, the bottom line moves up to the top, and the new words come in
+ * on the bottom, and so on. Nothing already on screen moves sideways, and nothing from the future
+ * is ever shown.
  *
  * Word timing comes from two places:
  *  - YouTube's auto-generated (ASR) captions carry a timestamp in front of every word inside the
@@ -69,8 +69,8 @@ class WordTimeline(words: List<CaptionWord>) {
     /** Display line of every word. */
     private val lineOf: IntArray
 
-    /** First line of the two-line page every line belongs to. */
-    private val pageOf: IntArray
+    /** Lines that start after a pause (or the very first line): nothing is kept above them. */
+    private val fresh: BooleanArray
 
     init {
         val starts = ArrayList<Int>()
@@ -97,17 +97,7 @@ class WordTimeline(words: List<CaptionWord>) {
         }
         lineStarts = starts.toIntArray()
         lineOf = owner
-        // Lines are shown two at a time, filled top to bottom and left to right; a full page clears
-        // and the next one starts at the top. A pause always starts a new page.
-        val pages = IntArray(starts.size)
-        for (l in starts.indices) {
-            pages[l] = when {
-                l == 0 || pausedBefore[l] -> l
-                l - pages[l - 1] >= 2 -> l
-                else -> pages[l - 1]
-            }
-        }
-        pageOf = pages
+        fresh = pausedBefore.toBooleanArray()
     }
 
     val isEmpty: Boolean get() = words.isEmpty()
@@ -142,13 +132,12 @@ class WordTimeline(words: List<CaptionWord>) {
 
         val line = lineOf[anchor]
         val first = lineStarts[line]
-        val page = pageOf[line]
-        return if (line == page) {
-            // First line of the page, still being spoken: it fills the top slot.
+        return if (fresh[line]) {
+            // First line after a pause, still being spoken: it fills the top slot.
             join(first, anchor) + "\n"
         } else {
-            // Second line: the first one stays whole above it.
-            join(lineStarts[page], first - 1) + "\n" + join(first, anchor)
+            // Any later line fills the bottom slot, with the line before it whole above it.
+            join(lineStarts[line - 1], first - 1) + "\n" + join(first, anchor)
         }
     }
 
