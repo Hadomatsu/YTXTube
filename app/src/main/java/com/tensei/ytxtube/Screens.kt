@@ -2,8 +2,10 @@ package com.tensei.ytxtube
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.rounded.ArrowDropDown
+import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.aspectRatio
@@ -184,6 +186,7 @@ fun HomeScreen(
 ) {
     val signedIn = Account.signedIn
     var activeFilter by remember { mutableStateOf(HomeFilter.All) }
+    var continueExpanded by remember { mutableStateOf(false) }
     LaunchedEffect(signedIn) {
         if (lib.home.videos.isEmpty()) lib.home.ensureLoaded()
         if (signedIn && lib.channels.isEmpty()) lib.loadChannels()
@@ -255,6 +258,16 @@ fun HomeScreen(
                 filterScrollKey = activeFilter,
                 grid = HomeLayoutSettings.grid,
                 feedFilters = true,
+                pinchColumns = true,
+                topSection = if (activeFilter != HomeFilter.All) null else { columns ->
+                    continueWatchingSection(
+                        ContinueWatching.started(),
+                        columns,
+                        continueExpanded,
+                        onToggle = { continueExpanded = !continueExpanded },
+                        onOpen = onOpen,
+                    )
+                },
                 header = {
                     if (!signedIn) {
                         item(key = "anon_banner") {
@@ -944,6 +957,20 @@ fun SearchScreen(
     val context = LocalContext.current
 
     LaunchedEffect(Unit) { SearchHistory.init(context) }
+    // Voice search through the phone's speech recogniser.
+    val voice = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        val spoken = result.data
+            ?.getStringArrayListExtra(android.speech.RecognizerIntent.EXTRA_RESULTS)
+            ?.firstOrNull()?.trim()
+        if (!spoken.isNullOrEmpty()) {
+            state.updateQuery(spoken)
+            focus.clearFocus(force = true)
+            keyboard?.hide()
+            state.submit()
+        }
+    }
     fun showSearchKeyboard() {
         scope.launch {
             delay(80)
@@ -1017,6 +1044,18 @@ fun SearchScreen(
                             },
                             contentAlignment = Alignment.Center,
                         ) { Icon(Icons.Rounded.Close, "Clear", tint = c.onSurfaceVariant, modifier = Modifier.size(20.dp)) }
+                    } else {
+                        Box(
+                            modifier = Modifier.size(40.dp).pressable {
+                                val intent = android.content.Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+                                    .putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                                    .putExtra(android.speech.RecognizerIntent.EXTRA_PROMPT, "Search YouTube")
+                                runCatching { voice.launch(intent) }.onFailure {
+                                    android.widget.Toast.makeText(context, "No voice input on this phone", android.widget.Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            contentAlignment = Alignment.Center,
+                        ) { Icon(Icons.Rounded.Mic, "Voice search", tint = c.onSurfaceVariant, modifier = Modifier.size(21.dp)) }
                     }
                 }
             }
@@ -1357,5 +1396,77 @@ private fun SearchPlaylistRow(playlist: PlaylistRef) {
                 Text(it, color = c.onSurfaceVariant, fontSize = 12.5.sp, maxLines = 1)
             }
         }
+    }
+}
+
+
+/**
+ * Continue watching at the top of Home: the videos you started, as the same cards as the rest
+ * of the feed. A few show; See all opens the rest right there (no sideways scrolling).
+ */
+private fun androidx.compose.foundation.lazy.LazyListScope.continueWatchingSection(
+    videos: List<VideoItem>,
+    columns: Int,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+    onOpen: (VideoItem) -> Unit,
+) {
+    if (videos.isEmpty()) return
+    val perRow = columns.coerceAtLeast(1)
+    val collapsedCount = if (perRow > 1) perRow else 2
+    val shown = if (expanded) videos else videos.take(collapsedCount)
+    item(key = "cw-title") {
+        val c = MaterialTheme.colorScheme
+        Row(
+            Modifier.fillMaxWidth().padding(start = 16.dp, end = 12.dp, top = 6.dp, bottom = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                "Continue watching",
+                fontFamily = RoundedHeavy,
+                fontWeight = FontWeight.ExtraBold,
+                fontSize = 18.sp,
+                modifier = Modifier.weight(1f),
+            )
+            if (videos.size > collapsedCount) {
+                Text(
+                    if (expanded) "Show less" else "See all (${videos.size})",
+                    color = c.onSurface,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier
+                        .clip(CircleShape)
+                        .background(c.surfaceContainerHigh)
+                        .pressable { onToggle() }
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                )
+            }
+        }
+    }
+    if (perRow > 1) {
+        shown.chunked(perRow).forEach { row ->
+            item(key = "cw-" + row.first().id) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = HomeGrid.EDGE_DP.dp, end = HomeGrid.EDGE_DP.dp, bottom = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(HomeGrid.GAP_DP.dp),
+                    verticalAlignment = Alignment.Top,
+                ) {
+                    row.forEach { video -> VideoCardGrid(video, onClick = { onOpen(video) }, modifier = Modifier.weight(1f)) }
+                    repeat(perRow - row.size) { Spacer(Modifier.weight(1f)) }
+                }
+            }
+        }
+    } else {
+        shown.forEach { video ->
+            item(key = "cw-" + video.id) { VideoCard(video, onClick = { onOpen(video) }) }
+        }
+    }
+    item(key = "cw-end") {
+        HorizontalDivider(
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f),
+            modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
+        )
     }
 }

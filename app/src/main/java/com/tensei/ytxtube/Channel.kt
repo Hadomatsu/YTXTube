@@ -32,6 +32,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CloudOff
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -94,6 +95,28 @@ class ChannelState(val url: String, private val scope: CoroutineScope) {
         private set
     var communityLoading by mutableStateOf(false)
         private set
+
+    /** Search inside this channel: null when not searching. */
+    var searchResults by mutableStateOf<List<VideoItem>?>(null)
+        private set
+    var searching by mutableStateOf(false)
+        private set
+
+    fun search(query: String) {
+        val q = query.trim()
+        val id = details?.id ?: return
+        if (q.isEmpty()) return
+        searching = true
+        scope.launch {
+            searchResults = runCatching { InnerTube.channelSearch(id, q) }.getOrDefault(emptyList())
+            searching = false
+        }
+    }
+
+    fun clearSearch() {
+        searchResults = null
+        searching = false
+    }
 
     private var next: String? = null
     private var shortsNext: String? = null
@@ -294,6 +317,8 @@ fun ChannelScreen(
 ) {
     val c = MaterialTheme.colorScheme
     val list = rememberLazyListState()
+    var searchOpen by remember(state.url) { mutableStateOf(false) }
+    var searchText by remember(state.url) { mutableStateOf("") }
     val nearEnd by remember {
         derivedStateOf { (list.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0) >= list.layoutInfo.totalItemsCount - 4 }
     }
@@ -317,6 +342,12 @@ fun ChannelScreen(
                 maxLines = 1,
                 letterSpacing = (-0.6).sp,
             )
+            if (state.details != null) {
+                CircleAction(Icons.Rounded.Search, "Search this channel") {
+                    searchOpen = !searchOpen
+                    if (!searchOpen) state.clearSearch()
+                }
+            }
         }
         },
     ) { top ->
@@ -366,10 +397,43 @@ fun ChannelScreen(
                     }
                     }
                 }
-                item(key = "tabs") {
-                    ChannelTabStrip(selected = state.activeTab, onSelect = { state.selectTab(it) })
+                if (searchOpen) item(key = "channel-search") {
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        androidx.compose.material3.OutlinedTextField(
+                            value = searchText,
+                            onValueChange = { searchText = it },
+                            singleLine = true,
+                            placeholder = { Text("Search " + d.name) },
+                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Search),
+                            keyboardActions = androidx.compose.foundation.text.KeyboardActions(onSearch = { state.search(searchText) }),
+                            shape = CircleShape,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        CircleAction(Icons.Rounded.Search, "Search") { state.search(searchText) }
+                    }
                 }
-                when (state.activeTab) {
+                item(key = "tabs") {
+                    ChannelTabStrip(selected = state.activeTab, onSelect = { state.clearSearch(); state.selectTab(it) })
+                }
+                val found = state.searchResults
+                if (state.searching) {
+                    item(key = "channel-searching") {
+                        Box(Modifier.fillMaxWidth().padding(28.dp), Alignment.Center) {
+                            CircularProgressIndicator(color = c.primary, strokeWidth = 4.dp, modifier = Modifier.size(32.dp))
+                        }
+                    }
+                } else if (found != null) {
+                    if (found.isEmpty()) item(key = "channel-search-empty") {
+                        EmptyState(Icons.Rounded.Search, "Nothing found", "No videos on this channel matched “$searchText”.")
+                    }
+                    items(found, key = { "cs-" + it.id }) { video ->
+                        VideoCard(video, onClick = { onOpen(video) })
+                    }
+                } else when (state.activeTab) {
                     ChannelTab.Videos -> {
                         items(state.videos, key = { it.id }) { video ->
                             VideoCard(video, onClick = { onOpen(video) }, modifier = Modifier.animateItem())

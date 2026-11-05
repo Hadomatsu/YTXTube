@@ -637,7 +637,7 @@ private fun CommentRow(
                 detectTapGestures(
                     onDoubleTap = {
                         if (canLikeThis && state.liked[comment.id] != true) {
-                            view.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
+                            Haptics.perform(view, android.view.HapticFeedbackConstants.VIRTUAL_KEY)
                             state.toggleLike(comment) { state.postError = it }
                         }
                     },

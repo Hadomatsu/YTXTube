@@ -442,7 +442,7 @@ fun VideoContent(
                         entering -> {
                             val p = drag.value
                             if (p >= 0.5f || vy < -1100f) {
-                                currentView.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                                Haptics.perform(currentView, HapticFeedbackConstants.CLOCK_TICK)
                                 state.enterFrom = p
                                 onToggleFullscreen()
                                 // If it never became fullscreen (rotation locked, say), let go of the dim.
@@ -457,7 +457,7 @@ fun VideoContent(
                         leaving -> {
                             val p = drag.value
                             if (p >= 0.4f || vy > 1100f) {
-                                currentView.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                                Haptics.perform(currentView, HapticFeedbackConstants.CLOCK_TICK)
                                 onToggleFullscreen()
                                 // A phone rotates back first; do not leave the video stuck small meanwhile.
                                 launch {
@@ -515,7 +515,7 @@ fun VideoContent(
                     if (elapsed >= holdSpeedMs - 80L) {
                         seekWindow?.cancel()
                         if (!state.scrubDragging && state.beginHoldSpeed()) {
-                            currentView.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+                            Haptics.perform(currentView, HapticFeedbackConstants.CONFIRM)
                             controlsVisible = false
                             burstActive = false
                             waitForUpOrCancellation()?.consume()
@@ -648,6 +648,18 @@ fun VideoContent(
         }
         if (!scrubbing) {
             SkippedNote(state, Modifier.align(Alignment.TopCenter).padding(top = 12.dp + if (fullscreen) 0.dp else topInset).graphicsLayer { alpha = controlsAlpha() })
+        }
+        state.resumedAt?.let { at ->
+            if (!scrubbing) {
+                ResumePill(
+                    state,
+                    at,
+                    Modifier.align(Alignment.TopCenter).padding(top = 12.dp + if (fullscreen) 0.dp else topInset).graphicsLayer { alpha = controlsAlpha() },
+                )
+            }
+        }
+        state.upNext?.let { next ->
+            UpNextCard(state, next, Modifier.align(Alignment.Center).graphicsLayer { alpha = controlsAlpha() })
         }
 
         if (!scrubbing && !controlsVisible) {
@@ -788,7 +800,7 @@ fun VideoContent(
                     var captionSizerTaps by remember { mutableStateOf(0) }
                     LaunchedEffect(captionSizerOpen, captionSizerTaps) {
                         if (captionSizerOpen) {
-                            kotlinx.coroutines.delay(4_000)
+                            kotlinx.coroutines.delay(6_000)
                             captionSizerOpen = false
                         }
                     }
@@ -796,6 +808,7 @@ fun VideoContent(
                         CaptionSizePill(
                             backdrop = videoBackdrop,
                             modifier = Modifier.align(Alignment.End).padding(end = 4.dp, bottom = 6.dp),
+                            onSecondChanged = { state.loadSecondCaptions() },
                         ) { touched(); captionSizerTaps++ }
                     }
                     Row(
@@ -897,6 +910,7 @@ fun VideoContent(
             if (fitsInBar && barTopPx != null) {
                 CaptionLines(
                     text = captionText,
+                    second = state.captionText2,
                     fontSize = captionSize,
                     plates = false,
                     modifier = Modifier
@@ -912,6 +926,7 @@ fun VideoContent(
                 )
                 CaptionLines(
                     text = captionText,
+                    second = state.captionText2,
                     fontSize = captionSize,
                     plates = true,
                     modifier = Modifier
@@ -969,6 +984,7 @@ fun VideoContent(
                 knob = if (fullscreenControlsScrub) FullscreenScrubKnob else 7.dp,
                 knobDragging = if (fullscreenControlsScrub) FullscreenScrubKnobDragging else 9.dp,
                 chapters = chapterStarts,
+                heatmap = state.heatmap,
                 onPreview = { state.scrubPreviewMs = it; touched() },
                 onSeek = { state.endScrubDragging(it); touched() },
                 onDraggingChanged = { dragging ->
@@ -1599,7 +1615,7 @@ private fun seekForwardIcon(): androidx.compose.ui.graphics.vector.ImageVector =
  * sits on whatever is behind it (the black bar under a letterboxed picture).
  */
 @Composable
-internal fun CaptionLines(text: String, fontSize: TextUnit, plates: Boolean, modifier: Modifier = Modifier) {
+internal fun CaptionLines(text: String, fontSize: TextUnit, plates: Boolean, modifier: Modifier = Modifier, second: String? = null) {
     val (top, bottom) = captionSlots(text)
     val density = androidx.compose.ui.platform.LocalDensity.current
     val lineHeight = fontSize * 1.33f
@@ -1610,16 +1626,25 @@ internal fun CaptionLines(text: String, fontSize: TextUnit, plates: Boolean, mod
     Column(modifier = modifier.width(blockWidth), horizontalAlignment = Alignment.Start) {
         CaptionSlot(top, fontSize, lineHeight, slotHeight, plates)
         CaptionSlot(bottom, fontSize, lineHeight, slotHeight, plates)
+        // Dual subtitles: the second language, smaller and a little softer, under the first.
+        if (!second.isNullOrBlank()) {
+            val (top2, bottom2) = captionSlots(second)
+            val size2 = fontSize * 0.8f
+            val lineHeight2 = size2 * 1.33f
+            val slotHeight2 = with(density) { lineHeight2.toDp() } + 3.dp
+            CaptionSlot(top2, size2, lineHeight2, slotHeight2, plates, alpha = 0.86f)
+            CaptionSlot(bottom2, size2, lineHeight2, slotHeight2, plates, alpha = 0.86f)
+        }
     }
 }
 
 @Composable
-private fun CaptionSlot(text: String, fontSize: TextUnit, lineHeight: TextUnit, height: Dp, plate: Boolean) {
+private fun CaptionSlot(text: String, fontSize: TextUnit, lineHeight: TextUnit, height: Dp, plate: Boolean, alpha: Float = 1f) {
     Box(Modifier.fillMaxWidth().height(height), contentAlignment = Alignment.CenterStart) {
         if (text.isEmpty()) return@Box
         Text(
             text = text,
-            color = Color.White,
+            color = Color.White.copy(alpha = alpha),
             fontSize = fontSize,
             lineHeight = lineHeight,
             fontWeight = FontWeight.SemiBold,
@@ -1858,6 +1883,8 @@ private fun Scrubber(
     knobDragging: Dp = 9.dp,
     /** Chapter start times: thin breaks in the bar and a light tick when scrubbing across one. */
     chapters: List<Long> = emptyList(),
+    /** "Most replayed" intensities, drawn as a soft little curve above the bar with the controls. */
+    heatmap: List<Float> = emptyList(),
 ) {
     val view = androidx.compose.ui.platform.LocalView.current
     var dragFraction by remember { mutableStateOf<Float?>(null) }
@@ -1931,7 +1958,7 @@ private fun Scrubber(
                                 val at = (fraction * durationMs).toLong()
                                 val chapter = chapters.indexOfLast { it <= at }
                                 if (lastChapter != -2 && chapter != lastChapter) {
-                                    view.performHapticFeedback(android.view.HapticFeedbackConstants.CLOCK_TICK)
+                                    Haptics.perform(view, android.view.HapticFeedbackConstants.CLOCK_TICK)
                                 }
                                 lastChapter = chapter
                             }
@@ -1955,6 +1982,34 @@ private fun Scrubber(
             val x0 = left + trackW * (seg.startMs.toFloat() / duration).coerceIn(0f, 1f)
             val x1 = left + trackW * (seg.endMs.toFloat() / duration).coerceIn(0f, 1f)
             if (x1 > x0) drawRoundRect(seg.category.color, Offset(x0, y), Size(x1 - x0, trackH), r)
+        }
+        if (chromeActive && heatmap.size > 4) {
+            val n = heatmap.size
+            val heatH = 12.dp.toPx()
+            val baseY = y - 4.dp.toPx()
+            val path = androidx.compose.ui.graphics.Path()
+            var px = left
+            var py = baseY - heatH * heatmap[0].coerceIn(0f, 1f)
+            path.moveTo(left, baseY)
+            path.lineTo(px, py)
+            for (i in 1 until n) {
+                val x = left + trackW * i / (n - 1)
+                val yv = baseY - heatH * heatmap[i].coerceIn(0f, 1f)
+                val dx = (x - px) / 2f
+                path.cubicTo(px + dx, py, x - dx, yv, x, yv)
+                px = x
+                py = yv
+            }
+            path.lineTo(left + trackW, baseY)
+            path.close()
+            drawPath(
+                path,
+                Brush.verticalGradient(
+                    listOf(Color.White.copy(alpha = 0.34f), Color.White.copy(alpha = 0.04f)),
+                    startY = baseY - heatH,
+                    endY = baseY,
+                ),
+            )
         }
         if (chapters.size > 1) {
             val gap = 2.dp.toPx()
@@ -2041,7 +2096,12 @@ private fun PlaybackStatsBlock(state: PlayerState) {
 
 /** A- / size / A+ for the captions, shown above the captions button after a long press. */
 @Composable
-private fun CaptionSizePill(backdrop: Backdrop?, modifier: Modifier = Modifier, onChange: () -> Unit) {
+private fun CaptionSizePill(
+    backdrop: Backdrop?,
+    modifier: Modifier = Modifier,
+    onSecondChanged: () -> Unit = {},
+    onChange: () -> Unit,
+) {
     val shape = RoundedCornerShape(50)
     Row(
         modifier
@@ -2080,6 +2140,44 @@ private fun CaptionSizePill(backdrop: Backdrop?, modifier: Modifier = Modifier, 
         GlassButton(Icons.Rounded.Add, "Bigger captions", true, size = 34.dp, iconSize = 20.dp, tinted = false) {
             CaptionPreference.updateScale(CaptionPreference.scale + 0.1f)
             onChange()
+        }
+        // Dual subtitles (off by default): a second language under the first.
+        var menu by remember { mutableStateOf(false) }
+        Box {
+            Text(
+                "2nd: " + (CaptionPreference.secondLanguage?.substringBefore('-')?.uppercase() ?: "Off"),
+                color = Color.White,
+                fontSize = 12.5.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier
+                    .padding(start = 4.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(Color.White.copy(alpha = if (CaptionPreference.secondLanguage != null) 0.22f else 0.1f))
+                    .pressable { menu = true; onChange() }
+                    .padding(horizontal = 10.dp, vertical = 7.dp),
+            )
+            androidx.compose.material3.DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                androidx.compose.material3.DropdownMenuItem(
+                    text = { Text("Off") },
+                    onClick = {
+                        menu = false
+                        CaptionPreference.updateSecondLanguage(null)
+                        onSecondChanged()
+                        onChange()
+                    },
+                )
+                CaptionPreference.secondChoices.forEach { (code, name) ->
+                    androidx.compose.material3.DropdownMenuItem(
+                        text = { Text(name) },
+                        onClick = {
+                            menu = false
+                            CaptionPreference.updateSecondLanguage(code)
+                            onSecondChanged()
+                            onChange()
+                        },
+                    )
+                }
+            }
         }
     }
 }
@@ -2138,6 +2236,98 @@ fun ChaptersSheet(state: PlayerState, onDismiss: () -> Unit) {
                     )
                 }
             }
+        }
+    }
+}
+
+
+/** "Resumed at 12:34 · Start over", for a few seconds after a half-watched video reopens. */
+@Composable
+private fun ResumePill(state: PlayerState, atMs: Long, modifier: Modifier = Modifier) {
+    LaunchedEffect(atMs, state.current?.id) {
+        kotlinx.coroutines.delay(6_000)
+        state.resumedAt = null
+    }
+    Row(
+        modifier
+            .clip(RoundedCornerShape(50))
+            .background(Color.Black.copy(alpha = 0.66f))
+            .padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text("Resumed at " + formatDuration(atMs), color = Color.White, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.width(6.dp))
+        Text(
+            "Start over",
+            color = Color.White,
+            fontSize = 12.5.sp,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier
+                .clip(RoundedCornerShape(50))
+                .background(Color.White.copy(alpha = 0.18f))
+                .pressable {
+                    state.seekTo(0)
+                    state.resumedAt = null
+                }
+                .padding(horizontal = 10.dp, vertical = 5.dp),
+        )
+    }
+}
+
+/** The countdown card when a video ends and Autoplay is on: what is next, Cancel or Play now. */
+@Composable
+private fun UpNextCard(state: PlayerState, next: VideoItem, modifier: Modifier = Modifier) {
+    Column(
+        modifier
+            .padding(16.dp)
+            .widthIn(max = 340.dp)
+            .clip(RoundedCornerShape(20.dp))
+            .background(Color.Black.copy(alpha = 0.72f))
+            .padding(14.dp),
+    ) {
+        Text(
+            "Up next in " + state.upNextSeconds,
+            color = Color.White.copy(alpha = 0.75f),
+            fontSize = 12.5.sp,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Spacer(Modifier.height(8.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Thumbnail(next.thumbnail, Modifier.width(96.dp).aspectRatio(16f / 9f), radius = 10, videoId = next.id)
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text(next.title, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(next.channel, color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                "Cancel",
+                color = Color.White,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(50))
+                    .background(Color.White.copy(alpha = 0.16f))
+                    .pressable { state.cancelUpNext() }
+                    .padding(vertical = 9.dp),
+            )
+            Text(
+                "Play now",
+                color = Color.Black,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(50))
+                    .background(Color.White)
+                    .pressable { state.playUpNextNow() }
+                    .padding(vertical = 9.dp),
+            )
         }
     }
 }

@@ -280,6 +280,24 @@ fun ShortsScreen(
     // samples that are already buffered instead of rebuilding the source.
     val preload = remember { ShortsPreloader(context) }
     val exo = preload.player
+    // Auto-advance (Settings): when a Short has played to the end, slide to the next one instead
+    // of looping it.
+    DisposableEffect(exo, pager) {
+        val listener = object : Player.Listener {
+            override fun onPositionDiscontinuity(
+                oldPosition: Player.PositionInfo,
+                newPosition: Player.PositionInfo,
+                reason: Int,
+            ) {
+                if (reason != Player.DISCONTINUITY_REASON_AUTO_TRANSITION || !ShortsPrefs.autoAdvance) return
+                if (pager.isScrollInProgress) return
+                val next = pager.currentPage + 1
+                if (next < pager.pageCount) scope.launch { pager.animateScrollToPage(next) }
+            }
+        }
+        exo.addListener(listener)
+        onDispose { exo.removeListener(listener) }
+    }
     DisposableEffect(Unit) {
         onDispose {
             exo.release()

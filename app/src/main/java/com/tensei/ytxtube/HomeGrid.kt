@@ -22,5 +22,10 @@ object HomeGrid {
     const val MIN_COLUMNS = 1
     const val MAX_COLUMNS = 2
 
-    fun columns(widthDp: Float): Int = if (widthDp >= TWO_COLUMNS_FROM_DP) MAX_COLUMNS else MIN_COLUMNS
+    /** Columns for this width: what was chosen in Settings (or by pinching), else automatic. */
+    fun columns(widthDp: Float): Int {
+        val wide = widthDp >= TWO_COLUMNS_FROM_DP
+        val chosen = if (wide) HomeLayoutSettings.columnsWide else HomeLayoutSettings.columnsNarrow
+        return if (chosen in 1..3) chosen else if (wide) MAX_COLUMNS else MIN_COLUMNS
+    }
 }

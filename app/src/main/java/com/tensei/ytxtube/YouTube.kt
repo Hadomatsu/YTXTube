@@ -60,6 +60,8 @@ data class VideoItem(
     val isLive: Boolean = false,
     /** A YouTube Short (vertical, opened in the Shorts player on YouTube). */
     val isShort: Boolean = false,
+    /** YouTube's token for "Not interested" on this card (signed-in feeds only). */
+    val feedbackToken: String? = null,
 )
 
 

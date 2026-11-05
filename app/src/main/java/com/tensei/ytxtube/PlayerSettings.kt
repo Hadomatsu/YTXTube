@@ -38,11 +38,39 @@ object HomeLayoutSettings {
     fun init(context: Context) {
         prefs = context.getSharedPreferences("playback", Context.MODE_PRIVATE)
         grid = prefs?.getBoolean(KEY_GRID, true) ?: true
+        loadColumns()
     }
 
     fun set(on: Boolean) {
         grid = on
         prefs?.edit()?.putBoolean(KEY_GRID, on)?.apply()
+    }
+
+    /** Columns on Home, folded (narrow) and unfolded (wide); 0 is automatic. */
+    var columnsNarrow by mutableStateOf(0)
+        private set
+    var columnsWide by mutableStateOf(0)
+        private set
+
+    fun loadColumns() {
+        columnsNarrow = prefs?.getInt("home_columns_narrow", 0) ?: 0
+        columnsWide = prefs?.getInt("home_columns_wide", 0) ?: 0
+    }
+
+    fun setColumns(wide: Boolean, value: Int) {
+        if (wide) columnsWide = value else columnsNarrow = value
+        prefs?.edit()?.putInt(if (wide) "home_columns_wide" else "home_columns_narrow", value)?.apply()
+    }
+
+    /** Pinching the feed: [delta] +1 for one more column, -1 for one fewer (1 to 3). */
+    fun pinch(widthDp: Float, delta: Int): Boolean {
+        val wide = widthDp >= HomeGrid.TWO_COLUMNS_FROM_DP
+        val now = if (grid) HomeGrid.columns(widthDp) else 1
+        val next = (now + delta).coerceIn(1, 3)
+        if (next == now && grid) return false
+        if (!grid) set(true)
+        setColumns(wide, next)
+        return true
     }
 }
 

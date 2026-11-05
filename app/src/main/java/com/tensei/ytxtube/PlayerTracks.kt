@@ -76,6 +76,21 @@ object CaptionPreference {
     /** Caption text size as a share of the normal size, 60 % to 250 %. */
     var scale by androidx.compose.runtime.mutableFloatStateOf(1f)
         private set
+    /** Dual subtitles: a second language shown under the first, or null (off, the default). */
+    var secondLanguage by mutableStateOf<String?>(null)
+        private set
+
+    /** Languages offered for the second line (YouTube translates the captions into them). */
+    val secondChoices = listOf(
+        "en" to "English", "fr" to "Français", "nl" to "Nederlands", "es" to "Español", "de" to "Deutsch",
+        "it" to "Italiano", "pt" to "Português", "ar" to "العربية", "tr" to "Türkçe", "ru" to "Русский",
+        "ja" to "日本語", "ko" to "한국어", "zh-Hans" to "中文", "hi" to "हिन्दी",
+    )
+
+    fun updateSecondLanguage(code: String?) {
+        secondLanguage = code
+        prefs?.edit()?.putString("captions_second", code ?: "")?.apply()
+    }
 
     fun updateScale(value: Float) {
         scale = (Math.round(value.coerceIn(0.6f, 2.5f) * 10f) / 10f)
@@ -87,6 +102,7 @@ object CaptionPreference {
         scale = (prefs?.getFloat("captions_scale", 1f) ?: 1f).coerceIn(0.6f, 2.5f)
         enabled = prefs?.getBoolean(KEY_ENABLED, false) == true
         languageTag = prefs?.getString(KEY_LANGUAGE, "en")?.ifBlank { "en" } ?: "en"
+        secondLanguage = prefs?.getString("captions_second", "")?.ifBlank { null }
     }
 
     fun set(on: Boolean) {

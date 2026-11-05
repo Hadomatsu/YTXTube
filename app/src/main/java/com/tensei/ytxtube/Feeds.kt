@@ -17,6 +17,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -229,11 +233,16 @@ fun FeedList(
     grid: Boolean = false,
     /** Home and Subscriptions: leave out Shorts (when chosen in Settings) and blocked channels. */
     feedFilters: Boolean = false,
+    /** Home: pinch with two fingers for more or fewer columns. */
+    pinchColumns: Boolean = false,
+    /** Extra rows at the top that need the column count (Continue watching). */
+    topSection: (LazyListScope.(columns: Int) -> Unit)? = null,
 ) {
     val c = MaterialTheme.colorScheme
     val source = videos ?: feed.videos
     val listVideos = remember(
         source, feedFilters, FeedFilters.hideShorts, FeedFilters.blockedChannels, FeedFilters.keywords,
+        FeedFilters.hiddenVideos,
     ) { if (feedFilters) FeedFilters.forFeed(source) else source }
     val scope = rememberCoroutineScope()
     LaunchedEffect(listVideos, channelAvatarSeed) {
@@ -249,8 +258,34 @@ fun FeedList(
         }
     }
     LaunchedEffect(nearEnd, listVideos.size) { if (nearEnd && listVideos.isNotEmpty()) feed.loadMore() }
+    val pinchView = androidx.compose.ui.platform.LocalView.current
     PullToRefresh(enabled = pullToRefresh, refreshing = feed.refreshing, onRefresh = feed::refresh, topPadding = indicatorTop) {
     BoxWithConstraints(Modifier.fillMaxSize()) {
+    val widthDp = maxWidth.value
+    val pinchModifier = if (!pinchColumns) Modifier else Modifier.pointerInput(widthDp) {
+        // Two fingers apart: bigger cards (fewer columns); together: more columns. One finger
+        // is left alone, so scrolling works as before.
+        awaitEachGesture {
+            awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+            var start = 0f
+            var done = false
+            while (true) {
+                val event = awaitPointerEvent(PointerEventPass.Initial)
+                val pressed = event.changes.filter { it.pressed }
+                if (pressed.isEmpty()) break
+                if (pressed.size >= 2) {
+                    val d = (pressed[0].position - pressed[1].position).getDistance()
+                    if (start == 0f) {
+                        start = d
+                    } else if (!done && (d > start * 1.3f || d < start * 0.75f)) {
+                        done = true
+                        if (HomeLayoutSettings.pinch(widthDp, if (d > start) -1 else 1)) Haptics.confirm(pinchView)
+                    }
+                    event.changes.forEach { it.consume() }
+                }
+            }
+        }
+    }
     // The list stays a single LazyColumn (so headers, pull-to-refresh and paging keep working);
     // in grid mode each item is simply one row holding [columns] videos.
     val columns = if (grid) HomeGrid.columns(maxWidth.value) else 1
@@ -268,8 +303,9 @@ fun FeedList(
             scope.launch { list.scrollToItem(target) }
         }
     }
-    LazyColumn(state = list, contentPadding = contentPadding) {
+    LazyColumn(state = list, contentPadding = contentPadding, modifier = pinchModifier) {
         header()
+        topSection?.invoke(this, columns)
         if (columns > 1) {
             items(rows, key = { row -> row.first().id }) { row ->
                 Row(

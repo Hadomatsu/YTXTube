@@ -1628,6 +1628,8 @@ fun BitChordMusicPlayer(
                 state.openMusicQueue(state.musicQueue, i, expand = true)
             },
             onDismiss = { showQueue = false },
+            onMove = { from, to -> state.moveInQueue(from, to) },
+            onRemove = { state.removeFromMusicQueue(it) },
         )
     }
 }

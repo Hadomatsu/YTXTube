@@ -147,6 +147,9 @@ object FeedFilters {
         private set
     var keywords by mutableStateOf<List<String>>(emptyList())
         private set
+    /** Videos marked Not interested: gone from the feeds straight away. */
+    var hiddenVideos by mutableStateOf<Set<String>>(emptySet())
+        private set
 
     fun init(context: Context) {
         val p = context.getSharedPreferences("feed_filters", Context.MODE_PRIVATE).also { prefs = it }
@@ -159,6 +162,7 @@ object FeedFilters {
                 BlockedChannel(o.optString("id").ifBlank { null }, o.optString("name"))
             }
         }.getOrDefault(emptyList())
+        hiddenVideos = p.getStringSet("hidden", emptySet())?.toSet() ?: emptySet()
         keywords = runCatching {
             val arr = JSONArray(p.getString("keywords", "[]"))
             (0 until arr.length()).map { arr.optString(it) }.filter { it.isNotBlank() }
@@ -216,11 +220,16 @@ object FeedFilters {
         return keywords.any { title.contains(it) || channel.contains(it) }
     }
 
+    fun hideVideo(id: String) {
+        hiddenVideos = (hiddenVideos + id).let { if (it.size > 1000) it.drop(it.size - 1000).toSet() else it }
+        prefs?.edit()?.putStringSet("hidden", hiddenVideos)?.apply()
+    }
+
     fun isShort(v: VideoItem): Boolean = v.isShort || v.durationSec in 1..60
 
     /** Home and Subscriptions: no Shorts (when chosen) and nothing blocked. */
     fun forFeed(videos: List<VideoItem>): List<VideoItem> =
-        videos.filter { !(hideShorts && isShort(it)) && !isBlocked(it) }
+        videos.filter { !(hideShorts && isShort(it)) && !isBlocked(it) && it.id !in hiddenVideos }
 
     /** Search and More videos: only the block list applies. */
     fun withoutBlocked(videos: List<VideoItem>): List<VideoItem> =
@@ -326,3 +335,204 @@ data class SearchResults(
     val playlists: List<PlaylistRef>,
     val next: String?,
 )
+
+/** Vibration feedback, with one switch for the whole app (Settings). */
+object Haptics {
+    private var prefs: SharedPreferences? = null
+
+    var enabled by mutableStateOf(true)
+        private set
+
+    fun init(context: Context) {
+        val p = context.getSharedPreferences("ui_prefs", Context.MODE_PRIVATE).also { prefs = it }
+        enabled = p.getBoolean("haptics", true)
+    }
+
+    fun update(on: Boolean) {
+        enabled = on
+        prefs?.edit()?.putBoolean("haptics", on)?.apply()
+    }
+
+    fun tap(view: android.view.View) = perform(view, android.view.HapticFeedbackConstants.KEYBOARD_TAP)
+    fun tick(view: android.view.View) = perform(view, android.view.HapticFeedbackConstants.CLOCK_TICK)
+    fun confirm(view: android.view.View) = perform(
+        view,
+        if (android.os.Build.VERSION.SDK_INT >= 30) android.view.HapticFeedbackConstants.CONFIRM else android.view.HapticFeedbackConstants.VIRTUAL_KEY,
+    )
+    fun long(view: android.view.View) = perform(view, android.view.HapticFeedbackConstants.LONG_PRESS)
+
+    fun perform(view: android.view.View, constant: Int) {
+        if (enabled) view.performHapticFeedback(constant)
+    }
+}
+
+/** Shorts: go to the next one when one ends. */
+object ShortsPrefs {
+    private var prefs: SharedPreferences? = null
+
+    var autoAdvance by mutableStateOf(true)
+        private set
+
+    fun init(context: Context) {
+        val p = context.getSharedPreferences("ui_prefs", Context.MODE_PRIVATE).also { prefs = it }
+        autoAdvance = p.getBoolean("shorts_auto_advance", true)
+    }
+
+    fun update(on: Boolean) {
+        autoAdvance = on
+        prefs?.edit()?.putBoolean("shorts_auto_advance", on)?.apply()
+    }
+}
+
+/** The colour of the video playing now, which the app's accent follows (Settings). */
+object VideoAccent {
+    private var prefs: SharedPreferences? = null
+
+    var enabled by mutableStateOf(true)
+        private set
+    /** The current video's colour (from its thumbnail), or null when nothing plays. */
+    var raw by mutableStateOf<Int?>(null)
+
+    fun init(context: Context) {
+        val p = context.getSharedPreferences("ui_prefs", Context.MODE_PRIVATE).also { prefs = it }
+        enabled = p.getBoolean("video_accent", true)
+    }
+
+    fun update(on: Boolean) {
+        enabled = on
+        prefs?.edit()?.putBoolean("video_accent", on)?.apply()
+    }
+
+    /** A clear, saturated accent from the thumbnail colour that reads well on this background. */
+    fun accentFor(rawColor: Int, dark: Boolean): Color {
+        val hsl = FloatArray(3)
+        androidx.core.graphics.ColorUtils.colorToHSL(rawColor, hsl)
+        hsl[1] = (hsl[1] * 1.4f).coerceIn(0.45f, 0.9f)
+        hsl[2] = if (dark) 0.64f else 0.42f
+        return Color(androidx.core.graphics.ColorUtils.HSLToColor(hsl))
+    }
+}
+
+/** Videos you started and did not finish, newest first, for Continue watching on Home. */
+object ContinueWatching {
+    private const val MAX = 60
+    private val prefs by lazy {
+        YTXTubeApplication.appContext.getSharedPreferences("continue_watching", Context.MODE_PRIVATE)
+    }
+
+    var items by mutableStateOf<List<VideoItem>>(emptyList())
+        private set
+    private var loaded = false
+
+    fun load() {
+        if (loaded) return
+        loaded = true
+        runCatching {
+            val arr = JSONArray(prefs.getString("items", "[]"))
+            items = (0 until arr.length()).mapNotNull { i ->
+                val o = arr.optJSONObject(i) ?: return@mapNotNull null
+                val id = o.optString("id").ifBlank { return@mapNotNull null }
+                VideoItem(
+                    id = id,
+                    title = o.optString("title"),
+                    channel = o.optString("channel"),
+                    channelUrl = o.optString("channelUrl").ifBlank { null },
+                    thumbnail = o.optString("thumb").ifBlank { null },
+                    avatar = o.optString("avatar").ifBlank { null },
+                    durationSec = o.optLong("duration"),
+                    views = o.optLong("views", -1L),
+                    uploaded = o.optString("uploaded").ifBlank { null },
+                )
+            }
+        }
+    }
+
+    fun record(video: VideoItem) {
+        if (video.id.length != 11 || video.isLive || video.localUri != null || Incognito.enabled) return
+        load()
+        items = (listOf(video) + items.filter { it.id != video.id }).take(MAX)
+        runCatching {
+            val arr = JSONArray()
+            items.forEach { v ->
+                arr.put(
+                    JSONObject()
+                        .put("id", v.id).put("title", v.title).put("channel", v.channel)
+                        .put("channelUrl", v.channelUrl ?: "").put("thumb", v.thumbnail ?: "")
+                        .put("avatar", v.avatar ?: "").put("duration", v.durationSec)
+                        .put("views", v.views).put("uploaded", v.uploaded ?: ""),
+                )
+            }
+            prefs.edit().putString("items", arr.toString()).apply()
+        }
+    }
+
+    /** Started but not finished (the resume point is the proof). */
+    fun started(): List<VideoItem> {
+        load()
+        return items.filter { ResumeStore.progress(it.id) != null }
+    }
+}
+
+/** Watch time per day and per channel, kept only on the phone, for Your watch stats. */
+object WatchStats {
+    private val prefs by lazy {
+        YTXTubeApplication.appContext.getSharedPreferences("watch_stats", Context.MODE_PRIVATE)
+    }
+    /** Bumped on every save, so an open stats page refreshes. */
+    var version by mutableStateOf(0)
+        private set
+
+    private fun day(offset: Int = 0): String {
+        val cal = java.util.Calendar.getInstance()
+        cal.add(java.util.Calendar.DAY_OF_YEAR, -offset)
+        return java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(cal.time)
+    }
+
+    private fun month(): String = java.text.SimpleDateFormat("yyyy-MM", java.util.Locale.US).format(java.util.Date())
+
+    fun add(seconds: Long, channel: String?) {
+        if (seconds <= 0 || Incognito.enabled) return
+        val dKey = "d:" + day()
+        val edit = prefs.edit()
+        edit.putLong(dKey, prefs.getLong(dKey, 0L) + seconds)
+        channel?.trim()?.takeIf { it.isNotEmpty() }?.let { name ->
+            val cKey = "c:" + month() + ":" + name
+            edit.putLong(cKey, prefs.getLong(cKey, 0L) + seconds)
+        }
+        edit.apply()
+        version++
+    }
+
+    /** Seconds watched on each of the last [days] days, oldest first (today last). */
+    fun lastDays(days: Int): List<Pair<String, Long>> = (days - 1 downTo 0).map { offset ->
+        val d = day(offset)
+        d to prefs.getLong("d:$d", 0L)
+    }
+
+    fun topChannelsThisMonth(limit: Int): List<Pair<String, Long>> {
+        val prefix = "c:" + month() + ":"
+        return prefs.all.entries
+            .filter { it.key.startsWith(prefix) && it.value is Long }
+            .map { it.key.removePrefix(prefix) to (it.value as Long) }
+            .sortedByDescending { it.second }
+            .take(limit)
+    }
+
+    fun format(seconds: Long): String {
+        val h = seconds / 3600
+        val m = (seconds % 3600) / 60
+        return when {
+            h > 0 -> "${h} h ${m} min"
+            m > 0 -> "$m min"
+            else -> "${seconds} s"
+        }
+    }
+}
+
+/** Quick actions a video card can take on its own (swipe right to queue, left for Watch later). */
+class VideoActions(
+    val addToQueue: (VideoItem) -> Unit = {},
+    val watchLater: (VideoItem) -> Unit = {},
+)
+
+val LocalVideoActions = staticCompositionLocalOf { VideoActions() }

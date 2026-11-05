@@ -637,6 +637,10 @@ fun YtxTubeApp() {
             LocalVideoSurface provides if (pip.active) NoVideoSurface else sharedSurface,
             LocalPictureInPicture provides pip,
             LocalVideoMenu provides { optionsFor = it },
+            LocalVideoActions provides VideoActions(
+                addToQueue = { player.addToQueue(it) },
+                watchLater = { player.saveToWatchLater(it) },
+            ),
             LocalPlaylistOpener provides { ref ->
                 player.expanded = false
                 openPlaylist = ref
@@ -844,6 +848,7 @@ fun YtxTubeApp() {
             val dismissX = remember { androidx.compose.animation.core.Animatable(0f) }
             LaunchedEffect(player.current?.id) { dismissX.snapTo(0f) }
             val dismissDistance = with(density) { 56.dp.toPx() }
+            val swipeView = androidx.compose.ui.platform.LocalView.current
 
             if (player.isMusicMode || MiniPlayerSettings.useLiquidMiniPlayer) {
                 LiquidMiniPlayer(
@@ -868,12 +873,19 @@ fun YtxTubeApp() {
                             },
                             orientation = Orientation.Horizontal,
                             onDragStopped = { velocity ->
-                                val far = kotlin.math.abs(dismissX.value) > dismissDistance * 2f || kotlin.math.abs(velocity) > 1200f
+                                // Swipe left: next video or song; swipe right: the one before. The
+                                // card slides out that way and the new one slides in from the other
+                                // side. (Swipe down still closes the player.)
+                                val far = kotlin.math.abs(dismissX.value) > dismissDistance * 1.2f || kotlin.math.abs(velocity) > 900f
                                 scope.launch {
                                     if (far) {
                                         val dir = if (dismissX.value != 0f) kotlin.math.sign(dismissX.value) else kotlin.math.sign(velocity)
-                                        if (!reduced) dismissX.animateTo(dir * constraints.maxWidth.toFloat(), tween(200, easing = Motion.Emphasized))
-                                        player.close()
+                                        val width = constraints.maxWidth.toFloat()
+                                        Haptics.confirm(swipeView)
+                                        if (!reduced) dismissX.animateTo(dir * width * 0.7f, tween(150, easing = Motion.Emphasized))
+                                        if (dir < 0f) player.skipNext() else player.swipePrevious()
+                                        dismissX.snapTo(-dir * width * 0.5f)
+                                        dismissX.animateTo(0f, spring(dampingRatio = 0.82f, stiffness = 420f))
                                     } else {
                                         dismissX.animateTo(0f, spring(dampingRatio = 0.8f, stiffness = 500f))
                                     }
@@ -1281,7 +1293,7 @@ private fun NavPill(selected: Tab, onSelect: (Tab) -> Unit, modifier: Modifier =
                         .weight(1f)
                         .fillMaxHeight()
                         .clickable(interactionSource = interaction, indication = null) {
-                            view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
+                            Haptics.perform(view, HapticFeedbackConstants.CONTEXT_CLICK)
                             onSelect(t)
                         },
                     shape = RoundedCornerShape(24.dp),

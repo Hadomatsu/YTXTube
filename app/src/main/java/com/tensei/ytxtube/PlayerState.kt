@@ -138,6 +138,90 @@ class PlayerState(private val scope: CoroutineScope) {
     }
     private var goingBack = false
 
+    /** Mini player swiped right: the video or song before this one (or back to its start). */
+    fun swipePrevious() {
+        val player = controller ?: return
+        if (isMusicMode) {
+            if (musicHistory.isEmpty()) { player.seekTo(0); return }
+            val now = current ?: return
+            val previous = musicHistory.removeAt(musicHistory.size - 1)
+            goingBack = true
+            try {
+                openMusicQueue(listOf(previous, now) + musicQueue, 0, expanded)
+            } finally {
+                goingBack = false
+            }
+            return
+        }
+        if (videoHistory.isEmpty()) { player.seekTo(0); return }
+        val previous = videoHistory.removeAt(videoHistory.size - 1)
+        goingBack = true
+        try {
+            open(previous, expand = expanded)
+        } finally {
+            goingBack = false
+        }
+    }
+
+    /** Up next, reordered by dragging. */
+    fun moveInQueue(from: Int, to: Int) {
+        if (from == to) return
+        if (isMusicMode) {
+            val list = musicQueue.toMutableList()
+            if (from !in list.indices || to !in list.indices) return
+            list.add(to, list.removeAt(from))
+            musicQueue = list
+            return
+        }
+        val player = controller ?: return
+        val base = player.currentMediaItemIndex + 1
+        if (base + from >= player.mediaItemCount || base + to >= player.mediaItemCount) return
+        player.moveMediaItem(base + from, base + to)
+    }
+
+    fun removeFromMusicQueue(index: Int) {
+        musicQueue = musicQueue.filterIndexed { i, _ -> i != index }
+    }
+
+    /** The countdown card at the end of a video, when Autoplay is on. */
+    private fun startUpNext() {
+        val next = pickAutoplayNext()
+        if (next == null) {
+            autoPlayNext()
+            return
+        }
+        upNextJob?.cancel()
+        upNext = next
+        upNextSeconds = 5
+        upNextJob = scope.launch {
+            while (upNextSeconds > 0) {
+                kotlinx.coroutines.delay(1_000)
+                upNextSeconds--
+            }
+            val n = upNext ?: return@launch
+            upNext = null
+            open(n, expand = expanded)
+        }
+    }
+
+    fun cancelUpNext() {
+        upNextJob?.cancel()
+        upNextJob = null
+        upNext = null
+    }
+
+    fun playUpNextNow() {
+        val n = upNext ?: return
+        cancelUpNext()
+        open(n, expand = expanded)
+    }
+
+    private fun pickAutoplayNext(): VideoItem? {
+        val curr = current ?: return null
+        val rel = FeedFilters.withoutBlocked(details?.related.orEmpty()).filter { it.id != curr.id }
+        return rel.firstOrNull { it.channel.equals(curr.channel, ignoreCase = true) } ?: rel.firstOrNull()
+    }
+
     fun toggleLoop() {
         val player = controller ?: return
         val next = if (player.repeatMode == Player.REPEAT_MODE_ONE) Player.REPEAT_MODE_OFF else Player.REPEAT_MODE_ONE
@@ -248,6 +332,30 @@ class PlayerState(private val scope: CoroutineScope) {
 
     /** The cue text Media3's text renderer is currently showing, or null when captions are off. */
     var captionText by mutableStateOf<String?>(null)
+
+    /** Second caption language under the first (dual subtitles), or null. */
+    var captionText2 by mutableStateOf<String?>(null)
+        private set
+    private var timeline2: WordTimeline? = null
+    private var secondJob: kotlinx.coroutines.Job? = null
+    private var mainCaptionUrl: String? = null
+
+    /** "Most replayed" intensities for the current video (empty when YouTube has none). */
+    var heatmap by mutableStateOf<List<Float>>(emptyList())
+        private set
+
+    /** Where playback resumed when the video was reopened, for the "Start over" pill. */
+    var resumedAt by mutableStateOf<Long?>(null)
+
+    /** The video autoplay is about to open, while its countdown runs. */
+    var upNext by mutableStateOf<VideoItem?>(null)
+        private set
+    var upNextSeconds by mutableStateOf(0)
+        private set
+    private var upNextJob: kotlinx.coroutines.Job? = null
+
+    /** Videos played before this one (video mode), for swiping back on the mini player. */
+    private val videoHistory = ArrayList<VideoItem>()
         private set
 
     private var likeOverrides by mutableStateOf<Map<String, LikeStatus>>(emptyMap())
@@ -288,6 +396,11 @@ class PlayerState(private val scope: CoroutineScope) {
         private set
 
     fun open(item: VideoItem, expand: Boolean = true) {
+        val before = current
+        if (!goingBack && !isMusicMode && before != null && before.id != item.id) {
+            videoHistory.add(before)
+            if (videoHistory.size > 100) videoHistory.removeAt(0)
+        }
         isMusicMode = false
         AudioOnly.set(false)
         runCatching { applyVideoTrack() }
@@ -366,6 +479,25 @@ class PlayerState(private val scope: CoroutineScope) {
         audioOptions = emptyList()
         captionText = null
         timeline = null
+        captionText2 = null
+        timeline2 = null
+        secondJob?.cancel()
+        mainCaptionUrl = null
+        heatmap = emptyList()
+        resumedAt = null
+        cancelUpNext()
+        if (!isMusicMode && !item.isLive && item.localUri == null) {
+            ContinueWatching.record(item)
+            scope.launch {
+                val h = runCatching { InnerTube.heatmap(item.id) }.getOrDefault(emptyList())
+                if (current?.id == item.id) heatmap = h
+            }
+        }
+        // The app's accent follows the video's colours (Settings).
+        scope.launch {
+            val raw = runCatching { ThumbTint.load(YTXTubeApplication.appContext, item.id, item.thumbnail) }.getOrNull()
+            if (current?.id == item.id) VideoAccent.raw = raw
+        }
         speedPanelOpen = false
         videoZoom = 1f
         portraitFullscreen = false
@@ -510,6 +642,7 @@ class PlayerState(private val scope: CoroutineScope) {
         val player = controller ?: run { pendingStart = item; return }
 
         val start = if (PlaybackPrefs.resume) ResumeStore.startPosition(item.id) else 0L
+        resumedAt = if (start > 0L && !isMusicMode) start else null
         replaceCurrent(player, item, positionMs = start)
         player.play()
         if (selectedSubtitleLanguage != null) setSubtitleLanguage(selectedSubtitleLanguage, userInitiated = false)
@@ -877,6 +1010,10 @@ class PlayerState(private val scope: CoroutineScope) {
         val p = controller
         try {
             if (code == null) {
+                timeline2 = null
+                captionText2 = null
+                secondJob?.cancel()
+                mainCaptionUrl = null
                 p?.trackSelectionParameters = p?.trackSelectionParameters
                     ?.buildUpon()
                     ?.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
@@ -904,6 +1041,9 @@ class PlayerState(private val scope: CoroutineScope) {
             info?.subtitles?.firstOrNull { it.languageTag == language }?.content
                 ?: CaptionTracks.get(videoId)?.let { CaptionTracks.pick(it, language) }?.url
         }
+
+        mainCaptionUrl = url
+        loadSecondCaptions()
 
         // Already downloaded (prefetched when the video opened): show it right now.
         val ready = url?.let { WordCaptionLoader.cached(it) }
@@ -998,14 +1138,44 @@ class PlayerState(private val scope: CoroutineScope) {
         }
     }
 
+    /**
+     * Dual subtitles: YouTube's own translation of the caption track into the second language
+     * (Settings in the long-press CC menu), shown smaller under the first.
+     */
+    fun loadSecondCaptions() {
+        secondJob?.cancel()
+        timeline2 = null
+        captionText2 = null
+        val second = CaptionPreference.secondLanguage ?: return
+        val main = mainCaptionUrl ?: return
+        val first = selectedSubtitleLanguage ?: return
+        if (first.substringBefore('-').equals(second.substringBefore('-'), ignoreCase = true)) return
+        val base = main.replace(Regex("[&?]tlang=[^&]*"), "")
+        val url = base + (if ('?' in base) "&" else "?") + "tlang=" + second
+        val videoId = current?.id ?: return
+        WordCaptionLoader.cached(url)?.let { timeline2 = it; updateCaption(); return }
+        secondJob = scope.launch(Dispatchers.IO) {
+            val loaded = runCatching { WordCaptionLoader.load(url) }.getOrNull()
+            withContext(Dispatchers.Main) {
+                if (loaded != null && !loaded.isEmpty && current?.id == videoId && CaptionPreference.secondLanguage == second) {
+                    timeline2 = loaded
+                    updateCaption()
+                }
+            }
+        }
+    }
+
     /** Recomputes the word-by-word caption for the current playback position. */
     internal fun updateCaption() {
         if (selectedSubtitleLanguage == null) {
             if (captionText != null) captionText = null
+            if (captionText2 != null) captionText2 = null
             return
         }
-        val tl = timeline ?: return
         val pos = controller?.currentPosition ?: positionMs
+        val second = timeline2?.textAt(pos)
+        if (captionText2 != second) captionText2 = second
+        val tl = timeline ?: return
         captionText = tl.textAt(pos)
     }
 
@@ -1013,6 +1183,7 @@ class PlayerState(private val scope: CoroutineScope) {
     fun retry() = current?.let { item -> StreamCache.invalidate(item.id); current = null; open(item) }
 
     fun togglePlay() {
+        cancelUpNext()
         val player = controller ?: return
         if (player.isPlaying) player.pause() else {
             if (player.playbackState == Player.STATE_ENDED) player.seekTo(0)
@@ -1144,6 +1315,8 @@ class PlayerState(private val scope: CoroutineScope) {
     }
 
     fun close() {
+        cancelUpNext()
+        VideoAccent.raw = null
         loadJob?.cancel()
         relatedJob?.cancel()
         relatedLoading = false
@@ -1228,7 +1401,8 @@ class PlayerState(private val scope: CoroutineScope) {
                     p.seekTo(p.currentMediaItemIndex + 1, 0L)
                     p.play()
                 } else if (autoPlayEnabled) {
-                    autoPlayNext()
+                    // Videos: a short countdown with Cancel first. Music carries straight on.
+                    if (isMusicMode) autoPlayNext() else startUpNext()
                 }
             }
         }

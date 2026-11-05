@@ -3,6 +3,8 @@ package com.tensei.ytxtube
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.rounded.DragHandle
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -116,6 +118,8 @@ internal fun MusicQueueSheet(
     queue: List<VideoItem>,
     onPlay: (Int) -> Unit,
     onDismiss: () -> Unit,
+    onMove: (Int, Int) -> Unit = { _, _ -> },
+    onRemove: (Int) -> Unit = {},
 ) {
     val c = MaterialTheme.colorScheme
     ModalBottomSheet(
@@ -139,13 +143,19 @@ internal fun MusicQueueSheet(
                     modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
                 )
             } else {
-                LazyColumn(Modifier.fillMaxWidth().heightIn(max = 520.dp)) {
-                    itemsIndexed(queue, key = { i, t -> t.id + "_" + i }) { i, track ->
+                ReorderableQueue(
+                    queue,
+                    onMove = onMove,
+                    onRemove = onRemove,
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 520.dp)
+                        .verticalScroll(androidx.compose.foundation.rememberScrollState()),
+                ) { i, track, handle ->
                         Row(
                             Modifier
                                 .fillMaxWidth()
+                                .background(c.surfaceContainerLow)
                                 .clickable { onPlay(i) }
-                                .padding(horizontal = 20.dp, vertical = 8.dp),
+                                .padding(start = 20.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Box(
@@ -179,8 +189,14 @@ internal fun MusicQueueSheet(
                                     overflow = TextOverflow.Ellipsis,
                                 )
                             }
+                            Box(handle.size(40.dp), contentAlignment = Alignment.Center) {
+                                androidx.compose.material3.Icon(
+                                    androidx.compose.material.icons.Icons.Rounded.DragHandle,
+                                    "Drag to reorder",
+                                    tint = c.onSurfaceVariant,
+                                )
+                            }
                         }
-                    }
                 }
             }
         }

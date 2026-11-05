@@ -1872,6 +1872,75 @@ object InnerTube {
     }
 
 
+    /** The "Not interested" feedback token in a video card's menu, when YouTube put one there. */
+    private fun notInterestedToken(o: JSONObject): String? {
+        var token: String? = null
+        o.walk { key, obj ->
+            if (token != null) return@walk
+            when (key) {
+                "menuServiceItemRenderer" -> if (obj.optJSONObject("icon")?.optString("iconType") == "NOT_INTERESTED") {
+                    token = obj.optJSONObject("serviceEndpoint")?.optJSONObject("feedbackEndpoint")
+                        ?.optString("feedbackToken")?.ifBlank { null }
+                }
+                "listItemViewModel" -> if (obj.toString().contains("NOT_INTERESTED")) {
+                    token = obj.collectStrings("feedbackToken").firstOrNull { it.isNotBlank() }
+                }
+            }
+        }
+        return token
+    }
+
+    /** Tells YouTube "Not interested" for a video in the feed. */
+    suspend fun notInterested(token: String): Boolean = withContext(Dispatchers.IO) {
+        runCatching {
+            post(
+                "feedback",
+                JSONObject()
+                    .put("feedbackTokens", org.json.JSONArray().put(token))
+                    .put("isFeedbackTokenUnencrypted", false)
+                    .put("shouldMerge", false),
+            )
+            true
+        }.getOrDefault(false)
+    }
+
+    /**
+     * The "Most replayed" curve of a video: one intensity (0 to 1) per slice of the video, in
+     * order, or empty when YouTube has none for it.
+     */
+    suspend fun heatmap(videoId: String): List<Float> = withContext(Dispatchers.IO) {
+        val root = runCatching { postAny("next", JSONObject().put("videoId", videoId)) }.getOrNull()
+            ?: return@withContext emptyList()
+        var best: List<Float> = emptyList()
+        val older = ArrayList<Float>()
+        root.walk { key, obj ->
+            when (key) {
+                "macroMarkersListEntity" -> {
+                    val list = obj.optJSONObject("markersList") ?: return@walk
+                    val type = list.optString("markerType")
+                    if (type.isNotBlank() && !type.contains("HEATMAP")) return@walk
+                    val markers = list.optJSONArray("markers") ?: return@walk
+                    val values = (0 until markers.length()).mapNotNull { markers.optJSONObject(it) }
+                        .sortedBy { it.optString("startMillis").toLongOrNull() ?: 0L }
+                        .map { it.optDouble("intensityScoreNormalized", 0.0).toFloat() }
+                    if (values.size > best.size) best = values
+                }
+                "heatMarkerRenderer" -> older += obj.optDouble("heatMarkerIntensityScoreNormalized", 0.0).toFloat()
+            }
+        }
+        best.ifEmpty { older }
+    }
+
+    /** Videos of one channel matching [query] (the search box on a channel page). */
+    suspend fun channelSearch(channelId: String, query: String): List<VideoItem> = withContext(Dispatchers.IO) {
+        val root = post(
+            "browse",
+            JSONObject().put("browseId", channelId).put("params", "EgZzZWFyY2jyBgQKAloA").put("query", query),
+            anonymous = !Account.signedIn,
+        )
+        parseFeed(root).videos
+    }
+
     /** Search with filters (upload date, length, type, sort), straight from YouTube's search. */
     suspend fun filteredSearch(query: String, filter: SearchFilter, continuation: String? = null): SearchResults =
         withContext(Dispatchers.IO) {
@@ -2132,6 +2201,7 @@ object InnerTube {
             isLive = isLive,
             isShort = o.has("reelWatchEndpoint") || o.optJSONObject("navigationEndpoint")?.has("reelWatchEndpoint") == true ||
                 o.collectStrings("url").any { it.startsWith("/shorts/") },
+            feedbackToken = notInterestedToken(o),
         )
     }
 
@@ -2164,6 +2234,7 @@ object InnerTube {
             uploaded = if (isLive) I18n.t("live_now", "Live") else (parts.firstOrNull { it.contains("ago") || it.contains("पहले") || it.contains("hace") || it.contains("назад") } ?: parts.getOrNull(2))?.let { I18n.translateTimeAgo(it) },
             isLive = isLive,
             isShort = o.collectStrings("url").any { it.startsWith("/shorts/") },
+            feedbackToken = notInterestedToken(o),
         )
     }
 

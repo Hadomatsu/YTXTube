@@ -70,6 +70,7 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CleaningServices
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.FilterList
+import androidx.compose.material.icons.rounded.BarChart
 import androidx.compose.material.icons.rounded.SettingsBackupRestore
 import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.DataUsage
@@ -234,6 +235,12 @@ fun SettingsScreen(
                         title = "Feed & privacy",
                         subtitle = "Hide Shorts, watched marks, blocked channels and words, incognito",
                         onClick = { activeFloatingSection = SettingsFloatingSection.FEED },
+                    )
+                    SettingsRow(
+                        icon = Icons.Rounded.BarChart,
+                        title = "Your watch stats",
+                        subtitle = "Time watched per day and your top channels this month (only on this phone)",
+                        onClick = { activeFloatingSection = SettingsFloatingSection.STATS },
                     )
                     SettingsRow(
                         icon = Icons.Rounded.SettingsBackupRestore,
@@ -408,6 +415,15 @@ fun SettingsScreen(
                         onDismiss = { activeFloatingSection = null },
                     ) {
                         FeedSettingsContent()
+                    }
+                }
+                SettingsFloatingSection.STATS -> {
+                    SettingsFloatingDialog(
+                        title = "Your watch stats",
+                        subtitle = "Counted on this phone only; incognito time is not counted",
+                        onDismiss = { activeFloatingSection = null },
+                    ) {
+                        WatchStatsContent()
                     }
                 }
                 SettingsFloatingSection.BACKUP -> {
@@ -648,6 +664,7 @@ private enum class SettingsFloatingSection {
     MUSIC,
     FEED,
     BACKUP,
+    STATS,
     STORAGE_USAGE,
     LANGUAGE,
 }
@@ -1391,10 +1408,43 @@ private fun GeneralModificationContent(context: Context) {
         HorizontalDivider(color = c.onSurface.copy(alpha = 0.08f))
 
         SettingsSwitchRow(
+            title = "Colours follow the video",
+            subtitle = "Buttons, links, replies and highlights take the colour of the video that is playing",
+            checked = VideoAccent.enabled,
+            onCheckedChange = { VideoAccent.update(it) },
+        )
+
+        HorizontalDivider(color = c.onSurface.copy(alpha = 0.08f))
+
+        SettingsSwitchRow(
+            title = "Haptic feedback",
+            subtitle = "Light vibrations on taps, likes, swipes, chapters and reordering",
+            checked = Haptics.enabled,
+            onCheckedChange = { Haptics.update(it) },
+        )
+
+        HorizontalDivider(color = c.onSurface.copy(alpha = 0.08f))
+
+        SettingsSwitchRow(
             title = I18n.t("home_grid", "Grid layout on Home"),
             subtitle = I18n.t("home_grid_sub", "Two videos side by side on a wide screen (unfolded). On a narrow screen (folded) it stays one video per row"),
             checked = HomeLayoutSettings.grid,
             onCheckedChange = { HomeLayoutSettings.set(it) },
+        )
+        val columnChoices = listOf(0, 1, 2, 3)
+        SettingsChoiceRow(
+            title = "Columns when folded",
+            subtitle = "Or pinch the Home feed with two fingers to change it right there",
+            options = columnChoices.map { if (it == 0) "Auto (1)" else "$it" },
+            selected = columnChoices.indexOf(HomeLayoutSettings.columnsNarrow).coerceAtLeast(0),
+            onSelect = { HomeLayoutSettings.setColumns(false, columnChoices[it]) },
+        )
+        SettingsChoiceRow(
+            title = "Columns when unfolded",
+            subtitle = "Or pinch the Home feed with two fingers to change it right there",
+            options = columnChoices.map { if (it == 0) "Auto (2)" else "$it" },
+            selected = columnChoices.indexOf(HomeLayoutSettings.columnsWide).coerceAtLeast(0),
+            onSelect = { HomeLayoutSettings.setColumns(true, columnChoices[it]) },
         )
 
         HorizontalDivider(color = c.onSurface.copy(alpha = 0.08f))
@@ -2340,9 +2390,10 @@ private fun SettingsSwitchRow(
             )
         }
         Spacer(Modifier.width(6.dp))
+        val switchView = androidx.compose.ui.platform.LocalView.current
         Switch(
             checked = checked,
-            onCheckedChange = onCheckedChange,
+            onCheckedChange = { Haptics.tap(switchView); onCheckedChange(it) },
             colors = SwitchDefaults.colors(checkedTrackColor = c.primary),
         )
     }
@@ -2510,6 +2561,14 @@ private fun PlaybackSettingsContent() {
             subtitle = "Closing the app from recent apps leaves music playing in the notification",
             checked = PlaybackPrefs.keepPlayingOnSwipe,
             onCheckedChange = { PlaybackPrefs.updateKeepPlayingOnSwipe(it) },
+        )
+
+        SettingsGroupLabel("Shorts")
+        SettingsSwitchRow(
+            title = "Auto-advance Shorts",
+            subtitle = "Go to the next Short by itself when one ends, instead of playing it again",
+            checked = ShortsPrefs.autoAdvance,
+            onCheckedChange = { ShortsPrefs.update(it) },
         )
 
         SettingsGroupLabel("Video page")
@@ -2836,6 +2895,74 @@ private fun BackupSettingsContent() {
         )
         message?.let {
             Text(it, color = c.primary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(vertical = 10.dp))
+        }
+    }
+}
+
+
+@Composable
+private fun WatchStatsContent() {
+    val c = MaterialTheme.colorScheme
+    @Suppress("UNUSED_VARIABLE") val refresh = WatchStats.version
+    val week = WatchStats.lastDays(7)
+    val today = week.last().second
+    val weekTotal = week.sumOf { it.second }
+    val top = WatchStats.topChannelsThisMonth(5)
+    Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            listOf("Today" to today, "This week" to weekTotal, "Daily average" to weekTotal / 7).forEach { (label, value) ->
+                Column(
+                    Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(c.surfaceContainerHigh)
+                        .padding(12.dp),
+                ) {
+                    Text(label, color = c.onSurfaceVariant, fontSize = 11.5.sp)
+                    Text(WatchStats.format(value), fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                }
+            }
+        }
+        Spacer(Modifier.height(18.dp))
+        Text("Last 7 days", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(10.dp))
+        val most = (week.maxOfOrNull { it.second } ?: 0L).coerceAtLeast(60L)
+        val barColor = c.primary
+        val emptyColor = c.surfaceContainerHighest
+        Row(Modifier.fillMaxWidth().height(130.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.Bottom) {
+            week.forEachIndexed { i, (day, seconds) ->
+                Column(Modifier.weight(1f).fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Bottom) {
+                    val fraction = (seconds.toFloat() / most).coerceIn(0f, 1f)
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .weight(1f, fill = false)
+                            .fillMaxHeight(fraction.coerceAtLeast(0.03f))
+                            .clip(RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp, bottomStart = 3.dp, bottomEnd = 3.dp))
+                            .background(if (seconds > 0) barColor.copy(alpha = if (i == week.lastIndex) 1f else 0.7f) else emptyColor),
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    val label = runCatching {
+                        val parsed = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).parse(day)
+                        java.text.SimpleDateFormat("EEE", java.util.Locale.getDefault()).format(parsed!!)
+                    }.getOrDefault("")
+                    Text(label, color = c.onSurfaceVariant, fontSize = 11.sp, maxLines = 1)
+                }
+            }
+        }
+        Spacer(Modifier.height(20.dp))
+        Text("Top channels this month", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(6.dp))
+        if (top.isEmpty()) {
+            Text("Nothing yet. Watch something and it shows up here.", color = c.onSurfaceVariant, fontSize = 12.5.sp)
+        } else {
+            top.forEachIndexed { i, (name, seconds) ->
+                Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("${i + 1}", color = c.primary, fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(24.dp))
+                    Text(name, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                    Text(WatchStats.format(seconds), color = c.onSurfaceVariant, fontSize = 13.sp)
+                }
+            }
         }
     }
 }

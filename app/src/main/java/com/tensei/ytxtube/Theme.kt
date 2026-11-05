@@ -32,6 +32,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.DeviceFontFamilyName
 import androidx.compose.ui.text.font.Font
@@ -559,8 +560,23 @@ fun YtxTubeTheme(content: @Composable () -> Unit) {
         )
     } else baseScheme
 
+    // Colours follow the video (Settings): the accent (buttons, links, replies, highlights)
+    // takes the playing video's colour; backgrounds stay as they are.
+    val accentRaw = VideoAccent.raw
+    val themed = if (VideoAccent.enabled && accentRaw != null) {
+        val accent = VideoAccent.accentFor(accentRaw, dark)
+        val onAccent = if (accent.luminance() > 0.55f) Color.Black else Color.White
+        scheme.copy(
+            primary = accent,
+            onPrimary = onAccent,
+            primaryContainer = androidx.compose.ui.graphics.lerp(scheme.surface, accent, 0.3f),
+            onPrimaryContainer = if (dark) Color.White else Color(0xFF111111),
+            tertiary = accent,
+        )
+    } else scheme
+
     SystemBars(dark, scheme.surface)
-    MaterialTheme(colorScheme = scheme, shapes = ExpressiveShapes, typography = Typography()) {
+    MaterialTheme(colorScheme = themed, shapes = ExpressiveShapes, typography = Typography()) {
         CompositionLocalProvider(
 
             LocalRippleConfiguration provides null,

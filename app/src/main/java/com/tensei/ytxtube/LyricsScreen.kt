@@ -35,6 +35,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
@@ -75,7 +80,11 @@ internal fun AppleLyricsScreen(
     top: Dp,
     bottom: Dp,
 ) {
-    BackHandler(onBack = onClose)
+    // Lyric card: null when not choosing lines, else the chosen line numbers.
+    var selection by remember(item.id) { mutableStateOf<Set<Int>?>(null) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val cardScope = rememberCoroutineScope()
+    BackHandler(onBack = { if (selection != null) selection = null else onClose() })
     val view = androidx.compose.ui.platform.LocalView.current
     androidx.compose.runtime.DisposableEffect(view) {
         val before = view.keepScreenOn
@@ -177,6 +186,16 @@ internal fun AppleLyricsScreen(
                         contentColor = Color.White,
                         alignTo = 0.3f,
                         horizontalPadding = 26.dp,
+                        selected = selection.orEmpty(),
+                        selecting = selection != null,
+                        onLongPressLine = { i ->
+                            Haptics.long(view)
+                            selection = setOf(i)
+                        },
+                        onToggleLine = { i ->
+                            val now = selection ?: emptySet()
+                            selection = if (i in now) now - i else if (now.size < 6) now + i else now
+                        },
                     )
                     else -> Box(Modifier.padding(horizontal = 26.dp)) {
                         PlainLyricsView(lyrics, romanized, contentColor = Color.White)
@@ -248,9 +267,54 @@ internal fun AppleLyricsScreen(
             }
         }
 
-        // Seek bar and controls in a glass capsule at the bottom.
+        // Seek bar and controls in a glass capsule at the bottom (or, while choosing lines for a
+        // lyric card, Cancel and Share).
         val capsule = RoundedCornerShape(34.dp)
-        Column(
+        val chosen = selection
+        if (chosen != null && lyrics != null) {
+            Row(
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = bottom + 14.dp)
+                    .widthIn(max = 560.dp)
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+                    .clip(capsule)
+                    .liquidGlass(backdrop, glassSpec(shape = capsule, tint = Color.Black.copy(alpha = 0.18f)))
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "Cancel",
+                    color = Color.White,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.pressable { selection = null }.padding(horizontal = 12.dp, vertical = 10.dp),
+                )
+                Text(
+                    if (chosen.isEmpty()) "Tap lines to pick them" else "${chosen.size} line" + (if (chosen.size == 1) "" else "s") + " (up to 6)",
+                    color = Color.White.copy(alpha = 0.75f),
+                    fontSize = 13.sp,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    "Share",
+                    color = Color.Black,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier
+                        .clip(CircleShape)
+                        .background(Color.White)
+                        .pressable(enabled = chosen.isNotEmpty()) {
+                            val lines = chosen.sorted().mapNotNull { lyrics.lines.getOrNull(it)?.text?.takeIf { t -> t.isNotBlank() } }
+                            selection = null
+                            cardScope.launch { runCatching { LyricsCard.share(context, item, lines) } }
+                        }
+                        .padding(horizontal = 20.dp, vertical = 10.dp),
+                )
+            }
+        } else Column(
             Modifier
                 .align(Alignment.BottomCenter)
                 .padding(bottom = bottom + 14.dp)

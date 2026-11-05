@@ -21,6 +21,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
 import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
@@ -30,6 +31,9 @@ import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Block
+import androidx.compose.material.icons.rounded.DragHandle
+import androidx.compose.material.icons.rounded.NotInterested
+import kotlinx.coroutines.launch
 import androidx.compose.material.icons.rounded.Subtitles
 import androidx.compose.material.icons.rounded.SubtitlesOff
 import androidx.compose.material.icons.rounded.WatchLater
@@ -86,6 +90,15 @@ fun VideoOptionsSheet(video: VideoItem, player: PlayerState, onDismiss: () -> Un
         OptionRow(Icons.Rounded.Download, "Download") { player.downloadFor = video; onDismiss() }
         if (Account.signedIn) {
             OptionRow(Icons.Rounded.WatchLater, "Save to Watch later") { player.saveToWatchLater(video); onDismiss() }
+        }
+        OptionRow(Icons.Rounded.NotInterested, "Not interested") {
+            // Gone from the feeds now, and YouTube is told (signed in) so it shows fewer like it.
+            FeedFilters.hideVideo(video.id)
+            video.feedbackToken?.let { token ->
+                kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch { InnerTube.notInterested(token) }
+            }
+            android.widget.Toast.makeText(context, "Got it, you'll see fewer videos like this", android.widget.Toast.LENGTH_SHORT).show()
+            onDismiss()
         }
         OptionRow(Icons.Rounded.Block, "Don't show this channel") {
             FeedFilters.block(video)
@@ -166,13 +179,21 @@ fun QueueSheet(player: PlayerState, onDismiss: () -> Unit) {
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 24.dp),
             )
         } else {
-            LazyColumn(Modifier.fillMaxHeight(0.7f)) {
-                itemsIndexed(player.queue, key = { i, v -> "$i-${v.id}" }) { index, video ->
-                    Box(Modifier.padding(horizontal = 20.dp)) {
-                        VideoRow(video, onClick = { player.playFromQueue(index); onDismiss() }) {
-                            Box(Modifier.size(40.dp).pressable { player.removeFromQueue(index) }, contentAlignment = Alignment.Center) {
-                                Icon(Icons.Rounded.Close, "Remove from queue", tint = c.onSurfaceVariant)
-                            }
+            Text(
+                "Drag the handle to reorder, swipe a video sideways to remove it.",
+                color = c.onSurfaceVariant, fontSize = 12.sp,
+                modifier = Modifier.padding(horizontal = 20.dp).padding(bottom = 6.dp),
+            )
+            ReorderableQueue(
+                player.queue,
+                onMove = { from, to -> player.moveInQueue(from, to) },
+                onRemove = { player.removeFromQueue(it) },
+                modifier = Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState()),
+            ) { index, video, handle ->
+                Box(Modifier.padding(horizontal = 20.dp)) {
+                    VideoRow(video, onClick = { player.playFromQueue(index); onDismiss() }) {
+                        Box(handle.size(40.dp), contentAlignment = Alignment.Center) {
+                            Icon(Icons.Rounded.DragHandle, "Drag to reorder", tint = c.onSurfaceVariant)
                         }
                     }
                 }

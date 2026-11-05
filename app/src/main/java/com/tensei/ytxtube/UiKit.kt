@@ -31,6 +31,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.FastForward
 import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.WatchLater
+import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
+import kotlinx.coroutines.launch
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.ThumbUp
 import androidx.compose.material.icons.rounded.Verified
@@ -377,7 +380,8 @@ fun VideoCard(video: VideoItem, onClick: () -> Unit, modifier: Modifier = Modifi
             .prefetchOnPress(video.id)
             .pressable(pressedScale = 0.98f, onLongClick = { menu(video) }, onClick = onClick),
     ) {
-        Box(Modifier.fillMaxWidth()) {
+        var skimMs by remember(video.id) { androidx.compose.runtime.mutableStateOf<Long?>(null) }
+        Box(Modifier.fillMaxWidth().skimGesture(video) { skimMs = it }) {
             val dim = watchedDim(video.id)
             Thumbnail(
                 video.thumbnail,
@@ -388,11 +392,13 @@ fun VideoCard(video: VideoItem, onClick: () -> Unit, modifier: Modifier = Modifi
             WatchedPill(video.id, Modifier.align(Alignment.TopStart).padding(8.dp))
             DurationPill(video.durationSec, Modifier.align(Alignment.BottomEnd).padding(8.dp), isLive = video.isLive)
             ResumeBar(video.id, Modifier.align(Alignment.BottomStart))
+            skimMs?.let { SkimOverlay(video, it) }
         }
         // The thumbnail's colour runs down under the title and has faded to the page by the time
         // the channel line starts, so the card has no visible edge.
         val density = LocalDensity.current
         var metaTop by remember { androidx.compose.runtime.mutableFloatStateOf(Float.NaN) }
+        SwipeToAct(video) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -439,6 +445,7 @@ fun VideoCard(video: VideoItem, onClick: () -> Unit, modifier: Modifier = Modifi
                 )
             }
         }
+        }
     }
 }
 
@@ -457,7 +464,8 @@ fun VideoCardGrid(video: VideoItem, onClick: () -> Unit, modifier: Modifier = Mo
             .pressable(pressedScale = 0.97f, onLongClick = { menu(video) }, onClick = onClick)
             .clip(RoundedCornerShape(12.dp)),
     ) {
-        Box(Modifier.fillMaxWidth()) {
+        var skimMs by remember(video.id) { androidx.compose.runtime.mutableStateOf<Long?>(null) }
+        Box(Modifier.fillMaxWidth().skimGesture(video) { skimMs = it }) {
             val dim = watchedDim(video.id)
             Thumbnail(
                 video.thumbnail,
@@ -468,9 +476,11 @@ fun VideoCardGrid(video: VideoItem, onClick: () -> Unit, modifier: Modifier = Mo
             WatchedPill(video.id, Modifier.align(Alignment.TopStart).padding(6.dp))
             DurationPill(video.durationSec, Modifier.align(Alignment.BottomEnd).padding(6.dp), small = true, isLive = video.isLive)
             ResumeBar(video.id, Modifier.align(Alignment.BottomStart))
+            skimMs?.let { SkimOverlay(video, it) }
         }
         val density = LocalDensity.current
         var metaTop by remember { androidx.compose.runtime.mutableFloatStateOf(Float.NaN) }
+        SwipeToAct(video) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -510,6 +520,133 @@ fun VideoCardGrid(video: VideoItem, onClick: () -> Unit, modifier: Modifier = Mo
                 )
             }
         }
+        }
+    }
+}
+
+/**
+ * Skimming: slide a finger sideways across a thumbnail to flick through the video's frames
+ * (its storyboard). Lifting the finger puts the thumbnail back.
+ */
+fun Modifier.skimGesture(video: VideoItem, onSkim: (Long?) -> Unit): Modifier =
+    if (video.isLive || video.durationSec <= 0 || video.localUri != null) this
+    else pointerInput(video.id) {
+        val durationMs = video.durationSec * 1000L
+        fun at(x: Float): Long {
+            val f = (x / size.width.coerceAtLeast(1)).coerceIn(0f, 1f)
+            // Steps of 1 % so a still finger does not keep asking for new frames.
+            return (kotlin.math.round(f * 100f) / 100f * durationMs).toLong()
+        }
+        androidx.compose.foundation.gestures.detectHorizontalDragGestures(
+            onDragStart = { offset -> onSkim(at(offset.x)) },
+            onDragEnd = { onSkim(null) },
+            onDragCancel = { onSkim(null) },
+            onHorizontalDrag = { change, _ ->
+                change.consume()
+                onSkim(at(change.position.x))
+            },
+        )
+    }
+
+/** The frame under the finger while skimming, with the time and a thin red progress line. */
+@Composable
+fun androidx.compose.foundation.layout.BoxScope.SkimOverlay(video: VideoItem, positionMs: Long) {
+    ScrubVideoPreview(video.id, positionMs, Modifier.matchParentSize())
+    Text(
+        formatDuration(positionMs),
+        color = Color.White,
+        fontSize = 11.sp,
+        fontWeight = FontWeight.Bold,
+        modifier = Modifier
+            .align(Alignment.BottomCenter)
+            .padding(bottom = 10.dp)
+            .clip(RoundedCornerShape(4.dp))
+            .background(Color.Black.copy(alpha = 0.72f))
+            .padding(horizontal = 6.dp, vertical = 2.dp),
+    )
+    val fraction = (positionMs.toFloat() / (video.durationSec * 1000f).coerceAtLeast(1f)).coerceIn(0f, 1f)
+    Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(3.dp).background(Color.White.copy(alpha = 0.35f))) {
+        Box(Modifier.fillMaxWidth(fraction).fillMaxHeight().background(WatchedRed))
+    }
+}
+
+/**
+ * Swipe the title part of a card: right adds the video to the queue, left saves it to Watch
+ * later. The picture above is for skimming, so the two never get in each other's way.
+ */
+@Composable
+fun SwipeToAct(video: VideoItem, content: @Composable () -> Unit) {
+    val c = MaterialTheme.colorScheme
+    val actions = LocalVideoActions.current
+    val view = androidx.compose.ui.platform.LocalView.current
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val offset = remember { androidx.compose.animation.core.Animatable(0f) }
+    val threshold = with(LocalDensity.current) { 76.dp.toPx() }
+    Box(Modifier.fillMaxWidth()) {
+        val x = offset.value
+        if (x != 0f) {
+            val right = x > 0f
+            val ready = kotlin.math.abs(x) >= threshold
+            Row(
+                Modifier.matchParentSize().padding(horizontal = 18.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = if (right) Arrangement.Start else Arrangement.End,
+            ) {
+                Icon(
+                    if (right) Icons.AutoMirrored.Rounded.PlaylistAdd else Icons.Rounded.WatchLater,
+                    contentDescription = null,
+                    tint = if (ready) c.primary else c.onSurfaceVariant,
+                    modifier = Modifier.size(22.dp).graphicsLayer { alpha = (kotlin.math.abs(x) / threshold).coerceIn(0.2f, 1f) },
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    if (right) "Add to queue" else "Watch later",
+                    color = if (ready) c.primary else c.onSurfaceVariant,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+        }
+        Box(
+            Modifier
+                .graphicsLayer { translationX = offset.value }
+                .pointerInput(video.id) {
+                    var armed = false
+                    androidx.compose.foundation.gestures.detectHorizontalDragGestures(
+                        onDragStart = { armed = false },
+                        onDragEnd = {
+                            val v = offset.value
+                            when {
+                                v >= threshold -> {
+                                    actions.addToQueue(video)
+                                    android.widget.Toast.makeText(context, "Added to queue", android.widget.Toast.LENGTH_SHORT).show()
+                                }
+                                v <= -threshold -> {
+                                    if (Account.signedIn) {
+                                        actions.watchLater(video)
+                                        android.widget.Toast.makeText(context, "Saved to Watch later", android.widget.Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        android.widget.Toast.makeText(context, "Sign in to use Watch later", android.widget.Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            }
+                            scope.launch { offset.animateTo(0f, androidx.compose.animation.core.spring(dampingRatio = 0.75f, stiffness = 500f)) }
+                        },
+                        onDragCancel = { scope.launch { offset.animateTo(0f) } },
+                        onHorizontalDrag = { change, dx ->
+                            change.consume()
+                            val next = (offset.value + dx).coerceIn(-threshold * 1.5f, threshold * 1.5f)
+                            val nowArmed = kotlin.math.abs(next) >= threshold
+                            if (nowArmed != armed) {
+                                armed = nowArmed
+                                if (nowArmed) Haptics.tick(view)
+                            }
+                            scope.launch { offset.snapTo(next) }
+                        },
+                    )
+                },
+        ) { content() }
     }
 }
 

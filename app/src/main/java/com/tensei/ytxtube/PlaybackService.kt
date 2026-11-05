@@ -259,6 +259,7 @@ class PlaybackService : MediaSessionService() {
         player.addListener(StreamRecoverer(player, sources, resolver))
         player.addAnalyticsListener(StatsCounter(player))
         player.addListener(CrossFader(player))
+        player.addListener(WatchStatsTimer(player))
         resumeSaver = ResumeSaver(player).also(player::addListener)
         watchTime = WatchTimeReporter(player).also(player::addListener)
         session = MediaSession.Builder(this, player)
@@ -334,6 +335,44 @@ class PlaybackService : MediaSessionService() {
                 }
             }.toMutableList()
         }
+    }
+}
+
+
+/** Counts the time spent watching, per day and per channel, for Your watch stats. */
+private class WatchStatsTimer(private val player: ExoPlayer) : Player.Listener {
+    private val main = Handler(Looper.getMainLooper())
+    private var since = 0L
+
+    private val tick = object : Runnable {
+        override fun run() {
+            flush()
+            if (player.isPlaying) main.postDelayed(this, 15_000)
+        }
+    }
+
+    private fun flush() {
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (since > 0L) {
+            val seconds = (now - since) / 1000L
+            if (seconds > 0) WatchStats.add(seconds, player.mediaMetadata.artist?.toString())
+        }
+        since = if (player.isPlaying) now else 0L
+    }
+
+    override fun onIsPlayingChanged(isPlaying: Boolean) {
+        main.removeCallbacks(tick)
+        if (isPlaying) {
+            since = android.os.SystemClock.elapsedRealtime()
+            main.postDelayed(tick, 15_000)
+        } else {
+            flush()
+        }
+    }
+
+    override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+        // Time so far belongs to the item that was playing; start counting afresh.
+        if (since > 0L) since = android.os.SystemClock.elapsedRealtime()
     }
 }
 

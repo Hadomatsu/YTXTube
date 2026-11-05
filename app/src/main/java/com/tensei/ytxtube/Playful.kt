@@ -69,7 +69,7 @@ fun FlourishIcon(icon: ImageVector, description: String?, active: Boolean, kind:
     LaunchedEffect(active) {
         if (first[0]) { first[0] = false; return@LaunchedEffect }
         if (!active || reduced) return@LaunchedEffect
-        view.performHapticFeedback(if (kind == Flourish.Droop) HapticFeedbackConstants.CLOCK_TICK else HapticFeedbackConstants.CONFIRM)
+        Haptics.perform(view, if (kind == Flourish.Droop) HapticFeedbackConstants.CLOCK_TICK else HapticFeedbackConstants.CONFIRM)
         coroutineScope {
             when (kind) {
                 Flourish.Pop -> {

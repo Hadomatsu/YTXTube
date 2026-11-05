@@ -4,6 +4,9 @@ import android.os.Build
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsDraggedAsState
@@ -81,6 +84,11 @@ internal fun AppleSyncedLyrics(
     contentColor: Color = MaterialTheme.colorScheme.onSurface,
     alignTo: Float = 0.4f,
     horizontalPadding: androidx.compose.ui.unit.Dp = 0.dp,
+    /** Lyric card: long press a line to start choosing lines, then tap lines to add or remove. */
+    selected: Set<Int> = emptySet(),
+    selecting: Boolean = false,
+    onLongPressLine: ((Int) -> Unit)? = null,
+    onToggleLine: (Int) -> Unit = {},
 ) {
     val lines = lyrics.lines
     val offset = PlaybackPrefs.lyricsOffsetMs
@@ -95,8 +103,8 @@ internal fun AppleSyncedLyrics(
     val lineHeight = if (large) 33.sp else 26.sp
     val blurOn = PlaybackPrefs.lyricsBlur && Build.VERSION.SDK_INT >= 31
 
-    LaunchedEffect(current, dragged) {
-        if (current < 0 || dragged) return@LaunchedEffect
+    LaunchedEffect(current, dragged, selecting) {
+        if (current < 0 || dragged || selecting) return@LaunchedEffect
         val info = listState.layoutInfo
         val visible = info.visibleItemsInfo.firstOrNull { it.index == current }
         if (visible == null) listState.scrollToItem(current)
@@ -132,13 +140,23 @@ internal fun AppleSyncedLyrics(
                     animationSpec = spring(stiffness = 200f),
                     label = "lyric-blur",
                 )
+                val picked = index in selected
                 Column(
                     Modifier
                         .fillMaxWidth()
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                        ) { if (line.timeMs >= 0) onSeek((line.timeMs - offset).coerceAtLeast(0L)) }
+                        .pointerInput(index, selecting, line.timeMs) {
+                            detectTapGestures(
+                                onTap = {
+                                    if (selecting) onToggleLine(index)
+                                    else if (line.timeMs >= 0) onSeek((line.timeMs - offset).coerceAtLeast(0L))
+                                },
+                                onLongPress = { if (line.text.isNotBlank()) onLongPressLine?.invoke(index) },
+                            )
+                        }
+                        .background(
+                            if (picked) contentColor.copy(alpha = 0.16f) else Color.Transparent,
+                            androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
+                        )
                         .padding(vertical = if (large) 10.dp else 8.dp)
                         .graphicsLayer {
                             val scale = 0.96f + 0.04f * activation
