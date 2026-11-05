@@ -486,7 +486,7 @@ private fun navContentColor(isDarkSurface: Boolean): Color {
     return if (isLightTheme) Color.Black else Color.White
 }
 
-/** Search in the bottom bar. It is an action, not a page, so it sits at the end of the row. */
+/** Search in the bottom bar, in the middle of the row. It opens a screen rather than a page. */
 @Composable
 fun RowScope.LiquidSearchTab(
     selected: Boolean,

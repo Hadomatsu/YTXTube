@@ -45,6 +45,7 @@ import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -538,15 +539,44 @@ fun Modifier.skimGesture(video: VideoItem, onSkim: (Long?) -> Unit): Modifier =
             // Steps of 1 % so a still finger does not keep asking for new frames.
             return (kotlin.math.round(f * 100f) / 100f * durationMs).toLong()
         }
-        detectHorizontalDragGestures(
-            onDragStart = { offset -> onSkim(at(offset.x)) },
-            onDragEnd = { onSkim(null) },
-            onDragCancel = { onSkim(null) },
-            onHorizontalDrag = { change, _ ->
-                change.consume()
-                onSkim(at(change.position.x))
-            },
-        )
+        val slop = viewConfiguration.touchSlop
+        awaitEachGesture {
+            val down = awaitFirstDown(requireUnconsumed = false)
+            // Only a clearly sideways slide skims (within about 20 degrees of flat). Anything that
+            // moves up or down first, even at a slant, is left to the list so it scrolls.
+            var dx = 0f
+            var dy = 0f
+            while (true) {
+                val event = awaitPointerEvent()
+                if (event.changes.count { it.pressed } > 1) return@awaitEachGesture
+                val change = event.changes.firstOrNull { it.id == down.id } ?: return@awaitEachGesture
+                if (!change.pressed || change.isConsumed) return@awaitEachGesture
+                val move = change.positionChange()
+                dx += move.x
+                dy += move.y
+                if (kotlin.math.abs(dy) > slop * 0.75f) return@awaitEachGesture
+                if (kotlin.math.abs(dx) > slop * 1.5f) {
+                    if (kotlin.math.abs(dx) < kotlin.math.abs(dy) * 2.75f) return@awaitEachGesture
+                    change.consume()
+                    onSkim(at(change.position.x))
+                    break
+                }
+            }
+            try {
+                while (true) {
+                    val event = awaitPointerEvent()
+                    val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                    if (!change.pressed) {
+                        change.consume()
+                        break
+                    }
+                    change.consume()
+                    onSkim(at(change.position.x))
+                }
+            } finally {
+                onSkim(null)
+            }
+        }
     }
 
 /** The frame under the finger while skimming, with the time and a thin red progress line. */

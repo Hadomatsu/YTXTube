@@ -550,3 +550,19 @@ object HomeTopics {
         if (list.isNotEmpty()) chips = list
     }
 }
+
+/**
+ * The strip at the very top of the screen where a swipe down belongs to the phone (the time,
+ * notifications, quick settings), never to the player. It is the status bar's height, even while
+ * the bar is hidden, plus a little room for the thumb.
+ */
+internal fun topEdgePx(view: android.view.View): Float {
+    val density = view.resources.displayMetrics.density
+    val bar = runCatching {
+        view.rootWindowInsets?.let {
+            androidx.core.view.WindowInsetsCompat.toWindowInsetsCompat(it, view)
+                .getInsetsIgnoringVisibility(androidx.core.view.WindowInsetsCompat.Type.statusBars()).top
+        }
+    }.getOrNull() ?: 0
+    return maxOf(bar.toFloat(), 28f * density) + 14f * density
+}

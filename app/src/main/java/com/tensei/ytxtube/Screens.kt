@@ -48,6 +48,8 @@ import androidx.compose.material.icons.rounded.TravelExplore
 import androidx.compose.material.icons.rounded.VideoLibrary
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -198,6 +200,8 @@ fun HomeScreen(
     val signedIn = Account.signedIn
     var activeFilter by remember { mutableStateOf(HomeFilter.All) }
     var continueExpanded by remember { mutableStateOf(false) }
+    // Unfolded (a wide screen) shows two started videos, folded one.
+    val wideScreen = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp >= 600
     LaunchedEffect(signedIn) {
         if (lib.home.videos.isEmpty()) lib.home.ensureLoaded()
         if (signedIn && lib.channels.isEmpty()) lib.loadChannels()
@@ -290,6 +294,7 @@ fun HomeScreen(
                     continueWatchingSection(
                         ContinueWatching.started(),
                         columns,
+                        wideScreen,
                         continueExpanded,
                         onToggle = { continueExpanded = !continueExpanded },
                         onOpen = onOpen,
@@ -1429,44 +1434,48 @@ private fun SearchPlaylistRow(playlist: PlaylistRef) {
 
 /**
  * Continue watching at the top of Home: the videos you started, as the same cards as the rest
- * of the feed. A few show; See all opens the rest right there (no sideways scrolling).
+ * of the feed. Folded it shows one, unfolded two; the arrow next to the title opens the rest
+ * right there (no sideways scrolling).
  */
 private fun androidx.compose.foundation.lazy.LazyListScope.continueWatchingSection(
     videos: List<VideoItem>,
     columns: Int,
+    wide: Boolean,
     expanded: Boolean,
     onToggle: () -> Unit,
     onOpen: (VideoItem) -> Unit,
 ) {
     if (videos.isEmpty()) return
-    val perRow = columns.coerceAtLeast(1)
-    val collapsedCount = if (perRow > 1) perRow else 2
+    val collapsedCount = if (wide || columns > 1) 2 else 1
+    val canExpand = videos.size > collapsedCount
+    val perRow = if (expanded) columns.coerceAtLeast(1) else columns.coerceIn(1, 2)
     val shown = if (expanded) videos else videos.take(collapsedCount)
     item(key = "cw-title") {
-        val c = MaterialTheme.colorScheme
+        val turn by androidx.compose.animation.core.animateFloatAsState(if (expanded) 180f else 0f, label = "cw-arrow")
         Row(
             Modifier.fillMaxWidth().padding(start = 16.dp, end = 12.dp, top = 6.dp, bottom = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                "Continue watching",
-                fontFamily = RoundedHeavy,
-                fontWeight = FontWeight.ExtraBold,
-                fontSize = 18.sp,
-                modifier = Modifier.weight(1f),
-            )
-            if (videos.size > collapsedCount) {
+            Row(
+                Modifier
+                    .clip(RoundedCornerShape(10.dp))
+                    .then(if (canExpand) Modifier.pressable(pressedScale = 0.97f) { onToggle() } else Modifier)
+                    .padding(vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 Text(
-                    if (expanded) "Show less" else "See all (${videos.size})",
-                    color = c.onSurface,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier
-                        .clip(CircleShape)
-                        .background(c.surfaceContainerHigh)
-                        .pressable { onToggle() }
-                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                    "Continue watching",
+                    fontFamily = RoundedHeavy,
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 18.sp,
                 )
+                if (canExpand) {
+                    Icon(
+                        Icons.Rounded.KeyboardArrowDown,
+                        contentDescription = if (expanded) "Show less" else "Show all",
+                        modifier = Modifier.padding(start = 4.dp).size(24.dp).graphicsLayer { rotationZ = turn },
+                    )
+                }
             }
         }
     }

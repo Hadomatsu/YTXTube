@@ -349,6 +349,9 @@ fun VideoContent(
                 }
                 var detectPos = down.position
                 val downUptime = down.uptimeMillis
+                // A swipe down from the very top of the screen is for the phone's status bar and
+                // notifications, so it never drags the player down.
+                val fromTopEdge = toWindow(down.position).y <= topEdgePx(currentView)
 
                 // 0 = not a swipe, 1 = brightness, 2 = volume, 3 = vertical swipe (fullscreen),
                 // 4 = vertical swipe on the player below the video (not fullscreen).
@@ -367,7 +370,9 @@ fun VideoContent(
                             val verticalIntent = abs(totalDy) > abs(totalDx) * 1.5f
                             if (verticalIntent && abs(totalDy) > swipeSlop) {
                                 detectPos = change.position
-                                if (!fullscreen) {
+                                if (fromTopEdge && totalDy < 0f) {
+                                    swipe = 5
+                                } else if (!fullscreen) {
                                     swipe = 4
                                     swipeUp = totalDy > 0f
                                     change.consume()
@@ -389,6 +394,11 @@ fun VideoContent(
                     event.changes.firstOrNull()
                 }
 
+                if (swipe == 5) {
+                    // Left to the phone: just let the finger go.
+                    while (awaitPointerEvent().changes.any { it.pressed }) Unit
+                    return@awaitEachGesture
+                }
                 if (swipe == 3 || swipe == 4) {
                     // Like YouTube, the player follows the finger and only commits on release: up
                     // grows the video toward fullscreen, down shrinks it out of fullscreen or drags
@@ -796,19 +806,31 @@ fun VideoContent(
                 ) {
                     // Long press on the captions button: A- / A+ right above it, to size the
                     // captions while watching. It closes itself a few seconds after the last tap.
+                    // It goes away with the controls, with its X, with another tap on the captions
+                    // button, or by itself a few seconds after the last tap (not while its
+                    // language list is open).
                     var captionSizerOpen by remember { mutableStateOf(false) }
                     var captionSizerTaps by remember { mutableStateOf(0) }
-                    LaunchedEffect(captionSizerOpen, captionSizerTaps) {
-                        if (captionSizerOpen) {
-                            kotlinx.coroutines.delay(6_000)
+                    var captionMenuOpen by remember { mutableStateOf(false) }
+                    LaunchedEffect(captionSizerOpen, captionSizerTaps, captionMenuOpen) {
+                        if (captionSizerOpen && !captionMenuOpen) {
+                            kotlinx.coroutines.delay(5_000)
                             captionSizerOpen = false
                         }
                     }
-                    if (captionSizerOpen) {
+                    LaunchedEffect(controlsVisible) {
+                        if (!controlsVisible) {
+                            captionSizerOpen = false
+                            captionMenuOpen = false
+                        }
+                    }
+                    if (captionSizerOpen && controlsVisible) {
                         CaptionSizePill(
                             backdrop = videoBackdrop,
                             modifier = Modifier.align(Alignment.End).padding(end = 4.dp, bottom = 6.dp),
                             onSecondChanged = { state.loadSecondCaptions() },
+                            onMenuChange = { captionMenuOpen = it },
+                            onClose = { captionSizerOpen = false; captionMenuOpen = false; touched() },
                         ) { touched(); captionSizerTaps++ }
                     }
                     Row(
@@ -849,11 +871,19 @@ fun VideoContent(
                             backdrop = videoBackdrop,
                             onLongClick = {
                                 touched()
-                                if (!captionsOn) state.toggleCaptions()
-                                captionSizerOpen = true
-                                captionSizerTaps++
+                                if (captionSizerOpen) {
+                                    captionSizerOpen = false
+                                } else {
+                                    if (!captionsOn) state.toggleCaptions()
+                                    captionSizerOpen = true
+                                    captionSizerTaps++
+                                }
                             },
-                        ) { touched(); state.toggleCaptions() }
+                        ) {
+                            touched()
+                            // While the size pill is open, a tap only puts it away.
+                            if (captionSizerOpen) captionSizerOpen = false else state.toggleCaptions()
+                        }
                         Spacer(Modifier.width(4.dp))
                         if (PlayerControlSettings.showQuickControls) {
                             GlassButton(
@@ -2100,6 +2130,8 @@ private fun CaptionSizePill(
     backdrop: Backdrop?,
     modifier: Modifier = Modifier,
     onSecondChanged: () -> Unit = {},
+    onMenuChange: (Boolean) -> Unit = {},
+    onClose: () -> Unit = {},
     onChange: () -> Unit,
 ) {
     val shape = RoundedCornerShape(50)
@@ -2143,6 +2175,7 @@ private fun CaptionSizePill(
         }
         // Dual subtitles (off by default): a second language under the first.
         var menu by remember { mutableStateOf(false) }
+        LaunchedEffect(menu) { onMenuChange(menu) }
         Box {
             Text(
                 "2nd: " + (CaptionPreference.secondLanguage?.substringBefore('-')?.uppercase() ?: "Off"),
@@ -2178,6 +2211,10 @@ private fun CaptionSizePill(
                     )
                 }
             }
+        }
+        GlassButton(Icons.Rounded.Close, "Close", true, size = 34.dp, iconSize = 18.dp, tinted = false) {
+            menu = false
+            onClose()
         }
     }
 }

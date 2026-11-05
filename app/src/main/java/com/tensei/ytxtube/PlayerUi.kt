@@ -21,6 +21,9 @@ import com.kyant.backdrop.effects.vibrancy
 import androidx.compose.ui.layout.ContentScale
 import coil.compose.AsyncImage
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
 import androidx.core.graphics.drawable.toBitmap
 import coil.imageLoader
 import coil.request.ImageRequest
@@ -529,6 +532,10 @@ private fun VideoStage(state: PlayerState, morph: PlayerMorph, onCollapse: () ->
 
     var decided by remember { mutableStateOf(false) }
     var pulling by remember { mutableStateOf(false) }
+    // A drag that starts at the very top of the screen is the phone's (status bar, notifications).
+    var topEdgeDrag by remember { mutableStateOf(false) }
+    val stageTop = remember { FloatArray(1) }
+    val stageView = LocalView.current
     val stage = Modifier
         .padding(horizontal = StageSideGap)
         .fillMaxWidth()
@@ -567,12 +574,17 @@ private fun VideoStage(state: PlayerState, morph: PlayerMorph, onCollapse: () ->
             ambientShadowColor = Color.Black.copy(alpha = 0.25f)
             spotShadowColor = Color.Black.copy(alpha = 0.35f)
         }
+        .onGloballyPositioned { stageTop[0] = it.positionInWindow().y }
         .draggable(
             // While the video is open the swipes are handled inside VideoContent (the pinch-zoom
             // handler there consumed the finger before this drag could start). This one still
             // carries the small, collapsed player and the audio-only stage.
             enabled = !interactive || AudioOnly.enabled,
+            onDragStarted = { start ->
+                topEdgeDrag = state.expanded && stageTop[0] + start.y <= topEdgePx(stageView)
+            },
             state = rememberDraggableState { delta ->
+                if (topEdgeDrag) return@rememberDraggableState
                 if (!decided) {
                     decided = true
                     pulling = delta < 0f && state.expanded && !state.fullscreen && !AudioOnly.enabled && morph.progress.value >= 0.999f
@@ -582,6 +594,12 @@ private fun VideoStage(state: PlayerState, morph: PlayerMorph, onCollapse: () ->
             },
             orientation = Orientation.Vertical,
             onDragStopped = { velocity ->
+                if (topEdgeDrag) {
+                    topEdgeDrag = false
+                    decided = false
+                    pulling = false
+                    return@draggable
+                }
                 val wasPulling = pulling
                 decided = false
                 pulling = false

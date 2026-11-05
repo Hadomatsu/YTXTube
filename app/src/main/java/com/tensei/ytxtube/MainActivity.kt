@@ -278,6 +278,10 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+/** Places in the bottom bar that are not pages. */
+private const val SEARCH_SLOT = "search"
+private const val PROFILE_SLOT = "profile"
+
 enum class Tab(val defaultLabel: String, val icon: ImageVector, val selectedIcon: ImageVector) {
     Home("Home", Icons.Outlined.Home, Icons.Rounded.Home),
     Music("Music", Icons.Outlined.MusicNote, Icons.Rounded.MusicNote),
@@ -979,10 +983,12 @@ fun YtxTubeApp() {
                 .widthIn(max = NavWidth)
                 .fillMaxWidth(),
         ) {
-            // The pages come first, then Search and the profile (they open a screen, not a page).
+            // Home, Music, Search in the middle, Shorts, then the profile. Search and the profile
+            // open a screen, not a page.
             val barTabs = Tab.bar
-            val searchIndex = barTabs.size
-            val profileIndex = barTabs.size + 1
+            val slots: List<Any> = listOf(Tab.Home, Tab.Music, SEARCH_SLOT, Tab.Shorts, PROFILE_SLOT)
+            val searchIndex = slots.indexOf(SEARCH_SLOT)
+            val profileIndex = slots.indexOf(PROFILE_SLOT)
             // Library and Saved open from the profile, so while one of them is showing the
             // highlight sits on Profile.
             val onProfilePage = tab !in barTabs
@@ -990,27 +996,30 @@ fun YtxTubeApp() {
                 selectedTabIndex = {
                     when {
                         openSearch -> searchIndex
-                        tab in barTabs -> barTabs.indexOf(tab)
+                        tab in barTabs -> slots.indexOf(tab).takeIf { it >= 0 } ?: profileIndex
                         else -> profileIndex
                     }
                 },
                 onTabSelected = { index ->
-                    when (index) {
-                        searchIndex -> openSearch = true
-                        profileIndex -> openSettings = true
-                        else -> barTabs.getOrNull(index)?.let(selectTab)
+                    when (val slot = slots.getOrNull(index)) {
+                        SEARCH_SLOT -> openSearch = true
+                        PROFILE_SLOT -> openSettings = true
+                        is Tab -> selectTab(slot)
+                        else -> Unit
                     }
                 },
                 backdrop = pageBackdrop,
-                tabsCount = barTabs.size + 2,
+                tabsCount = slots.size,
                 isDarkSurface = tab == Tab.Shorts,
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                barTabs.forEach { t ->
-                    LiquidNavTab(t, t == tab && !openSearch, isDarkSurface = tab == Tab.Shorts) { selectTab(t) }
+                slots.forEach { slot ->
+                    when (slot) {
+                        SEARCH_SLOT -> LiquidSearchTab(selected = openSearch, isDarkSurface = tab == Tab.Shorts) { openSearch = true }
+                        PROFILE_SLOT -> LiquidProfileTab(selected = onProfilePage && !openSearch, isDarkSurface = tab == Tab.Shorts) { openSettings = true }
+                        is Tab -> LiquidNavTab(slot, slot == tab && !openSearch, isDarkSurface = tab == Tab.Shorts) { selectTab(slot) }
+                    }
                 }
-                LiquidSearchTab(selected = openSearch, isDarkSurface = tab == Tab.Shorts) { openSearch = true }
-                LiquidProfileTab(selected = onProfilePage && !openSearch, isDarkSurface = tab == Tab.Shorts) { openSettings = true }
             }
         }
 
