@@ -24,6 +24,7 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.Velocity
@@ -599,7 +600,24 @@ private fun CommentRow(
     isReply: Boolean = false,
 ) {
     val c = MaterialTheme.colorScheme
-    Row(Modifier.fillMaxWidth().padding(start = if (isReply) 62.dp else 20.dp, end = 20.dp, top = 10.dp, bottom = 6.dp)) {
+    val view = androidx.compose.ui.platform.LocalView.current
+    val canLikeThis = Account.signedIn && !comment.id.startsWith("local-")
+    Row(
+        Modifier
+            .fillMaxWidth()
+            // Double tap anywhere on a comment to like it (one-handed); it never unlikes.
+            .pointerInput(comment.id, canLikeThis) {
+                detectTapGestures(
+                    onDoubleTap = {
+                        if (canLikeThis && state.liked[comment.id] != true) {
+                            view.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
+                            state.toggleLike(comment) { state.postError = it }
+                        }
+                    },
+                )
+            }
+            .padding(start = if (isReply) 62.dp else 20.dp, end = 20.dp, top = 10.dp, bottom = 6.dp),
+    ) {
         ChannelAvatar(comment.avatar, comment.author, size = if (isReply) 28 else 36)
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
@@ -653,11 +671,14 @@ private fun CommentRow(
             if (!isReply && comment.replyCount > 0 && comment.repliesToken != null) {
                 val open = state.replies.containsKey(comment.id)
                 val busy = state.repliesLoading[comment.id] == true
+                // The whole width of this line opens the replies, not just the red words, so it
+                // is easy to reach with the thumb.
                 Row(
                     modifier = Modifier
-                        .padding(top = 6.dp)
-                        .pressable { if (open) state.hideReplies(comment) else state.loadReplies(comment) }
-                        .padding(vertical = 4.dp),
+                        .padding(top = 2.dp)
+                        .fillMaxWidth()
+                        .pressable(pressedScale = 0.99f) { if (open) state.hideReplies(comment) else state.loadReplies(comment) }
+                        .padding(vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
