@@ -58,6 +58,8 @@ data class VideoItem(
 
     val localUri: String? = null,
     val isLive: Boolean = false,
+    /** A YouTube Short (vertical, opened in the Shorts player on YouTube). */
+    val isShort: Boolean = false,
 )
 
 
@@ -106,6 +108,8 @@ data class VideoDetails(
     val hdrQualities: List<Int> = emptyList(),
 
     val aspect: Float? = null,
+    /** Chapters, first one at 0:00; empty when the video has none. */
+    val chapters: List<Chapter> = emptyList(),
 )
 
 @Immutable
@@ -240,6 +244,19 @@ object YouTube {
         HdrFormats.install(id, info)
         val picked = StreamSelection.pick(info)
         val isLive = info.streamType == StreamType.LIVE_STREAM
+        val descriptionText = info.description?.let { d ->
+            if (d.type == Description.HTML) HtmlCompat.fromHtml(d.content, HtmlCompat.FROM_HTML_MODE_COMPACT).toString().trim()
+            else d.content.trim()
+        }.orEmpty()
+        // Chapters from YouTube itself, or else the ones written in the description.
+        val chapters = runCatching {
+            info.streamSegments.orEmpty()
+                .map { Chapter(it.startTimeSeconds * 1000L, it.title.orEmpty().trim()) }
+                .filter { it.title.isNotEmpty() }
+                .sortedBy { it.startMs }
+        }.getOrDefault(emptyList())
+            .takeIf { it.size >= 2 }
+            ?: if (isLive) emptyList() else Chapters.fromDescription(descriptionText, info.duration * 1000L)
         VideoDetails(
             item = VideoItem(
                 id = id,
@@ -253,10 +270,7 @@ object YouTube {
                 uploaded = if (isLive) "Live" else uploadedText(info.textualUploadDate, info.uploadDate),
                 isLive = isLive,
             ),
-            description = info.description?.let { d ->
-                if (d.type == Description.HTML) HtmlCompat.fromHtml(d.content, HtmlCompat.FROM_HTML_MODE_COMPACT).toString().trim()
-                else d.content.trim()
-            }.orEmpty(),
+            description = descriptionText,
             likes = info.likeCount,
             subscribers = info.uploaderSubscriberCount,
             // When the extractor found none, PlayerState asks for them (with retries) after the
@@ -269,6 +283,7 @@ object YouTube {
             hdrQualities = StreamSelection.hdrHeights(info),
             aspect = (if (picked.usesSeparate) picked.video else picked.muxed)
                 ?.takeIf { it.width > 0 && it.height > 0 }?.let { it.width.toFloat() / it.height },
+            chapters = chapters,
         )
     }
 
@@ -397,6 +412,7 @@ object YouTube {
             views = viewCount,
             uploaded = if (live) "Live" else uploadedText(textualUploadDate, uploadDate),
             isLive = live,
+            isShort = runCatching { isShortFormContent }.getOrDefault(false) || url.contains("/shorts/"),
         )
     }
 
@@ -574,7 +590,41 @@ object QualityPreference {
     private const val KEY_SHORTS_MODE = "shorts_quality_mode"
     private const val KEY_SPECIFIC_VIDEO = "specific_video_height"
     private const val KEY_SPECIFIC_SHORTS = "specific_shorts_height"
+    private const val KEY_MOBILE_MODE = "mobile_quality_mode"
+    private const val KEY_SPECIFIC_MOBILE = "specific_mobile_height"
     private var prefs: SharedPreferences? = null
+
+    /** Video quality used while on mobile data; [videoQualityMode] is the Wi-Fi one. */
+    var mobileQualityMode by mutableStateOf(PlaybackQualityMode.AUTO)
+        private set
+    var specificMobileHeight by mutableStateOf<Int?>(null)
+        private set
+
+    val mobileQualityDisplay: String
+        get() = when (mobileQualityMode) {
+            PlaybackQualityMode.SPECIFIC -> specificMobileHeight?.let { "${it}p (${I18n.t("always", "Always")})" } ?: I18n.t("specific", "Specific")
+            else -> mobileQualityMode.displayLabel
+        }
+
+    /** The mode for the network in use right now. */
+    val effectiveVideoMode: PlaybackQualityMode
+        get() = if (NetworkSpeed.onMobileData()) mobileQualityMode else videoQualityMode
+    val effectiveSpecificHeight: Int?
+        get() = if (NetworkSpeed.onMobileData()) specificMobileHeight else specificVideoHeight
+
+    fun updateMobileQualityMode(mode: PlaybackQualityMode) {
+        mobileQualityMode = mode
+        prefs?.edit()?.putString(KEY_MOBILE_MODE, mode.name)?.apply()
+    }
+
+    fun setSpecificMobileQuality(height: Int) {
+        specificMobileHeight = height
+        mobileQualityMode = PlaybackQualityMode.SPECIFIC
+        prefs?.edit()
+            ?.putString(KEY_MOBILE_MODE, PlaybackQualityMode.SPECIFIC.name)
+            ?.putInt(KEY_SPECIFIC_MOBILE, height)
+            ?.apply()
+    }
 
     @Volatile
     var height: Int? = null
@@ -616,6 +666,8 @@ object QualityPreference {
         shortsQualityMode = PlaybackQualityMode.fromKey(prefs?.getString(KEY_SHORTS_MODE, "AUTO"))
         specificVideoHeight = prefs?.getInt(KEY_SPECIFIC_VIDEO, 0)?.takeIf { it > 0 }
         specificShortsHeight = prefs?.getInt(KEY_SPECIFIC_SHORTS, 0)?.takeIf { it > 0 }
+        mobileQualityMode = PlaybackQualityMode.fromKey(prefs?.getString(KEY_MOBILE_MODE, "AUTO"))
+        specificMobileHeight = prefs?.getInt(KEY_SPECIFIC_MOBILE, 0)?.takeIf { it > 0 }
     }
 
     fun set(value: Int?, preferHdr: Boolean = hdr) {
@@ -739,7 +791,7 @@ object StreamSelection {
         // hundreds of megabits while the connection behind it cannot feed 4K. A manual
         // choice still wins and is honoured as the closest rendition at or below it.
         val hdr = QualityPreference.hdr && HdrSupport.isSupported
-        val videoMode = QualityPreference.videoQualityMode
+        val videoMode = QualityPreference.effectiveVideoMode
         val candidates = usableVideos(info, hdr)
         val video = when {
             chosen != null -> {
@@ -749,7 +801,7 @@ object StreamSelection {
                     ?: candidates.minWithOrNull(lowestFirst(::formatRank))
             }
             videoMode == PlaybackQualityMode.SPECIFIC -> {
-                val target = QualityPreference.specificVideoHeight ?: 1080
+                val target = QualityPreference.effectiveSpecificHeight ?: 1080
                 candidates
                     .filter { it.tier() <= target }
                     .maxWithOrNull(videoOrder(hdr, ::formatRank))
@@ -787,7 +839,7 @@ object StreamSelection {
                     ?: muxedCandidates.minWithOrNull(lowestFirst(::formatRank))
             }
             videoMode == PlaybackQualityMode.SPECIFIC -> {
-                val target = QualityPreference.specificVideoHeight ?: 1080
+                val target = QualityPreference.effectiveSpecificHeight ?: 1080
                 muxedCandidates.filter { it.tier() <= target }
                     .maxWithOrNull(videoOrder(hdr, ::formatRank))
                     ?: muxedCandidates.maxWithOrNull(videoOrder(hdr, ::formatRank))

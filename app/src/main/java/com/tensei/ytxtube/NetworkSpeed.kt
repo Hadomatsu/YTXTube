@@ -25,6 +25,15 @@ object NetworkSpeed {
         refresh(force = true)
     }
 
+    /** True on mobile data (not Wi-Fi or a cable), for the separate mobile video quality. */
+    fun onMobileData(): Boolean = runCatching {
+        val cm = manager ?: return false
+        val caps = cm.getNetworkCapabilities(cm.activeNetwork ?: return false) ?: return false
+        caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR) &&
+            !caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) &&
+            !caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_ETHERNET)
+    }.getOrDefault(false)
+
     fun refresh(force: Boolean = false): Int {
         val now = System.currentTimeMillis()
         if (!force && now - cachedAt < 15_000L) return cachedKbps

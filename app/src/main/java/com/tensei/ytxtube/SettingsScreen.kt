@@ -69,6 +69,8 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CleaningServices
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.FilterList
+import androidx.compose.material.icons.rounded.SettingsBackupRestore
 import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.DataUsage
 import androidx.compose.material.icons.rounded.Delete
@@ -228,6 +230,18 @@ fun SettingsScreen(
                         onClick = { activeFloatingSection = SettingsFloatingSection.MUSIC },
                     )
                     SettingsRow(
+                        icon = Icons.Rounded.FilterList,
+                        title = "Feed & privacy",
+                        subtitle = "Hide Shorts, watched marks, blocked channels and words, incognito",
+                        onClick = { activeFloatingSection = SettingsFloatingSection.FEED },
+                    )
+                    SettingsRow(
+                        icon = Icons.Rounded.SettingsBackupRestore,
+                        title = "Backup & restore",
+                        subtitle = "Save all your settings to a file, or bring them back",
+                        onClick = { activeFloatingSection = SettingsFloatingSection.BACKUP },
+                    )
+                    SettingsRow(
                         icon = Icons.Rounded.Tune,
                         title = I18n.t("general_modification", "General Modification"),
                         subtitle = I18n.t("general_modification_sub", "Font, gestures, quality & downloads"),
@@ -385,6 +399,24 @@ fun SettingsScreen(
                         onDismiss = { activeFloatingSection = null },
                     ) {
                         MusicSettingsContent()
+                    }
+                }
+                SettingsFloatingSection.FEED -> {
+                    SettingsFloatingDialog(
+                        title = "Feed & privacy",
+                        subtitle = "What the feeds show, and what is remembered",
+                        onDismiss = { activeFloatingSection = null },
+                    ) {
+                        FeedSettingsContent()
+                    }
+                }
+                SettingsFloatingSection.BACKUP -> {
+                    SettingsFloatingDialog(
+                        title = "Backup & restore",
+                        subtitle = "All your settings in one file",
+                        onDismiss = { activeFloatingSection = null },
+                    ) {
+                        BackupSettingsContent()
                     }
                 }
                 SettingsFloatingSection.STORAGE_USAGE -> {
@@ -614,6 +646,8 @@ private enum class SettingsFloatingSection {
     GENERAL_MODS,
     PLAYBACK,
     MUSIC,
+    FEED,
+    BACKUP,
     STORAGE_USAGE,
     LANGUAGE,
 }
@@ -1320,6 +1354,7 @@ private fun GeneralModificationContent(context: Context) {
     val c = MaterialTheme.colorScheme
     var showVideoQualityDialog by remember { mutableStateOf(false) }
     var showShortsQualityDialog by remember { mutableStateOf(false) }
+    var showMobileQualityDialog by remember { mutableStateOf(false) }
     var showFolderDialog by remember { mutableStateOf(false) }
 
     val folderPicker = rememberLauncherForActivityResult(
@@ -1480,9 +1515,17 @@ private fun GeneralModificationContent(context: Context) {
         Spacer(Modifier.height(2.dp))
 
         SettingsClickRow(
-            title = I18n.t("video_quality", "Video Quality"),
+            title = "Video quality on Wi-Fi",
             subtitle = QualityPreference.videoQualityDisplay,
             onClick = { showVideoQualityDialog = true },
+        )
+
+        HorizontalDivider(color = c.onSurface.copy(alpha = 0.08f))
+
+        SettingsClickRow(
+            title = "Video quality on mobile data",
+            subtitle = QualityPreference.mobileQualityDisplay,
+            onClick = { showMobileQualityDialog = true },
         )
 
         HorizontalDivider(color = c.onSurface.copy(alpha = 0.08f))
@@ -1525,6 +1568,23 @@ private fun GeneralModificationContent(context: Context) {
                 showVideoQualityDialog = false
             },
             onDismiss = { showVideoQualityDialog = false }
+        )
+    }
+
+    if (showMobileQualityDialog) {
+        QualitySelectionDialog(
+            title = "Video quality on mobile data",
+            currentMode = QualityPreference.mobileQualityMode,
+            currentSpecificHeight = QualityPreference.specificMobileHeight,
+            onSelectMode = {
+                QualityPreference.updateMobileQualityMode(it)
+                showMobileQualityDialog = false
+            },
+            onSelectSpecific = {
+                QualityPreference.setSpecificMobileQuality(it)
+                showMobileQualityDialog = false
+            },
+            onDismiss = { showMobileQualityDialog = false }
         )
     }
 
@@ -2382,6 +2442,12 @@ private fun PlaybackSettingsContent() {
             checked = PlaybackSpeed.remember,
             onCheckedChange = { PlaybackSpeed.setRemember(it, PlaybackSpeed.saved) },
         )
+        SettingsSwitchRow(
+            title = "Speed per channel",
+            subtitle = "Each channel's videos start at the speed you last used on that channel (e.g. 1.5x for podcasts)",
+            checked = ChannelSpeeds.enabled,
+            onCheckedChange = { ChannelSpeeds.updateEnabled(it) },
+        )
 
         val holds = PlaybackPrefs.holdSpeeds
         SettingsChoiceRow(
@@ -2413,6 +2479,20 @@ private fun PlaybackSettingsContent() {
         )
 
         SettingsGroupLabel("Sound")
+        SettingsSwitchRow(
+            title = "Stable volume",
+            subtitle = "Evens out loud and quiet videos so you don't keep changing the volume",
+            checked = PlaybackPrefs.stableVolume,
+            onCheckedChange = { PlaybackPrefs.updateStableVolume(it) },
+        )
+        val boosts = PlaybackPrefs.boostChoices
+        SettingsChoiceRow(
+            title = "Volume boost",
+            subtitle = "Louder than the phone's maximum, for very quiet videos (also in the player's settings)",
+            options = boosts.map { if (it <= 100) "Off" else "$it %" },
+            selected = boosts.indexOf(PlaybackPrefs.volumeBoost).coerceAtLeast(0),
+            onSelect = { PlaybackPrefs.updateVolumeBoost(boosts[it]) },
+        )
         SettingsSwitchRow(
             title = "Skip silence",
             subtitle = "Silent stretches are skipped while playing, for videos and music",
@@ -2489,11 +2569,16 @@ private fun MusicSettingsContent() {
         } else {
             SettingsChoiceRow(
                 title = "Equalizer",
-                subtitle = "The phone's own sound presets, applied to everything this app plays",
-                options = listOf("Off") + presets,
-                selected = (PlaybackPrefs.eqPreset + 1).coerceIn(0, presets.size),
-                onSelect = { PlaybackPrefs.updateEqPreset(it - 1) },
+                subtitle = "The phone's own sound presets, or Custom to set each band yourself",
+                options = listOf("Off") + presets + listOf("Custom"),
+                selected = if (PlaybackPrefs.eqPreset == PlaybackPrefs.EQ_CUSTOM) presets.size + 1
+                    else (PlaybackPrefs.eqPreset + 1).coerceIn(0, presets.size),
+                onSelect = {
+                    if (it == presets.size + 1) PlaybackPrefs.updateEqPreset(PlaybackPrefs.EQ_CUSTOM)
+                    else PlaybackPrefs.updateEqPreset(it - 1)
+                },
             )
+            if (PlaybackPrefs.eqPreset == PlaybackPrefs.EQ_CUSTOM) CustomEqualizer()
         }
         val boosts = listOf(0, 250, 500, 750, 1000)
         SettingsChoiceRow(
@@ -2502,6 +2587,15 @@ private fun MusicSettingsContent() {
             options = listOf("Off", "Light", "Medium", "Strong", "Max"),
             selected = boosts.indexOf(PlaybackPrefs.bassBoost).coerceAtLeast(0),
             onSelect = { PlaybackPrefs.updateBassBoost(boosts[it]) },
+        )
+
+        val fades = PlaybackPrefs.crossfadeChoices
+        SettingsChoiceRow(
+            title = "Crossfade",
+            subtitle = "The end of a song fades into the next one in the music player",
+            options = fades.map { if (it == 0) "Off" else "$it s" },
+            selected = fades.indexOf(PlaybackPrefs.crossfadeSec).coerceAtLeast(0),
+            onSelect = { PlaybackPrefs.updateCrossfade(fades[it]) },
         )
 
         SettingsGroupLabel("Lyrics")
@@ -2569,6 +2663,179 @@ private fun MusicSettingsContent() {
                     .pressable { PlaybackPrefs.updateLyricsOffset(PlaybackPrefs.lyricsOffsetMs + step) },
                 contentAlignment = Alignment.Center,
             ) { Text("+", fontSize = 18.sp, color = c.onSurface) }
+        }
+    }
+}
+
+
+/** Equalizer sliders, one per band of the phone's equalizer. */
+@Composable
+private fun CustomEqualizer() {
+    val c = MaterialTheme.colorScheme
+    val freqs = PlaybackService.eqBandFreqs
+    val range = PlaybackService.eqLevelRange
+    if (freqs.isEmpty()) {
+        Text(
+            "Play a song once and the bands appear here.",
+            color = c.onSurfaceVariant,
+            fontSize = 11.5.sp,
+            modifier = Modifier.padding(vertical = 6.dp),
+        )
+        return
+    }
+    Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+        freqs.forEachIndexed { band, hz ->
+            val level = PlaybackPrefs.eqBandLevels.getOrNull(band) ?: 0
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    if (hz >= 1000) (if (hz % 1000 == 0) "${hz / 1000}k" else "${hz / 1000.0}k") else "$hz",
+                    color = c.onSurfaceVariant,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.width(44.dp),
+                )
+                androidx.compose.material3.Slider(
+                    value = level.toFloat().coerceIn(range.first.toFloat(), range.last.toFloat()),
+                    onValueChange = { PlaybackPrefs.updateEqBand(band, it.toInt(), freqs.size) },
+                    valueRange = range.first.toFloat()..range.last.toFloat(),
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    (if (level > 0) "+" else "") + (level / 100) + " dB",
+                    color = c.onSurface,
+                    fontSize = 12.sp,
+                    modifier = Modifier.width(56.dp).padding(start = 8.dp),
+                )
+            }
+        }
+        Text(
+            "Reset to flat",
+            color = c.primary,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.pressable { PlaybackPrefs.resetEqBands() }.padding(vertical = 8.dp),
+        )
+    }
+}
+
+@Composable
+private fun FeedSettingsContent() {
+    val c = MaterialTheme.colorScheme
+    Column(Modifier.fillMaxWidth()) {
+        SettingsGroupLabel("Feeds")
+        SettingsSwitchRow(
+            title = "Hide Shorts",
+            subtitle = "Leave Shorts out of Home and Subscriptions; the Shorts tab still has them",
+            checked = FeedFilters.hideShorts,
+            onCheckedChange = { FeedFilters.updateHideShorts(it) },
+        )
+        SettingsSwitchRow(
+            title = "Mark watched videos",
+            subtitle = "Videos you've seen are dimmed a little, with a red bar for how far you got and a small Watched tag once finished",
+            checked = FeedFilters.watchedMarks,
+            onCheckedChange = { FeedFilters.updateWatchedMarks(it) },
+        )
+
+        SettingsGroupLabel("Privacy")
+        SettingsSwitchRow(
+            title = "Incognito",
+            subtitle = "Until you turn it off or close the app: nothing goes into your watch history, resume points, search history or recommendations",
+            checked = Incognito.enabled,
+            onCheckedChange = { Incognito.set(it) },
+        )
+
+        SettingsGroupLabel("Blocked channels")
+        if (FeedFilters.blockedChannels.isEmpty()) {
+            Text(
+                "None yet. Long press a video and choose \"Don't show this channel\".",
+                color = c.onSurfaceVariant,
+                fontSize = 12.sp,
+                modifier = Modifier.padding(vertical = 6.dp),
+            )
+        } else {
+            FeedFilters.blockedChannels.forEach { channel ->
+                Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(channel.name, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                    Text(
+                        "Unblock",
+                        color = c.primary,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.pressable { FeedFilters.unblock(channel) }.padding(6.dp),
+                    )
+                }
+            }
+        }
+
+        SettingsGroupLabel("Blocked words")
+        Text(
+            "Videos with one of these words in the title or channel name are hidden everywhere.",
+            color = c.onSurfaceVariant,
+            fontSize = 12.sp,
+            modifier = Modifier.padding(bottom = 6.dp),
+        )
+        var word by remember { mutableStateOf("") }
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            androidx.compose.material3.OutlinedTextField(
+                value = word,
+                onValueChange = { word = it },
+                singleLine = true,
+                placeholder = { Text("Add a word") },
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                "Add",
+                color = c.primary,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier
+                    .padding(start = 8.dp)
+                    .pressable {
+                        FeedFilters.addKeyword(word)
+                        word = ""
+                    }
+                    .padding(10.dp),
+            )
+        }
+        FeedFilters.keywords.forEach { keyword ->
+            Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(keyword, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                Box(Modifier.size(36.dp).pressable { FeedFilters.removeKeyword(keyword) }, contentAlignment = Alignment.Center) {
+                    Icon(Icons.Rounded.Close, "Remove", tint = c.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BackupSettingsContent() {
+    val c = MaterialTheme.colorScheme
+    val context = LocalContext.current
+    var message by remember { mutableStateOf<String?>(null) }
+    val exporter = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+        if (uri != null) message = SettingsBackup.export(context, uri)
+    }
+    val importer = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) message = SettingsBackup.import(context, uri)
+    }
+    Column(Modifier.fillMaxWidth()) {
+        SettingsClickRow(
+            title = "Back up settings",
+            subtitle = "Every setting, plus watch progress, blocked channels, channel speeds and search history, to a file you choose (your sign-in is not included)",
+            onClick = {
+                val day = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
+                exporter.launch("YTXTube-settings-$day.json")
+            },
+        )
+        HorizontalDivider(color = c.onSurface.copy(alpha = 0.08f))
+        SettingsClickRow(
+            title = "Restore from a file",
+            subtitle = "Pick a backup; the app restarts with those settings",
+            onClick = { importer.launch(arrayOf("application/json", "text/plain", "application/octet-stream")) },
+        )
+        message?.let {
+            Text(it, color = c.primary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(vertical = 10.dp))
         }
     }
 }

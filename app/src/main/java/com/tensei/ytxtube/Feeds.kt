@@ -227,9 +227,14 @@ fun FeedList(
      * screen and two side by side when unfolded.
      */
     grid: Boolean = false,
+    /** Home and Subscriptions: leave out Shorts (when chosen in Settings) and blocked channels. */
+    feedFilters: Boolean = false,
 ) {
     val c = MaterialTheme.colorScheme
-    val listVideos = videos ?: feed.videos
+    val source = videos ?: feed.videos
+    val listVideos = remember(
+        source, feedFilters, FeedFilters.hideShorts, FeedFilters.blockedChannels, FeedFilters.keywords,
+    ) { if (feedFilters) FeedFilters.forFeed(source) else source }
     val scope = rememberCoroutineScope()
     LaunchedEffect(listVideos, channelAvatarSeed) {
         ChannelAvatars.resolve(scope, listVideos, channelAvatarSeed)

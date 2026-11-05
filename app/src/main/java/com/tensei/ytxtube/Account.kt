@@ -1872,6 +1872,63 @@ object InnerTube {
     }
 
 
+    /** Search with filters (upload date, length, type, sort), straight from YouTube's search. */
+    suspend fun filteredSearch(query: String, filter: SearchFilter, continuation: String? = null): SearchResults =
+        withContext(Dispatchers.IO) {
+            val body = JSONObject()
+            if (continuation != null) body.put("continuation", continuation)
+            else body.put("query", query).put("params", filter.params())
+            val root = post("search", body, anonymous = !Account.signedIn)
+            val page = parseFeed(root)
+            val channels = LinkedHashMap<String, SearchChannel>()
+            val playlists = LinkedHashMap<String, PlaylistRef>()
+            root.walk { key, obj ->
+                when (key) {
+                    "channelRenderer" -> {
+                        val id = obj.optString("channelId").ifBlank { return@walk }
+                        channels.getOrPut(id) {
+                            SearchChannel(
+                                id = id,
+                                name = obj.text("title").orEmpty(),
+                                avatar = obj.thumbnails()?.lastOrNull()?.let(::absoluteUrl),
+                                detail = listOfNotNull(obj.text("subscriberCountText"), obj.text("videoCountText"))
+                                    .joinToString(" · ").ifBlank { null },
+                            )
+                        }
+                    }
+                    "playlistRenderer" -> {
+                        val id = obj.optString("playlistId").ifBlank { return@walk }
+                        playlists.getOrPut(id) {
+                            PlaylistRef(
+                                id,
+                                obj.text("title").orEmpty(),
+                                obj.thumbnails()?.lastOrNull()?.let(::absoluteUrl) ?: obj.firstImageSource(),
+                                obj.text("videoCountText") ?: obj.optString("videoCount").ifBlank { null }?.let { "$it videos" },
+                            )
+                        }
+                    }
+                    "lockupViewModel" -> if (obj.optString("contentType") == "LOCKUP_CONTENT_TYPE_PLAYLIST") {
+                        val id = obj.optString("contentId").ifBlank { return@walk }
+                        val meta = obj.optJSONObject("metadata")?.optJSONObject("lockupMetadataViewModel")
+                        playlists.getOrPut(id) {
+                            PlaylistRef(
+                                id = id,
+                                title = meta?.optJSONObject("title")?.optString("content").orEmpty(),
+                                thumbnail = obj.firstImageSource(),
+                                subtitle = obj.collectStrings("text").firstOrNull { it.contains("video", ignoreCase = true) },
+                            )
+                        }
+                    }
+                }
+            }
+            SearchResults(
+                videos = if (filter.type == SearchType.VIDEOS) page.videos else emptyList(),
+                channels = if (filter.type == SearchType.CHANNELS) channels.values.toList() else emptyList(),
+                playlists = if (filter.type == SearchType.PLAYLISTS) playlists.values.filter { it.title.isNotBlank() } else emptyList(),
+                next = page.next,
+            )
+        }
+
     suspend fun videoState(videoId: String): VideoAccountState = withContext(Dispatchers.IO) {
         val next = post("next", JSONObject().put("videoId", videoId))
         var like = LikeStatus.None
@@ -2073,6 +2130,8 @@ object InnerTube {
             views = parseViews(o.text("viewCountText") ?: o.text("shortViewCountText") ?: infoRuns.firstOrNull { it.contains("view") || it.contains("watching") }),
             uploaded = if (isLive) I18n.t("live_now", "Live") else (o.text("publishedTimeText") ?: infoRuns.firstOrNull { it.contains("ago") || it.contains("पहले") || it.contains("hace") || it.contains("назад") } ?: infoRuns.lastOrNull())?.let { I18n.translateTimeAgo(it) },
             isLive = isLive,
+            isShort = o.has("reelWatchEndpoint") || o.optJSONObject("navigationEndpoint")?.has("reelWatchEndpoint") == true ||
+                o.collectStrings("url").any { it.startsWith("/shorts/") },
         )
     }
 
@@ -2104,6 +2163,7 @@ object InnerTube {
             views = parseViews(parts.firstOrNull { it.contains("view") || it.contains("watching") }),
             uploaded = if (isLive) I18n.t("live_now", "Live") else (parts.firstOrNull { it.contains("ago") || it.contains("पहले") || it.contains("hace") || it.contains("назад") } ?: parts.getOrNull(2))?.let { I18n.translateTimeAgo(it) },
             isLive = isLive,
+            isShort = o.collectStrings("url").any { it.startsWith("/shorts/") },
         )
     }
 

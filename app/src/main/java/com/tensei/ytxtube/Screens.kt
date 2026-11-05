@@ -1,6 +1,9 @@
 package com.tensei.ytxtube
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material.icons.rounded.ArrowDropDown
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.aspectRatio
@@ -251,6 +254,7 @@ fun HomeScreen(
                 videos = filteredVideos,
                 filterScrollKey = activeFilter,
                 grid = HomeLayoutSettings.grid,
+                feedFilters = true,
                 header = {
                     if (!signedIn) {
                         item(key = "anon_banner") {
@@ -452,6 +456,7 @@ fun SubscriptionsScreen(
                         indicatorTop = top,
                         videos = filteredVideos,
                         filterScrollKey = selectedChannelId to activeSubFilter,
+                        feedFilters = true,
                     )
                 }
             } else {
@@ -823,6 +828,14 @@ class SearchState(private val scope: CoroutineScope) {
         private set
     var results by mutableStateOf<List<VideoItem>>(emptyList())
         private set
+    /** Channel and playlist results, when the type filter asks for them. */
+    var channels by mutableStateOf<List<SearchChannel>>(emptyList())
+        private set
+    var playlists by mutableStateOf<List<PlaylistRef>>(emptyList())
+        private set
+    var filter by mutableStateOf(SearchFilter())
+        private set
+    val hasResults: Boolean get() = results.isNotEmpty() || channels.isNotEmpty() || playlists.isNotEmpty()
     var suggestions by mutableStateOf<List<String>>(emptyList())
         private set
     var suggestionsLoading by mutableStateOf(false)
@@ -842,10 +855,19 @@ class SearchState(private val scope: CoroutineScope) {
         query = ""
         submitted = ""
         results = emptyList()
+        channels = emptyList()
+        playlists = emptyList()
         suggestions = emptyList()
         suggestionsLoading = false
         loading = false
         error = null
+    }
+
+    /** A new filter re-runs the search that is on screen. */
+    fun updateFilter(value: SearchFilter) {
+        if (value == filter) return
+        filter = value
+        if (submitted.isNotEmpty()) run(submitted)
     }
 
     fun updateQuery(text: String) {
@@ -881,12 +903,24 @@ class SearchState(private val scope: CoroutineScope) {
         suggestions = emptyList()
         suggestionsLoading = false
         submitted = q
+        run(q)
+    }
+
+    private fun run(q: String) {
         loading = true
         error = null
         job?.cancel()
+        val f = filter
         job = scope.launch {
-            runCatching { YouTube.search(q) }
-                .onSuccess { results = it; generation++ }
+            runCatching {
+                if (f.isDefault) {
+                    Triple(YouTube.search(q), emptyList<SearchChannel>(), emptyList<PlaylistRef>())
+                } else {
+                    val r = InnerTube.filteredSearch(q, f)
+                    Triple(r.videos, r.channels, r.playlists)
+                }
+            }
+                .onSuccess { (v, ch, pl) -> results = v; channels = ch; playlists = pl; generation++ }
                 .onFailure { error = YouTube.friendlyError(it) }
             loading = false
         }
@@ -991,7 +1025,7 @@ fun SearchScreen(
         val draft = state.query.isNotBlank() &&
             (state.submitted.isEmpty() || state.query.trim() != state.submitted.trim())
         Box(Modifier.fillMaxSize()) {
-        Box(Modifier.padding(top = if (!draft && state.results.isNotEmpty() && state.error == null) 0.dp else top)) {
+        Box(Modifier.padding(top = if (!draft && state.hasResults && state.error == null) 0.dp else top)) {
         when {
             draft -> {
                 val matchingHistory = SearchHistory.queries.filter {
@@ -1079,7 +1113,7 @@ fun SearchScreen(
                     }
                 }
             }
-            state.loading && state.results.isEmpty() -> Box(Modifier.fillMaxWidth().padding(top = 48.dp), Alignment.Center) {
+            state.loading && !state.hasResults -> Box(Modifier.fillMaxWidth().padding(top = 48.dp), Alignment.Center) {
                 CircularProgressIndicator(color = c.primary, strokeWidth = 4.dp, modifier = Modifier.size(36.dp))
             }
             state.error != null -> EmptyState(
@@ -1166,16 +1200,23 @@ fun SearchScreen(
                     )
                 }
             }
-            state.results.isEmpty() -> EmptyState(
-                icon = Icons.Rounded.History,
-                title = "Nothing found",
-                body = "No videos matched “${state.submitted}”.",
-            )
+            !state.hasResults -> Column {
+                SearchFilterRow(state)
+                EmptyState(
+                    icon = Icons.Rounded.History,
+                    title = "Nothing found",
+                    body = if (state.filter.isDefault) "No videos matched “${state.submitted}”."
+                        else "Nothing matched “${state.submitted}” with these filters.",
+                )
+            }
             else -> {
                 val list = rememberScrollToTop(scrollToTop)
                 LaunchedEffect(state.generation) { list.scrollToItem(0) }
                 LazyColumn(state = list, contentPadding = contentPadding.withTop(top)) {
-                items(state.results, key = { it.id }) { video ->
+                item(key = "filters") { SearchFilterRow(state) }
+                items(state.channels, key = { "ch-" + it.id }) { channel -> SearchChannelRow(channel) }
+                items(state.playlists, key = { "pl-" + it.id }) { playlist -> SearchPlaylistRow(playlist) }
+                items(FeedFilters.withoutBlocked(state.results), key = { it.id }) { video ->
                     VideoCard(video, onClick = {
                         val currentQuery = state.submitted.trim().ifEmpty { state.query.trim() }
                         if (currentQuery.isNotEmpty()) {
@@ -1190,5 +1231,131 @@ fun SearchScreen(
         }
         }
     }
+    }
+}
+
+
+/** Type, upload date, length and sort, as chips above the search results. */
+@Composable
+private fun SearchFilterRow(state: SearchState) {
+    val f = state.filter
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        FilterChipMenu(f.type.label, f.type != SearchType.VIDEOS, SearchType.entries, { it.label }) {
+            state.updateFilter(f.copy(type = it))
+        }
+        if (f.type == SearchType.VIDEOS) {
+            FilterChipMenu(if (f.date == SearchDate.ANY) "Upload date" else f.date.label, f.date != SearchDate.ANY, SearchDate.entries, { it.label }) {
+                state.updateFilter(f.copy(date = it))
+            }
+            FilterChipMenu(if (f.length == SearchLength.ANY) "Length" else f.length.label, f.length != SearchLength.ANY, SearchLength.entries, { it.label }) {
+                state.updateFilter(f.copy(length = it))
+            }
+        }
+        FilterChipMenu(if (f.sort == SearchSort.RELEVANCE) "Sort by" else f.sort.label, f.sort != SearchSort.RELEVANCE, SearchSort.entries, { it.label }) {
+            state.updateFilter(f.copy(sort = it))
+        }
+        if (!f.isDefault) {
+            Text(
+                "Clear",
+                color = MaterialTheme.colorScheme.primary,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier
+                    .align(Alignment.CenterVertically)
+                    .pressable { state.updateFilter(SearchFilter()) }
+                    .padding(horizontal = 8.dp, vertical = 8.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun <T> FilterChipMenu(
+    label: String,
+    active: Boolean,
+    options: List<T>,
+    optionLabel: (T) -> String,
+    onPick: (T) -> Unit,
+) {
+    val c = MaterialTheme.colorScheme
+    var open by remember { mutableStateOf(false) }
+    Box {
+        Row(
+            Modifier
+                .clip(CircleShape)
+                .background(if (active) c.onSurface else c.surfaceContainerHigh)
+                .pressable { open = true }
+                .padding(start = 14.dp, end = 8.dp, top = 7.dp, bottom = 7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(label, color = if (active) c.surface else c.onSurface, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            Icon(
+                Icons.Rounded.ArrowDropDown,
+                null,
+                tint = if (active) c.surface else c.onSurfaceVariant,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+        androidx.compose.material3.DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            options.forEach { option ->
+                androidx.compose.material3.DropdownMenuItem(
+                    text = { Text(optionLabel(option)) },
+                    onClick = {
+                        open = false
+                        onPick(option)
+                    },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SearchChannelRow(channel: SearchChannel) {
+    val c = MaterialTheme.colorScheme
+    val openChannel = LocalChannelOpener.current
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .pressable(pressedScale = 0.98f) { openChannel("https://www.youtube.com/channel/" + channel.id) }
+            .padding(horizontal = 20.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ChannelAvatar(channel.avatar, channel.name, size = 56)
+        Spacer(Modifier.width(16.dp))
+        Column(Modifier.weight(1f)) {
+            Text(channel.name, fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            channel.detail?.let {
+                Text(it, color = c.onSurfaceVariant, fontSize = 12.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+    }
+}
+
+@Composable
+private fun SearchPlaylistRow(playlist: PlaylistRef) {
+    val c = MaterialTheme.colorScheme
+    val openPlaylist = LocalPlaylistOpener.current
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .pressable(pressedScale = 0.98f) { openPlaylist(playlist) }
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Thumbnail(playlist.thumbnail, Modifier.width(150.dp).aspectRatio(16f / 9f), radius = 14)
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text(playlist.title, fontSize = 15.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            playlist.subtitle?.let {
+                Text(it, color = c.onSurfaceVariant, fontSize = 12.5.sp, maxLines = 1)
+            }
+        }
     }
 }

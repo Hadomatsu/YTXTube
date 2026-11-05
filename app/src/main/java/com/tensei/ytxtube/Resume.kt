@@ -43,6 +43,10 @@ object ResumeStore {
 
     fun save(id: String, positionMs: Long, durationMs: Long) {
         if (id.isBlank() || durationMs <= 0 || durationMs == C.TIME_UNSET) return
+        // Incognito: nothing is remembered about what was watched.
+        if (Incognito.enabled) return
+        // Played to the end (or nearly): remembered as watched for the small mark in the feeds.
+        if (positionMs > durationMs - EDGE_MS || positionMs >= durationMs * 0.95) WatchedStore.mark(id)
         if (positionMs < EDGE_MS || positionMs > durationMs - EDGE_MS) {
 
             if (positions.remove(id) != null) prefs?.edit()?.remove(id)?.apply()
@@ -63,6 +67,37 @@ object ResumeStore {
 }
 
 
+
+
+
+/** Videos played to the end, for the small "Watched" mark on their cards. */
+object WatchedStore {
+    private const val MAX_ENTRIES = 3000
+    private var prefs: SharedPreferences? = null
+    val ids = mutableStateMapOf<String, Long>()
+
+    fun init(context: Context) {
+        val p = context.getSharedPreferences("watched", Context.MODE_PRIVATE).also { prefs = it }
+        p.all.forEach { (id, at) -> if (at is Long) ids[id] = at }
+    }
+
+    fun isWatched(id: String): Boolean = ids.containsKey(id)
+
+    fun mark(id: String) {
+        if (id.isBlank() || ids.containsKey(id)) return
+        val now = System.currentTimeMillis()
+        ids[id] = now
+        val edit = prefs?.edit() ?: return
+        edit.putLong(id, now)
+        if (ids.size > MAX_ENTRIES) {
+            ids.entries.sortedBy { it.value }.take(ids.size - MAX_ENTRIES).map { it.key }.forEach { old ->
+                ids.remove(old)
+                edit.remove(old)
+            }
+        }
+        edit.apply()
+    }
+}
 
 
 

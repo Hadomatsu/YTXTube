@@ -376,7 +376,7 @@ fun PlayerScreen(
                         contentPadding = PaddingValues(bottom = bottom + 32.dp),
                     ) {
                         item(key = "wideMoreTitle") { SectionTitle("More videos") }
-                        val related = details?.related.orEmpty()
+                        val related = FeedFilters.withoutBlocked(details?.related.orEmpty())
                         if (related.isNotEmpty()) {
                             items(related, key = { "wide-rel-" + it.id }) { video ->
                                 Box(Modifier.padding(horizontal = 14.dp, vertical = 2.dp)) { VideoRow(video, onClick = { onOpen(video) }) }
@@ -423,7 +423,7 @@ fun PlayerScreen(
                 contentPadding = PaddingValues(bottom = bottom + 32.dp),
             ) {
                 item(key = "info") { VideoDetailsBlock(state, item, details, c, descriptionOpen, { descriptionOpen = !descriptionOpen }, isLiveStream) }
-                val related = details?.related.orEmpty()
+                val related = FeedFilters.withoutBlocked(details?.related.orEmpty())
                 if (related.isNotEmpty()) {
                     item(key = "moreTitle") { SectionTitle("More videos") }
                     val relatedColumns = HomeGrid.columns(screenConfig.screenWidthDp.toFloat())
@@ -1934,8 +1934,12 @@ private fun VideoDetailsBlock(
             }
         }
         if (descriptionOpen && details != null) {
+            // Times in the description (chapters, "skip to 4:32") jump the video there.
+            val described = remember(details.description, c.primary) {
+                Timestamps.annotate(details.description, c.primary) { ms -> state.seekTo(ms) }
+            }
             Text(
-                details.description,
+                described,
                 modifier = Modifier.padding(top = 10.dp),
                 color = c.onSurfaceVariant,
                 fontSize = 14.sp,

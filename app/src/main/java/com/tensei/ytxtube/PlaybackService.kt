@@ -68,6 +68,12 @@ class PlaybackService : MediaSessionService() {
         /** The phone's equalizer presets (names), known once something has played. */
         var eqPresetNames: List<String> = emptyList()
             private set
+        /** The equalizer's bands (centre frequency in Hz) and level range in millibels. */
+        var eqBandFreqs: List<Int> = emptyList()
+            private set
+        var eqLevelRange: IntRange = -1500..1500
+            private set
+        private var dynamics: Any? = null
 
         /** Applies the settings a running player can change on the fly (main thread). */
         fun applyLivePrefs() {
@@ -84,9 +90,19 @@ class PlaybackService : MediaSessionService() {
                     val eq = equalizer ?: android.media.audiofx.Equalizer(0, session).also { e ->
                         equalizer = e
                         eqPresetNames = (0 until e.numberOfPresets).map { i -> e.getPresetName(i.toShort()) }
+                        eqBandFreqs = (0 until e.numberOfBands).map { b -> e.getCenterFreq(b.toShort()) / 1000 }
+                        val range = e.bandLevelRange
+                        if (range.size >= 2) eqLevelRange = range[0].toInt()..range[1].toInt()
                     }
                     val preset = PlaybackPrefs.eqPreset
-                    if (preset in 0 until eq.numberOfPresets) {
+                    if (preset == PlaybackPrefs.EQ_CUSTOM) {
+                        // The hand-made curve from Settings, one level per band.
+                        for (b in 0 until eq.numberOfBands) {
+                            val level = (PlaybackPrefs.eqBandLevels.getOrNull(b) ?: 0).coerceIn(eqLevelRange)
+                            eq.setBandLevel(b.toShort(), level.toShort())
+                        }
+                        eq.enabled = true
+                    } else if (preset in 0 until eq.numberOfPresets) {
                         eq.usePreset(preset.toShort())
                         eq.enabled = true
                     } else {
@@ -103,14 +119,60 @@ class PlaybackService : MediaSessionService() {
                         b.enabled = false
                     }
                 }
+                if (android.os.Build.VERSION.SDK_INT >= 28) runCatching { applyDynamics(session) }
             }
+        }
+
+        /**
+         * Stable volume and the volume booster, in one dynamics processor: a gentle compressor
+         * with make-up gain evens out loud and quiet videos, the input gain boosts, and a limiter
+         * at the end keeps a boosted or evened-out signal from clipping.
+         */
+        @androidx.annotation.RequiresApi(28)
+        private fun applyDynamics(session: Int) {
+            val stable = PlaybackPrefs.stableVolume
+            val boost = PlaybackPrefs.volumeBoost
+            var dp = dynamics as? android.media.audiofx.DynamicsProcessing
+            if (!stable && boost <= 100) {
+                dp?.enabled = false
+                return
+            }
+            if (dp == null) {
+                val config = android.media.audiofx.DynamicsProcessing.Config.Builder(
+                    android.media.audiofx.DynamicsProcessing.VARIANT_FAVOR_FREQUENCY_RESOLUTION,
+                    2,
+                    false, 0,
+                    true, 1,
+                    false, 0,
+                    true,
+                ).build()
+                dp = android.media.audiofx.DynamicsProcessing(0, session, config)
+                dynamics = dp
+            }
+            dp.setInputGainAllChannelsTo(20f * kotlin.math.log10(boost / 100f))
+            val band = if (stable) {
+                android.media.audiofx.DynamicsProcessing.MbcBand(
+                    true, 20_000f, 15f, 350f, 3f, -30f, 8f, -90f, 1f, 0f, 9f,
+                )
+            } else {
+                android.media.audiofx.DynamicsProcessing.MbcBand(
+                    true, 20_000f, 1f, 1f, 1f, 0f, 0f, -90f, 1f, 0f, 0f,
+                )
+            }
+            dp.setMbcBandAllChannelsTo(0, band)
+            dp.setLimiterAllChannelsTo(
+                android.media.audiofx.DynamicsProcessing.Limiter(true, true, 0, 1f, 60f, 10f, -1f, 0f),
+            )
+            dp.enabled = true
         }
 
         private fun releaseEffects() {
             runCatching { equalizer?.release() }
             runCatching { bass?.release() }
+            runCatching { (dynamics as? android.media.audiofx.AudioEffect)?.release() }
             equalizer = null
             bass = null
+            dynamics = null
         }
     }
 
@@ -196,6 +258,7 @@ class PlaybackService : MediaSessionService() {
 
         player.addListener(StreamRecoverer(player, sources, resolver))
         player.addAnalyticsListener(StatsCounter(player))
+        player.addListener(CrossFader(player))
         resumeSaver = ResumeSaver(player).also(player::addListener)
         watchTime = WatchTimeReporter(player).also(player::addListener)
         session = MediaSession.Builder(this, player)
@@ -270,6 +333,71 @@ class PlaybackService : MediaSessionService() {
                         .build()
                 }
             }.toMutableList()
+        }
+    }
+}
+
+
+/**
+ * Crossfade in the music player: the last seconds of a song fade out and the next one fades in
+ * (Settings, Music, Crossfade). Videos, loops and songs you skip to by hand are left alone.
+ */
+private class CrossFader(private val player: ExoPlayer) : Player.Listener {
+    private val main = Handler(Looper.getMainLooper())
+    private var fadingIn = false
+    private var applied = 1f
+
+    private val tick = object : Runnable {
+        override fun run() {
+            update()
+            if (player.isPlaying && active()) main.postDelayed(this, 80)
+        }
+    }
+
+    private fun active(): Boolean =
+        PlaybackPrefs.crossfadeSec > 0 && NowPlayingMode.music && player.repeatMode != Player.REPEAT_MODE_ONE
+
+    private fun setVolume(v: Float) {
+        if (kotlin.math.abs(v - applied) < 0.01f) return
+        applied = v
+        player.volume = v
+    }
+
+    private fun update() {
+        if (!active()) {
+            fadingIn = false
+            setVolume(1f)
+            return
+        }
+        val fadeMs = PlaybackPrefs.crossfadeSec * 1000f
+        val position = player.currentPosition
+        val duration = player.duration
+        val fadeOut = if (duration > 0 && duration != C.TIME_UNSET && duration > fadeMs * 3) {
+            ((duration - position) / fadeMs).coerceIn(0f, 1f)
+        } else 1f
+        val fadeIn = if (fadingIn) (position / fadeMs).coerceIn(0f, 1f) else 1f
+        if (fadingIn && position >= fadeMs) fadingIn = false
+        // A slight curve so the fade sounds even to the ear.
+        val v = minOf(fadeOut, fadeIn)
+        setVolume(v * v * (3f - 2f * v))
+    }
+
+    override fun onIsPlayingChanged(isPlaying: Boolean) {
+        main.removeCallbacks(tick)
+        if (isPlaying) main.post(tick)
+    }
+
+    override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+        fadingIn = active() && reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO
+        if (!fadingIn) setVolume(1f) else setVolume(0f)
+        main.removeCallbacks(tick)
+        if (player.isPlaying || fadingIn) main.post(tick)
+    }
+
+    override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) {
+        if (reason == Player.DISCONTINUITY_REASON_SEEK) {
+            fadingIn = false
+            update()
         }
     }
 }
@@ -468,7 +596,8 @@ private class WatchTimeReporter(private val player: ExoPlayer) : Player.Listener
         if (id == videoId) return
         finish()
         videoId = id
-        if (id == null || !Account.signedIn) return
+        // Incognito: YouTube is not told what is watched, so nothing goes into the history.
+        if (id == null || !Account.signedIn || Incognito.enabled) return
         startedAt = android.os.SystemClock.elapsedRealtime()
         if (player.isPlaying) startStretch()
         io.execute {
@@ -479,7 +608,7 @@ private class WatchTimeReporter(private val player: ExoPlayer) : Player.Listener
     }
 
     override fun onIsPlayingChanged(isPlaying: Boolean) {
-        if (videoId == null || !Account.signedIn) return
+        if (videoId == null || !Account.signedIn || Incognito.enabled) return
         if (isPlaying) {
             startStretch()
         } else {
@@ -566,7 +695,8 @@ private class SpeedKeeper(private val player: ExoPlayer) : Player.Listener {
         val id = mediaItem?.mediaId?.ifBlank { null } ?: return
         if (id == videoId) return
         videoId = id
-        player.setPlaybackSpeed(PlaybackSpeed.forNewVideo)
+        val channel = mediaItem?.mediaMetadata?.artist?.toString()
+        player.setPlaybackSpeed(ChannelSpeeds.get(channel) ?: PlaybackSpeed.forNewVideo)
     }
 }
 

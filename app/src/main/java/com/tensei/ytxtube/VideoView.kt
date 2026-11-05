@@ -92,6 +92,7 @@ import androidx.compose.material.icons.rounded.Subtitles
 import androidx.compose.material.icons.rounded.ClosedCaption
 import androidx.compose.material.icons.rounded.ClosedCaptionOff
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material.icons.rounded.ZoomIn
 import androidx.compose.ui.composed
@@ -805,8 +806,20 @@ fun VideoContent(
                         Text(
                             " / " + formatDuration(state.durationMs),
                             color = Color.White.copy(alpha = 0.72f), fontSize = 12.sp, fontWeight = FontWeight.Bold,
-                            modifier = Modifier.weight(1f),
                         )
+                        // The chapter playing now; tap it for the list of chapters.
+                        val chapterList = state.details?.chapters.orEmpty()
+                        val chapterNow = Chapters.indexAt(chapterList, state.scrubPreviewMs ?: state.positionMs)
+                        if (chapterNow >= 0) {
+                            Text(
+                                "  •  " + chapterList[chapterNow].title + "  ›",
+                                color = Color.White.copy(alpha = 0.9f), fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f).pressable { touched(); state.sheet = PlayerSheet.Chapters },
+                            )
+                        } else {
+                            Spacer(Modifier.weight(1f))
+                        }
                         state.askSegment?.let { segment ->
                             SkipSegmentPill(segment, enabled = true) { touched(); state.skipSegment(segment) }
                             Spacer(Modifier.width(6.dp))
@@ -935,6 +948,7 @@ fun VideoContent(
                     .height(EdgeScrubTouchPadAbove * 2)
                     .graphicsLayer { alpha = scrubFade }
             }
+            val chapterStarts = remember(state.details?.chapters) { state.details?.chapters.orEmpty().map { it.startMs } }
             Scrubber(
                 segments = segments,
                 positionMs = state.positionMs,
@@ -954,6 +968,7 @@ fun VideoContent(
                 },
                 knob = if (fullscreenControlsScrub) FullscreenScrubKnob else 7.dp,
                 knobDragging = if (fullscreenControlsScrub) FullscreenScrubKnobDragging else 9.dp,
+                chapters = chapterStarts,
                 onPreview = { state.scrubPreviewMs = it; touched() },
                 onSeek = { state.endScrubDragging(it); touched() },
                 onDraggingChanged = { dragging ->
@@ -982,11 +997,17 @@ fun VideoContent(
                     .zIndex(11f),
                 contentAlignment = Alignment.Center,
             ) {
+                val previewChapters = state.details?.chapters.orEmpty()
+                val previewChapter = Chapters.indexAt(previewChapters, scrubPreviewMs)
                 Text(
-                    formatDuration(scrubPreviewMs),
+                    if (previewChapter >= 0) formatDuration(scrubPreviewMs) + "  ·  " + previewChapters[previewChapter].title
+                    else formatDuration(scrubPreviewMs),
                     color = Color.White,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(horizontal = 24.dp),
                 )
             }
         }
@@ -1404,6 +1425,24 @@ fun PlayerSettingsSheet(state: PlayerState, backdrop: Backdrop, onDismiss: () ->
 
 
                 PlayerSettingItem(
+                    icon = Icons.Rounded.GraphicEq,
+                    title = "Stable volume",
+                    value = if (PlaybackPrefs.stableVolume) "On" else "Off",
+                    onClick = { PlaybackPrefs.updateStableVolume(!PlaybackPrefs.stableVolume) }
+                )
+
+                PlayerSettingItem(
+                    icon = Icons.AutoMirrored.Rounded.VolumeUp,
+                    title = "Volume boost",
+                    value = if (PlaybackPrefs.volumeBoost <= 100) "Off" else "${PlaybackPrefs.volumeBoost}%",
+                    onClick = {
+                        val choices = PlaybackPrefs.boostChoices
+                        val next = choices[(choices.indexOf(PlaybackPrefs.volumeBoost) + 1).mod(choices.size)]
+                        PlaybackPrefs.updateVolumeBoost(next)
+                    }
+                )
+
+                PlayerSettingItem(
                     icon = Icons.Rounded.Repeat,
                     title = "Loop video",
                     value = if (state.loopEnabled) "On" else "Off",
@@ -1817,7 +1856,10 @@ private fun Scrubber(
     touchHeight: Dp = 24.dp,
     knob: Dp = 7.dp,
     knobDragging: Dp = 9.dp,
+    /** Chapter start times: thin breaks in the bar and a light tick when scrubbing across one. */
+    chapters: List<Long> = emptyList(),
 ) {
+    val view = androidx.compose.ui.platform.LocalView.current
     var dragFraction by remember { mutableStateOf<Float?>(null) }
     val currentPositionMs by rememberUpdatedState(positionMs)
     val duration = durationMs.coerceAtLeast(1L)
@@ -1838,7 +1880,7 @@ private fun Scrubber(
         modifier = modifier
             .fillMaxWidth()
             .height(touchHeight)
-            .pointerInput(enabled, durationMs, relativeDrag, tapToSeek, edgeToEdge, trackHeight) {
+            .pointerInput(enabled, durationMs, relativeDrag, tapToSeek, edgeToEdge, trackHeight, chapters) {
                 if (!enabled || durationMs <= 0) return@pointerInput
                 val slop = viewConfiguration.touchSlop * 0.35f
                 val endInset = if (edgeToEdge) 0f else (trackHeight / 2).toPx()
@@ -1848,6 +1890,7 @@ private fun Scrubber(
                     val width = (size.width - endInset * 2f).coerceAtLeast(1f)
                     var fraction = (currentPositionMs.toFloat() / duration).coerceIn(0f, 1f)
                     var dragged = false
+                    var lastChapter = -2
                     var slopAccum = Offset.Zero
                     while (true) {
                         val event = awaitPointerEvent()
@@ -1882,6 +1925,16 @@ private fun Scrubber(
                             }
                             dragFraction = fraction
                             onPreview((fraction * durationMs).toLong())
+                            // Crossing into another chapter gives a light tick; the knob stays
+                            // exactly where the finger is (no snapping to chapter starts).
+                            if (chapters.size > 1) {
+                                val at = (fraction * durationMs).toLong()
+                                val chapter = chapters.indexOfLast { it <= at }
+                                if (lastChapter != -2 && chapter != lastChapter) {
+                                    view.performHapticFeedback(android.view.HapticFeedbackConstants.CLOCK_TICK)
+                                }
+                                lastChapter = chapter
+                            }
                         }
                         change.consume()
                     }
@@ -1902,6 +1955,14 @@ private fun Scrubber(
             val x0 = left + trackW * (seg.startMs.toFloat() / duration).coerceIn(0f, 1f)
             val x1 = left + trackW * (seg.endMs.toFloat() / duration).coerceIn(0f, 1f)
             if (x1 > x0) drawRoundRect(seg.category.color, Offset(x0, y), Size(x1 - x0, trackH), r)
+        }
+        if (chapters.size > 1) {
+            val gap = 2.dp.toPx()
+            chapters.forEach { start ->
+                if (start <= 0L) return@forEach
+                val x = left + trackW * (start.toFloat() / duration).coerceIn(0f, 1f)
+                drawRect(Color.Black.copy(alpha = 0.65f), Offset(x - gap / 2f, y), Size(gap, trackH))
+            }
         }
         if (chromeActive) {
             val knobR = knobRadius.toPx()
@@ -2019,6 +2080,64 @@ private fun CaptionSizePill(backdrop: Backdrop?, modifier: Modifier = Modifier, 
         GlassButton(Icons.Rounded.Add, "Bigger captions", true, size = 34.dp, iconSize = 20.dp, tinted = false) {
             CaptionPreference.updateScale(CaptionPreference.scale + 0.1f)
             onChange()
+        }
+    }
+}
+
+
+/** Every chapter of the video with its start time; the one playing now is highlighted. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ChaptersSheet(state: PlayerState, onDismiss: () -> Unit) {
+    val c = MaterialTheme.colorScheme
+    val chapters = state.details?.chapters.orEmpty()
+    val now = Chapters.indexAt(chapters, state.positionMs)
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = c.surfaceContainerLow,
+    ) {
+        Text(
+            "Chapters",
+            fontFamily = RoundedHeavy,
+            fontWeight = FontWeight.Bold,
+            fontSize = 17.sp,
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+        )
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .heightIn(max = 520.dp)
+                .verticalScroll(rememberScrollState())
+                .padding(bottom = 24.dp),
+        ) {
+            chapters.forEachIndexed { i, chapter ->
+                val playing = i == now
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .pressable(pressedScale = 0.98f) { state.seekTo(chapter.startMs); onDismiss() }
+                        .background(if (playing) c.primary.copy(alpha = 0.12f) else Color.Transparent)
+                        .padding(horizontal = 20.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        formatDuration(chapter.startMs),
+                        color = if (playing) c.primary else c.onSurfaceVariant,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.width(68.dp),
+                    )
+                    Text(
+                        chapter.title,
+                        color = c.onSurface,
+                        fontSize = 15.sp,
+                        fontWeight = if (playing) FontWeight.Bold else FontWeight.Medium,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
         }
     }
 }

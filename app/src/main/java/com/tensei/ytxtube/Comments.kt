@@ -122,6 +122,33 @@ class CommentsState(private val scope: CoroutineScope) {
 
     val liked = mutableStateMapOf<String, Boolean>()
 
+    /** Set by the video player: a tapped time in a comment seeks there. Null on Shorts. */
+    var onTimestamp: ((Long) -> Unit)? = null
+
+    /** Comment id to its translation, and which ones are showing it. */
+    val translations = mutableStateMapOf<String, String>()
+    val showTranslation = mutableStateMapOf<String, Boolean>()
+    val translating = mutableStateMapOf<String, Boolean>()
+
+    fun toggleTranslation(comment: Comment) {
+        if (translations.containsKey(comment.id)) {
+            showTranslation[comment.id] = showTranslation[comment.id] != true
+            return
+        }
+        if (translating[comment.id] == true) return
+        translating[comment.id] = true
+        scope.launch {
+            val done = CommentTranslator.translate(comment.text)
+            translating.remove(comment.id)
+            if (done != null) {
+                translations[comment.id] = done
+                showTranslation[comment.id] = true
+            } else {
+                postError = "Couldn't translate this comment"
+            }
+        }
+    }
+
 
     fun toggleLike(comment: Comment, onError: (String) -> Unit) {
         val id = videoId ?: return
@@ -627,7 +654,13 @@ private fun CommentRow(
                 comment.ago?.let { Text(it, color = c.onSurfaceVariant, fontSize = 12.sp, maxLines = 1) }
             }
             Spacer(Modifier.height(3.dp))
-            Text(comment.text, fontSize = 14.sp, lineHeight = 20.sp)
+            val shown = if (state.showTranslation[comment.id] == true) state.translations[comment.id] ?: comment.text else comment.text
+            val seek = state.onTimestamp
+            if (seek != null && Timestamps.contains(shown)) {
+                Text(Timestamps.annotate(shown, c.primary, seek), fontSize = 14.sp, lineHeight = 20.sp)
+            } else {
+                Text(shown, fontSize = 14.sp, lineHeight = 20.sp)
+            }
             Spacer(Modifier.height(6.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
 
@@ -658,6 +691,19 @@ private fun CommentRow(
                     } else {
                         Icon(Icons.Rounded.Favorite, "Hearted by creator", tint = c.primary, modifier = Modifier.size(14.dp))
                     }
+                }
+                if (CommentTranslator.looksForeign(comment.text)) {
+                    Spacer(Modifier.width(16.dp))
+                    val busy = state.translating[comment.id] == true
+                    Text(
+                        when {
+                            busy -> "Translating…"
+                            state.showTranslation[comment.id] == true -> "See original"
+                            else -> "Translate"
+                        },
+                        color = c.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold,
+                        modifier = Modifier.pressable { state.toggleTranslation(comment) }.padding(vertical = 2.dp),
+                    )
                 }
                 if (Account.signedIn && !comment.id.startsWith("local-")) {
                     Spacer(Modifier.width(16.dp))

@@ -56,6 +56,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onPlaced
@@ -135,6 +136,21 @@ fun ScreenHeader(
             letterSpacing = (-0.5).sp,
             maxLines = 1,
         )
+        if (Incognito.enabled) {
+            // A reminder that nothing is being saved; tap it to switch incognito off.
+            Text(
+                "Incognito  ✕",
+                color = Color.White,
+                fontSize = 11.5.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier
+                    .padding(end = 8.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xFF5B4B8A))
+                    .pressable { Incognito.set(false) }
+                    .padding(horizontal = 10.dp, vertical = 5.dp),
+            )
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { actions() }
     }
 }
@@ -362,12 +378,14 @@ fun VideoCard(video: VideoItem, onClick: () -> Unit, modifier: Modifier = Modifi
             .pressable(pressedScale = 0.98f, onLongClick = { menu(video) }, onClick = onClick),
     ) {
         Box(Modifier.fillMaxWidth()) {
+            val dim = watchedDim(video.id)
             Thumbnail(
                 video.thumbnail,
-                Modifier.fillMaxWidth().aspectRatio(16f / 9f),
+                Modifier.fillMaxWidth().aspectRatio(16f / 9f).graphicsLayer { alpha = dim },
                 radius = 0,
                 videoId = video.id,
             )
+            WatchedPill(video.id, Modifier.align(Alignment.TopStart).padding(8.dp))
             DurationPill(video.durationSec, Modifier.align(Alignment.BottomEnd).padding(8.dp), isLive = video.isLive)
             ResumeBar(video.id, Modifier.align(Alignment.BottomStart))
         }
@@ -440,12 +458,14 @@ fun VideoCardGrid(video: VideoItem, onClick: () -> Unit, modifier: Modifier = Mo
             .clip(RoundedCornerShape(12.dp)),
     ) {
         Box(Modifier.fillMaxWidth()) {
+            val dim = watchedDim(video.id)
             Thumbnail(
                 video.thumbnail,
-                Modifier.fillMaxWidth().aspectRatio(16f / 9f),
+                Modifier.fillMaxWidth().aspectRatio(16f / 9f).graphicsLayer { alpha = dim },
                 radius = 0,
                 videoId = video.id,
             )
+            WatchedPill(video.id, Modifier.align(Alignment.TopStart).padding(6.dp))
             DurationPill(video.durationSec, Modifier.align(Alignment.BottomEnd).padding(6.dp), small = true, isLive = video.isLive)
             ResumeBar(video.id, Modifier.align(Alignment.BottomStart))
         }
@@ -533,12 +553,41 @@ fun VideoRow(video: VideoItem, onClick: () -> Unit, trailing: (@Composable () ->
 }
 
 
+/** How far you got: a thin red bar along the bottom of the thumbnail (full for watched videos). */
 @Composable
 fun ResumeBar(videoId: String, modifier: Modifier = Modifier) {
-    val progress = ResumeStore.progress(videoId) ?: return
-    val c = MaterialTheme.colorScheme
-    Box(modifier.fillMaxWidth().height(3.dp).background(Color.White.copy(alpha = 0.45f))) {
-        Box(Modifier.fillMaxWidth(progress).fillMaxHeight().background(c.primary))
+    val progress = ResumeStore.progress(videoId)
+        ?: if (FeedFilters.watchedMarks && WatchedStore.isWatched(videoId)) 1f else return
+    Box(modifier.fillMaxWidth().height(3.dp).background(Color.White.copy(alpha = 0.35f))) {
+        Box(Modifier.fillMaxWidth(progress).fillMaxHeight().background(WatchedRed))
+    }
+}
+
+private val WatchedRed = Color(0xFFFF0033)
+
+/** Thumbnails of videos you've seen are dimmed a little: a bit for started, more for watched. */
+@Composable
+fun watchedDim(videoId: String): Float {
+    if (!FeedFilters.watchedMarks) return 1f
+    val started = ResumeStore.progress(videoId) != null
+    return when {
+        started -> 0.86f
+        WatchedStore.isWatched(videoId) -> 0.62f
+        else -> 1f
+    }
+}
+
+/** A tiny "Watched" tag in the corner of a video you've played to the end. */
+@Composable
+fun WatchedPill(videoId: String, modifier: Modifier = Modifier) {
+    if (!FeedFilters.watchedMarks || ResumeStore.progress(videoId) != null || !WatchedStore.isWatched(videoId)) return
+    Box(
+        modifier
+            .clip(RoundedCornerShape(4.dp))
+            .background(Color.Black.copy(alpha = 0.66f))
+            .padding(horizontal = 5.dp, vertical = 1.5.dp),
+    ) {
+        Text("Watched", color = Color.White, fontSize = 9.5.sp, lineHeight = 10.sp, fontWeight = FontWeight.SemiBold)
     }
 }
 

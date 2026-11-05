@@ -160,6 +160,8 @@ class PlayerState(private val scope: CoroutineScope) {
         internal set
 
     init {
+        // The playback service needs to know when the music player is in use (crossfade).
+        scope.launch { snapshotFlow { isMusicMode }.collect { NowPlayingMode.music = it } }
 
         scope.launch {
             snapshotFlow { StreamRecovery.recovering to StreamRecovery.failed }.collect { (_, failed) ->
@@ -226,7 +228,8 @@ class PlayerState(private val scope: CoroutineScope) {
 
     var downloadFor by mutableStateOf<VideoItem?>(null)
 
-    val comments = CommentsState(scope)
+    // Tapping a time in a comment jumps the video there.
+    val comments = CommentsState(scope).also { it.onTimestamp = { ms -> seekTo(ms) } }
 
     /** Polled only while a live stream's chat sheet is open. */
     val liveChat = LiveChatState(scope)
@@ -1088,6 +1091,8 @@ class PlayerState(private val scope: CoroutineScope) {
     fun commitSpeed(value: Float) {
         previewSpeed(value)
         val s = PlaybackSpeed.snap(value)
+        // Remembered for this channel too, so its next video starts at the same speed.
+        ChannelSpeeds.save(current?.channel?.ifBlank { null } ?: details?.item?.channel, s)
         if (!PlaybackSpeed.remember) return
         if (PlaybackSpeed.isNormal(s) && !PlaybackSpeed.isNormal(PlaybackSpeed.saved)) PlaybackSpeed.setRemember(false, 1f)
         else PlaybackSpeed.save(s)
@@ -1449,7 +1454,7 @@ fun rememberPlayerState(): PlayerState {
     return state
 }
 
-enum class PlayerSheet { Quality, Comments, Queue, Settings, Speed, Audio, Subtitles }
+enum class PlayerSheet { Quality, Comments, Queue, Settings, Speed, Audio, Subtitles, Chapters }
 
 private const val TAG = "YTXTube"
 private const val CAPTION_TICK_MS = 50L

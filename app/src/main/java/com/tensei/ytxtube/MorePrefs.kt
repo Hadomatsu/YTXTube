@@ -85,6 +85,23 @@ object PlaybackPrefs {
     /** Bass boost strength, 0 (off) to 1000. */
     var bassBoost by mutableIntStateOf(0)
         private set
+    /** [eqPreset] value for the hand-made equalizer. */
+    const val EQ_CUSTOM = -2
+    /** Hand-made equalizer: a level per band, in millibels. */
+    var eqBandLevels by mutableStateOf<List<Int>>(emptyList())
+        private set
+
+    /** Evens out loud and quiet videos (a gentle compressor, like YouTube's Stable volume). */
+    var stableVolume by mutableStateOf(true)
+        private set
+    val boostChoices = listOf(100, 125, 150, 200)
+    /** Volume booster in percent; 100 is off. */
+    var volumeBoost by mutableIntStateOf(100)
+        private set
+    val crossfadeChoices = listOf(0, 2, 4, 6, 8, 12)
+    /** Seconds songs fade into each other in the music player; 0 is off. */
+    var crossfadeSec by mutableIntStateOf(4)
+        private set
 
     val seekStepMs: Long get() = seekStepSec * 1000L
 
@@ -112,6 +129,10 @@ object PlaybackPrefs {
         pauseForOtherAudio = p.getBoolean("audio_focus", true)
         eqPreset = p.getInt("eq_preset", -1)
         bassBoost = p.getInt("bass_boost", 0).coerceIn(0, 1000)
+        eqBandLevels = p.getString("eq_bands", "").orEmpty().split(',').mapNotNull { it.trim().toIntOrNull() }
+        stableVolume = p.getBoolean("stable_volume", true)
+        volumeBoost = p.getInt("volume_boost", 100).takeIf { it in boostChoices } ?: 100
+        crossfadeSec = p.getInt("crossfade", 4).takeIf { it in crossfadeChoices } ?: 4
     }
 
     private fun edit(block: SharedPreferences.Editor.() -> Unit) {
@@ -150,4 +171,21 @@ object PlaybackPrefs {
     }
     fun updateEqPreset(i: Int) { eqPreset = i; edit { putInt("eq_preset", i) }; PlaybackService.applyLivePrefs() }
     fun updateBassBoost(v: Int) { bassBoost = v.coerceIn(0, 1000); edit { putInt("bass_boost", bassBoost) }; PlaybackService.applyLivePrefs() }
+    fun updateEqBand(band: Int, level: Int, bands: Int) {
+        val levels = (0 until bands).map { eqBandLevels.getOrNull(it) ?: 0 }.toMutableList()
+        if (band !in levels.indices) return
+        levels[band] = level
+        eqBandLevels = levels
+        eqPreset = EQ_CUSTOM
+        edit { putString("eq_bands", levels.joinToString(",")); putInt("eq_preset", EQ_CUSTOM) }
+        PlaybackService.applyLivePrefs()
+    }
+    fun resetEqBands() {
+        eqBandLevels = eqBandLevels.map { 0 }
+        edit { putString("eq_bands", eqBandLevels.joinToString(",")) }
+        PlaybackService.applyLivePrefs()
+    }
+    fun updateStableVolume(on: Boolean) { stableVolume = on; edit { putBoolean("stable_volume", on) }; PlaybackService.applyLivePrefs() }
+    fun updateVolumeBoost(percent: Int) { volumeBoost = percent; edit { putInt("volume_boost", percent) }; PlaybackService.applyLivePrefs() }
+    fun updateCrossfade(sec: Int) { crossfadeSec = sec; edit { putInt("crossfade", sec) } }
 }
