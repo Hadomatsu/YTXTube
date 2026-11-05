@@ -472,7 +472,18 @@ fun PlayerScreen(
         }
 
 
-        if (state.sheet == PlayerSheet.Comments) {
+        // The comments (or live chat) go down with the player when it is minimised: they slide
+        // and fade out with the details, and are gone once the player is small, so nothing is left
+        // floating over the home feed. They come back where they were when it is opened again.
+        if (state.sheet == PlayerSheet.Comments && showDetails) Box(
+            Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    val p = morph.progress.value
+                    alpha = ramp(p, DetailsFadeStart)
+                    translationY = (1f - p).coerceIn(0f, 1f) * size.height * 0.5f
+                },
+        ) {
             val detailItem = state.details?.item
             if (isLiveStream) {
                 LiveChatPanel(
