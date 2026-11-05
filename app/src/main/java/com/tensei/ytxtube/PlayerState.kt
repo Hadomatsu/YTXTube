@@ -1214,6 +1214,8 @@ class PlayerState(private val scope: CoroutineScope) {
         }
 
         override fun onPlaybackStateChanged(playbackState: Int) {
+            // Playing again after a quiet recovery: an old error message no longer applies.
+            if (playbackState == Player.STATE_READY && controller?.playerError == null && error != null) error = null
             if (playbackState == Player.STATE_ENDED) {
                 val p = controller ?: return
                 if (p.repeatMode == Player.REPEAT_MODE_ONE) return
@@ -1267,11 +1269,21 @@ class PlayerState(private val scope: CoroutineScope) {
             val status = (e.cause as? androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException)?.responseCode
             Log.w(TAG, "playback error ${e.errorCodeName}${status?.let { " (HTTP $it)" } ?: ""} for ${current?.id}", e)
 
-            if (e.errorCode == PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS && StreamRecovery.recovering == current?.id) return
+            // The service quietly recovers refused streams; only one it gave up on is shown.
+            if (e.errorCode == PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS &&
+                (StreamRecovery.recovering == current?.id || StreamRecovery.recentlyHandled(current?.id))
+            ) {
+                isBuffering = true
+                return
+            }
+            val client = StreamHealth.clientOf(
+                (e.cause as? androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException)?.dataSpec?.uri?.toString(),
+            )
             error = when (e.errorCode) {
                 PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
                 PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT -> "Lost the connection. Check your network and try again."
-                PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS -> "YouTube refused the stream${status?.let { " (HTTP $it)" } ?: ""}. Try again."
+                PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS ->
+                    "YouTube refused the stream${status?.let { " (HTTP $it" + (client?.let { c -> " · $c" } ?: "") + ")" } ?: ""}. Try again."
                 else -> "This video couldn't be played."
             }
         }

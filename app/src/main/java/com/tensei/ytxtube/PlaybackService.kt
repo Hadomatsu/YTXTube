@@ -323,6 +323,18 @@ object StreamRecovery {
 
     var failed by mutableStateOf<Pair<String, String>?>(null)
         internal set
+
+    @Volatile private var handledId: String? = null
+    @Volatile private var handledAt = 0L
+
+    /** The service took care of a refused stream for this video; the screen shows no error for it. */
+    internal fun markHandled(id: String) {
+        handledId = id
+        handledAt = android.os.SystemClock.elapsedRealtime()
+    }
+
+    fun recentlyHandled(id: String?): Boolean =
+        id != null && id == handledId && android.os.SystemClock.elapsedRealtime() - handledAt < 20_000L
 }
 
 
@@ -341,6 +353,7 @@ private class StreamRecoverer(
     private val main = Handler(Looper.getMainLooper())
     private var lastId: String? = null
     private var lastPositionMs = 0L
+    private var attempts = 0
 
     override fun onPlayerError(error: PlaybackException) {
         if (error.errorCode != PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS) return
@@ -349,7 +362,13 @@ private class StreamRecoverer(
         if (item.localConfiguration?.uri?.scheme == "file") return
         val id = item.mediaId
         val position = player.currentPosition
-        if (PremiumAudio.get(id) != null) {
+        val failedUrl = (error.cause as? androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException)
+            ?.dataSpec?.uri?.toString()
+        val client = StreamHealth.clientOf(failedUrl)
+        val premiumFailed = if (failedUrl != null) client == "WEB_REMIX" else PremiumAudio.get(id) != null
+        Log.w("YTXTube", "stream refused for $id at ${position / 1000}s (client ${client ?: "?"})")
+        if (premiumFailed) {
+            StreamRecovery.markHandled(id)
             // The Premium 256 kbps stream was cut off. The normal stream is still good, so carry
             // straight on with it from the same spot, without a new extraction, and leave Premium
             // audio alone for a while so the next songs do not stall the same way.
@@ -365,13 +384,20 @@ private class StreamRecoverer(
             }
             return
         }
-        if (id == lastId && position < lastPositionMs + PROGRESS_MS) {
-            Log.w("YTXTube", "stream refused again for $id at ${position / 1000}s; giving up")
+        // Retried quietly up to three times in a row; a stream that plays on for a while after
+        // a retry starts the count again, so a long video can recover as often as it needs.
+        attempts = if (id == lastId && position < lastPositionMs + PROGRESS_MS) attempts + 1 else 1
+        if (attempts > MAX_ATTEMPTS) {
+            Log.w("YTXTube", "stream refused $attempts times in a row for $id; giving up")
             return
         }
+        // Streams from the client YouTube just cut off are avoided from now on where another
+        // client has the same quality (the new extraction below already leaves them out).
+        StreamHealth.markRefused(failedUrl)
+        StreamRecovery.markHandled(id)
         lastId = id
         lastPositionMs = position
-        Log.i("YTXTube", "stream refused for $id; re-extracting and resuming at ${position / 1000}s")
+        Log.i("YTXTube", "re-extracting $id without ${client ?: "the refused stream"} and resuming at ${position / 1000}s")
         StreamRecovery.failed = null
         StreamRecovery.recovering = id
         StreamCache.invalidate(id)
@@ -409,6 +435,7 @@ private class StreamRecoverer(
         // A stream that played this much after the last refusal counts as a new problem, so the
         // video is silently recovered again; only one that dies straight away gives up.
         const val PROGRESS_MS = 10_000L
+        const val MAX_ATTEMPTS = 3
     }
 }
 

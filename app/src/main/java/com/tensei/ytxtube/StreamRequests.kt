@@ -87,3 +87,43 @@ object PlaybackStats {
         stalls = 0
     }
 }
+
+/**
+ * Learns which YouTube client's streams get cut off. A video's streams come from several of
+ * YouTube's apps (Android, visionOS, iOS); when one of them is refused mid-video (HTTP 403, often a
+ * minute or so in), streams from that client are left out for a few hours wherever another
+ * client offers the same thing, so the next videos do not stop the same way. Kept across restarts.
+ */
+object StreamHealth {
+    private const val HOLD_MS = 3 * 60 * 60 * 1000L
+    private val clientParam = Regex("[?&]c=([A-Za-z0-9_]+)")
+    private val refusedUntil = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    private var prefs: android.content.SharedPreferences? = null
+
+    fun init(context: Context) {
+        val p = context.getSharedPreferences("stream_health", Context.MODE_PRIVATE).also { prefs = it }
+        val now = System.currentTimeMillis()
+        p.all.forEach { (client, until) -> if (until is Long && until > now) refusedUntil[client] = until }
+    }
+
+    fun clientOf(url: String?): String? = url?.let { clientParam.find(it)?.groupValues?.get(1) }
+
+    /** Remembers that this stream's client was refused; returns the client's name. */
+    fun markRefused(url: String?): String? {
+        val client = clientOf(url) ?: return null
+        val until = System.currentTimeMillis() + HOLD_MS
+        refusedUntil[client] = until
+        prefs?.edit()?.putLong(client, until)?.apply()
+        return client
+    }
+
+    fun isRefused(url: String?): Boolean {
+        val client = clientOf(url) ?: return false
+        val until = refusedUntil[client] ?: return false
+        return until > System.currentTimeMillis()
+    }
+
+    /** The streams without the refused clients, or all of them when nothing else is left. */
+    fun <T : org.schabi.newpipe.extractor.stream.Stream> avoidRefused(streams: List<T>): List<T> =
+        if (refusedUntil.isEmpty()) streams else streams.filterNot { isRefused(it.content) }.ifEmpty { streams }
+}

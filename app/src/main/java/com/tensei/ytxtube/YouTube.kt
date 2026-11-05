@@ -714,8 +714,12 @@ object StreamSelection {
      * If HDR is unavailable at the chosen height, the same height in SDR is the fallback.
      */
     private fun usableVideos(info: StreamInfo, allowHdr: Boolean): List<VideoStream> {
+        // Per height, streams from a client YouTube has been cutting off are left out when
+        // another client has that height too, so the quality stays the same.
         val all = info.videoOnlyStreams
             .filter { it.isUrl && it.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP && it.height > 0 }
+            .groupBy { it.tier() }
+            .flatMap { (_, sameHeight) -> StreamHealth.avoidRefused(sameHeight) }
         if (allowHdr) return all
         val sdr = all.filterNot(HdrSupport::isHdrCodec)
         return sdr.ifEmpty { all }
@@ -774,6 +778,8 @@ object StreamSelection {
         val audio = selectAudio(info)
         val muxedCandidates = info.videoStreams
             .filter { it.isUrl && it.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP }
+            .groupBy { it.tier() }
+            .flatMap { (_, sameHeight) -> StreamHealth.avoidRefused(sameHeight) }
         val muxed = when {
             chosen != null -> {
                 muxedCandidates.filter { it.tier() <= chosen }
@@ -811,9 +817,11 @@ object StreamSelection {
      * response names real tracks, because that bucket is the same default audio arriving twice.
      */
     fun audioTracks(info: StreamInfo): List<AudioTrackOption> {
-        val usable = info.audioStreams.filter {
-            it.isUrl && it.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP
-        }
+        val usable = StreamHealth.avoidRefused(
+            info.audioStreams.filter {
+                it.isUrl && it.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP
+            },
+        )
         if (usable.isEmpty()) return emptyList()
         val named = usable.any {
             !it.audioTrackId.isNullOrBlank() || !it.audioTrackName.isNullOrBlank() || it.audioLocale != null

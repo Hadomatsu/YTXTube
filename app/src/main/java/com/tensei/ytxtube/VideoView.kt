@@ -91,6 +91,8 @@ import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.Subtitles
 import androidx.compose.material.icons.rounded.ClosedCaption
 import androidx.compose.material.icons.rounded.ClosedCaptionOff
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material.icons.rounded.ZoomIn
 import androidx.compose.ui.composed
 import androidx.compose.ui.graphics.luminance
@@ -777,6 +779,22 @@ fun VideoContent(
                                 if (fullscreenControlsScrub) FullscreenControlsLift else 0.dp,
                         ),
                 ) {
+                    // Long press on the captions button: A- / A+ right above it, to size the
+                    // captions while watching. It closes itself a few seconds after the last tap.
+                    var captionSizerOpen by remember { mutableStateOf(false) }
+                    var captionSizerTaps by remember { mutableStateOf(0) }
+                    LaunchedEffect(captionSizerOpen, captionSizerTaps) {
+                        if (captionSizerOpen) {
+                            kotlinx.coroutines.delay(4_000)
+                            captionSizerOpen = false
+                        }
+                    }
+                    if (captionSizerOpen) {
+                        CaptionSizePill(
+                            backdrop = videoBackdrop,
+                            modifier = Modifier.align(Alignment.End).padding(end = 4.dp, bottom = 6.dp),
+                        ) { touched(); captionSizerTaps++ }
+                    }
                     Row(
                         Modifier.height(EdgeScrubTimeRowHeight),
                         verticalAlignment = Alignment.CenterVertically,
@@ -801,6 +819,12 @@ fun VideoContent(
                             iconSize = 20.dp,
                             tinted = captionsOn,
                             backdrop = videoBackdrop,
+                            onLongClick = {
+                                touched()
+                                if (!captionsOn) state.toggleCaptions()
+                                captionSizerOpen = true
+                                captionSizerTaps++
+                            },
                         ) { touched(); state.toggleCaptions() }
                         Spacer(Modifier.width(4.dp))
                         if (PlayerControlSettings.showQuickControls) {
@@ -1479,12 +1503,13 @@ private fun GlassButton(
     iconSize: Dp = 22.dp,
     tinted: Boolean = true,
     backdrop: Backdrop? = null,
+    onLongClick: (() -> Unit)? = null,
     onClick: () -> Unit,
 ) {
     Box(
         modifier = modifier
             .size(size)
-            .pressable(enabled = enabled, onClick = onClick)
+            .pressable(enabled = enabled, onLongClick = onLongClick, onClick = onClick)
             .clip(CircleShape)
             .then(
                 if (backdrop != null) {
@@ -1946,6 +1971,52 @@ private fun PlaybackStatsBlock(state: PlayerState) {
                 Text(label, color = c.onSurfaceVariant, fontSize = 12.5.sp, modifier = Modifier.width(112.dp))
                 Text(value, color = c.onSurface, fontSize = 12.5.sp, fontWeight = FontWeight.Medium)
             }
+        }
+    }
+}
+
+
+/** A- / size / A+ for the captions, shown above the captions button after a long press. */
+@Composable
+private fun CaptionSizePill(backdrop: Backdrop?, modifier: Modifier = Modifier, onChange: () -> Unit) {
+    val shape = RoundedCornerShape(50)
+    Row(
+        modifier
+            .clip(shape)
+            .then(
+                if (backdrop != null) {
+                    Modifier.liquidGlass(
+                        backdrop,
+                        glassSpec(
+                            shape = shape,
+                            tint = glassOverlayFill(0.5f),
+                            blur = 16.dp,
+                            refractionHeight = 9.dp,
+                            refractionAmount = 15.dp,
+                        ),
+                    )
+                } else {
+                    Modifier.background(Color.Black.copy(alpha = 0.55f))
+                },
+            )
+            .padding(horizontal = 4.dp, vertical = 3.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        GlassButton(Icons.Rounded.Remove, "Smaller captions", true, size = 34.dp, iconSize = 20.dp, tinted = false) {
+            CaptionPreference.updateScale(CaptionPreference.scale - 0.1f)
+            onChange()
+        }
+        Text(
+            "${(CaptionPreference.scale * 100).roundToInt()}%",
+            color = Color.White,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.widthIn(min = 52.dp),
+        )
+        GlassButton(Icons.Rounded.Add, "Bigger captions", true, size = 34.dp, iconSize = 20.dp, tinted = false) {
+            CaptionPreference.updateScale(CaptionPreference.scale + 0.1f)
+            onChange()
         }
     }
 }
