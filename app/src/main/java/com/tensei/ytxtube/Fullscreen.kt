@@ -108,7 +108,8 @@ fun rememberOrientationController(activity: Activity) = remember(activity) { Ori
 fun SystemBarsHidden(hidden: Boolean) {
     val view = LocalView.current
     val dark = isDarkTheme()
-    DisposableEffect(hidden, dark) {
+    val hideStatus = ThemeSettings.hideStatusBar
+    DisposableEffect(hidden, dark, hideStatus) {
         val activity = view.context as? ComponentActivity ?: (view.context as? Activity)
         val window = activity?.window
         val controller = window?.let { WindowCompat.getInsetsController(it, view) }
@@ -127,6 +128,12 @@ fun SystemBarsHidden(hidden: Boolean) {
                     controller?.isAppearanceLightStatusBars = !dark
                     controller?.isAppearanceLightNavigationBars = !dark
                 }
+            }
+            // Settings, Hide status bar (on by default): the clock and battery stay away until a
+            // swipe down from the top edge brings them in for a moment.
+            if (hideStatus) {
+                controller?.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                controller?.hide(WindowInsetsCompat.Type.statusBars())
             }
         }
 

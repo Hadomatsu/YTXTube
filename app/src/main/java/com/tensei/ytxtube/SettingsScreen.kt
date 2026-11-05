@@ -1347,6 +1347,15 @@ private fun GeneralModificationContent(context: Context) {
         HorizontalDivider(color = c.onSurface.copy(alpha = 0.08f))
 
         SettingsSwitchRow(
+            title = I18n.t("hide_status_bar", "Hide status bar"),
+            subtitle = I18n.t("hide_status_bar_sub", "Hide the time, battery and notification icons at the top. Swipe down from the top edge to see them for a moment"),
+            checked = ThemeSettings.hideStatusBar,
+            onCheckedChange = { ThemeSettings.updateHideStatusBar(it) },
+        )
+
+        HorizontalDivider(color = c.onSurface.copy(alpha = 0.08f))
+
+        SettingsSwitchRow(
             title = I18n.t("home_grid", "Grid layout on Home"),
             subtitle = I18n.t("home_grid_sub", "Two videos side by side on a wide screen (unfolded). On a narrow screen (folded) it stays one video per row"),
             checked = HomeLayoutSettings.grid,

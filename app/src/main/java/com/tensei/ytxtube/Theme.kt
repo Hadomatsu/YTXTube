@@ -451,12 +451,21 @@ object ThemeSettings {
         private set
     var useSystemFont by mutableStateOf(false)
         private set
+    /** Hide the clock, battery and other status icons; a swipe down from the top shows them briefly. */
+    var hideStatusBar by mutableStateOf(true)
+        private set
 
     fun init(context: Context) {
         val p = context.getSharedPreferences("appearance", Context.MODE_PRIVATE).also { prefs = it }
         seed = p.getString("seed", null) ?: SEED_YOUTUBE
         mode = p.getString("mode", "system") ?: "system"
         useSystemFont = p.getBoolean("use_system_font", false)
+        hideStatusBar = p.getBoolean("hide_status_bar", true)
+    }
+
+    fun updateHideStatusBar(enabled: Boolean) {
+        hideStatusBar = enabled
+        prefs?.edit()?.putBoolean("hide_status_bar", enabled)?.apply()
     }
 
     fun choose(seedHex: String?) {
