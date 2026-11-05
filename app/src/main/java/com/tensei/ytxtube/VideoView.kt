@@ -186,6 +186,8 @@ fun VideoContent(
     onInactiveTap: () -> Unit = {},
 
     portraitEdgeScrub: Boolean = false,
+    /** Room for the status bar when the windowed video sits under it. */
+    topInset: Dp = 0.dp,
     // A swipe down on the windowed video drags the player toward the mini player. These carry the
     // finger (in pixels, down is positive) and the release velocity to whoever owns that morph.
     onSwipeDrag: ((Float) -> Unit)? = null,
@@ -626,10 +628,10 @@ fun VideoContent(
             SeekBurstPill(burstSide, burstSeconds, burstTaps, burstActive, fullscreen)
         }
         if (state.holdSpeedActive) {
-            HoldSpeedPill(Modifier.align(Alignment.TopCenter).padding(top = 12.dp).graphicsLayer { alpha = controlsAlpha() })
+            HoldSpeedPill(Modifier.align(Alignment.TopCenter).padding(top = 12.dp + if (fullscreen) 0.dp else topInset).graphicsLayer { alpha = controlsAlpha() })
         }
         gestureHud?.let { (icon, info) ->
-            GestureHUD(icon = icon, label = info.first, percent = info.second, modifier = Modifier.align(Alignment.TopCenter).padding(top = 18.dp))
+            GestureHUD(icon = icon, label = info.first, percent = info.second, modifier = Modifier.align(Alignment.TopCenter).padding(top = 18.dp + if (fullscreen) 0.dp else topInset))
         }
 
         val error = state.error
@@ -644,7 +646,7 @@ fun VideoContent(
             CircularProgressIndicator(color = Color.White, strokeWidth = 3.dp, modifier = Modifier.align(Alignment.Center).size(36.dp))
         }
         if (!scrubbing) {
-            SkippedNote(state, Modifier.align(Alignment.TopCenter).padding(top = 12.dp).graphicsLayer { alpha = controlsAlpha() })
+            SkippedNote(state, Modifier.align(Alignment.TopCenter).padding(top = 12.dp + if (fullscreen) 0.dp else topInset).graphicsLayer { alpha = controlsAlpha() })
         }
 
         if (!scrubbing && !controlsVisible) {
@@ -677,7 +679,7 @@ fun VideoContent(
                     Modifier
                         .align(Alignment.TopStart)
                         .fillMaxWidth()
-                        .then(if (fullscreen) Modifier.statusBarsPadding() else Modifier)
+                        .then(if (fullscreen) Modifier.statusBarsPadding() else Modifier.padding(top = topInset))
                         .padding(horizontal = 10.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {

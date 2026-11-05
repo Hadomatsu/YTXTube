@@ -576,7 +576,9 @@ fun YtxTubeApp() {
     BoxWithConstraints(Modifier.fillMaxSize().background(c.surface)) {
 
         val stageAspect = player.stageAspect
-        val stageTopPx = with(density) {
+        // The video goes right up under the status bar (clock and camera over its top edge);
+        // only the TV layout keeps it below.
+        val stageTopPx = if (!TvMode.isTv) 0f else with(density) {
             WindowInsets.statusBars.asPaddingValues().calculateTopPadding().toPx()
         }
         val isLiquidMini = player.isMusicMode || MiniPlayerSettings.useLiquidMiniPlayer

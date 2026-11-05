@@ -291,7 +291,7 @@ fun PlayerScreen(
                     ),
                 )
                 // Color shade stretching down behind title, channel and fading away slowly after the like/action buttons row
-                val startY = top.toPx() + (size.width / aspect * 0.4f).coerceAtLeast(0f)
+                val startY = (size.width / aspect * 0.4f).coerceAtLeast(0f)
                 val glowReach = minOf(size.height * 0.58f, size.width * 1.35f).coerceAtLeast(startY + 50f)
                 drawRect(
                     Brush.verticalGradient(
@@ -309,7 +309,7 @@ fun PlayerScreen(
                 drawRect(
                     Brush.radialGradient(
                         colors = listOf(ambientColor.copy(alpha = bodyStrength * 0.7f), Color.Transparent),
-                        center = Offset(size.width * (0.85f - 0.7f * drift), top.toPx() + size.width / aspect + 100f),
+                        center = Offset(size.width * (0.85f - 0.7f * drift), size.width / aspect + 100f),
                         radius = bottomRadius,
                     ),
                 )
@@ -394,10 +394,9 @@ fun PlayerScreen(
                 }
             }
         } else {
+        // The video starts at the very top of the screen, under the status bar, like the feed.
+        StatusIconsOverVideo(state)
         Column(Modifier.fillMaxSize()) {
-            Spacer(Modifier.height(top))
-
-
             Box(Modifier.zIndex(2f)) {
                 VideoStage(state, morph, onCollapse, onFullscreen, interactive)
             }
@@ -493,7 +492,7 @@ fun PlayerScreen(
                 )
             } else {
                 val screenW = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp.dp
-                val videoBottom = top + top + (screenW - StageSideGap * 2) / state.stageAspect
+                val videoBottom = top + (screenW - StageSideGap * 2) / state.stageAspect
                 CommentsPanel(
                     state.comments,
                     partialTop = videoBottom + 10.dp,
@@ -515,6 +514,8 @@ fun PlayerScreen(
 @Composable
 private fun VideoStage(state: PlayerState, morph: PlayerMorph, onCollapse: () -> Unit, onFullscreen: () -> Unit, interactive: Boolean) {
     val reduced = rememberReducedMotion()
+    // The stage sits under the status bar, so its own top buttons and pills move down by it.
+    val statusTop = if (TvMode.isTv) 0.dp else WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val scope = rememberCoroutineScope()
 
     val aspect by animateFloatAsState(
@@ -614,6 +615,7 @@ private fun VideoStage(state: PlayerState, morph: PlayerMorph, onCollapse: () ->
             onToggleFullscreen = onFullscreen,
             controlsAlpha = controlsAlpha,
             portraitEdgeScrub = true,
+            topInset = statusTop,
             onSwipeDrag = { morph.dragBy(it) },
             onSwipeEnd = { morph.settle(it, reduced) },
             modifier = stage,
@@ -1970,5 +1972,20 @@ private fun VideoDetailsBlock(
             onOpen = { state.sheet = PlayerSheet.Comments },
             live = isLiveStream,
         )
+    }
+}
+
+
+/** White status bar icons while the video is open under them, whatever the app theme. */
+@Composable
+private fun StatusIconsOverVideo(state: PlayerState) {
+    val view = androidx.compose.ui.platform.LocalView.current
+    val dark = isDarkTheme()
+    val overVideo = state.expanded && !state.fullscreen
+    DisposableEffect(overVideo, dark) {
+        val window = (view.context as? android.app.Activity)?.window
+        val controller = window?.let { androidx.core.view.WindowCompat.getInsetsController(it, view) }
+        if (overVideo) controller?.isAppearanceLightStatusBars = false
+        onDispose { if (overVideo && !state.fullscreen) controller?.isAppearanceLightStatusBars = !dark }
     }
 }
