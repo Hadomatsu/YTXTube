@@ -332,6 +332,7 @@ class PlayerState(private val scope: CoroutineScope) {
 
     /** The cue text Media3's text renderer is currently showing, or null when captions are off. */
     var captionText by mutableStateOf<String?>(null)
+        private set
 
     /** Second caption language under the first (dual subtitles), or null. */
     var captionText2 by mutableStateOf<String?>(null)
@@ -356,7 +357,6 @@ class PlayerState(private val scope: CoroutineScope) {
 
     /** Videos played before this one (video mode), for swiping back on the mini player. */
     private val videoHistory = ArrayList<VideoItem>()
-        private set
 
     private var likeOverrides by mutableStateOf<Map<String, LikeStatus>>(emptyMap())
     private var likeDeltas by mutableStateOf<Map<String, Long>>(emptyMap())

@@ -41,6 +41,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
@@ -537,7 +538,7 @@ fun Modifier.skimGesture(video: VideoItem, onSkim: (Long?) -> Unit): Modifier =
             // Steps of 1 % so a still finger does not keep asking for new frames.
             return (kotlin.math.round(f * 100f) / 100f * durationMs).toLong()
         }
-        androidx.compose.foundation.gestures.detectHorizontalDragGestures(
+        detectHorizontalDragGestures(
             onDragStart = { offset -> onSkim(at(offset.x)) },
             onDragEnd = { onSkim(null) },
             onDragCancel = { onSkim(null) },
@@ -613,7 +614,7 @@ fun SwipeToAct(video: VideoItem, content: @Composable () -> Unit) {
                 .graphicsLayer { translationX = offset.value }
                 .pointerInput(video.id) {
                     var armed = false
-                    androidx.compose.foundation.gestures.detectHorizontalDragGestures(
+                    detectHorizontalDragGestures(
                         onDragStart = { armed = false },
                         onDragEnd = {
                             val v = offset.value
