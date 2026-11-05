@@ -89,8 +89,9 @@ class PlayerMorph(
         dragging = false
         val p = progress.value
         val expand = when {
-            velocityY > FLING_PX_PER_S -> false
-            velocityY < -FLING_PX_PER_S -> true
+            // A light flick is enough: any clear movement down minimises, up opens.
+            velocityY > SETTLE_FLING_PX_PER_S -> false
+            velocityY < -SETTLE_FLING_PX_PER_S -> true
             startedExpanded -> p > 1f - DISMISS_FROM_FULL
             else -> p > EXPAND_FROM_MINI
         }
@@ -151,8 +152,11 @@ class PlayerMorph(
 
     companion object {
         const val FLING_PX_PER_S = 2200f
-        const val DISMISS_FROM_FULL = 0.32f
-        const val EXPAND_FROM_MINI = 0.32f
+        // A short, slow drag is enough to minimise or open the player (it used to need a third
+        // of the screen or a hard flick, so short swipes sprang back).
+        const val SETTLE_FLING_PX_PER_S = 700f
+        const val DISMISS_FROM_FULL = 0.12f
+        const val EXPAND_FROM_MINI = 0.15f
         private val settleSpec = spring(dampingRatio = 0.86f, stiffness = 550f, visibilityThreshold = 0.0005f)
         private val closeSpec = spring(dampingRatio = 1f, stiffness = 550f, visibilityThreshold = 0.0005f)
     }
