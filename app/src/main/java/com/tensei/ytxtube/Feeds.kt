@@ -166,6 +166,18 @@ class FeedState(
 class LibraryData(scope: CoroutineScope) {
 
     val home = FeedState(scope, freshOnRefresh = true) { InnerTube.homeFeed(it) }
+
+    /** The chosen topic chip on Home and its own feed, or null for the normal feed. */
+    var topic by mutableStateOf<HomeChip?>(null)
+        private set
+    var topicFeed by mutableStateOf<FeedState?>(null)
+        private set
+
+    fun selectTopic(chip: HomeChip?) {
+        if (chip?.title == topic?.title) return
+        topic = chip
+        topicFeed = chip?.let { c -> FeedState(scope) { next -> InnerTube.topicFeed(c, next) }.also { it.ensureLoaded() } }
+    }
     val subscriptions = FeedState(scope) { InnerTube.subscriptionsFeed(it) }
     val history = FeedState(scope) { InnerTube.history(it) }
     var channels by mutableStateOf<List<ChannelRef>>(emptyList())

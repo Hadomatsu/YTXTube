@@ -133,6 +133,9 @@ fun HomeFilterChips(
     selected: HomeFilter,
     onSelect: (HomeFilter) -> Unit,
     modifier: Modifier = Modifier,
+    topics: List<HomeChip> = emptyList(),
+    selectedTopic: HomeChip? = null,
+    onTopic: (HomeChip) -> Unit = {},
 ) {
     val isDark = isDarkTheme()
     val isAmoled = ThemeSettings.mode == "amoled"
@@ -142,8 +145,16 @@ fun HomeFilterChips(
             .padding(horizontal = 16.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        items(HomeFilter.entries) { filter ->
-            val isSelected = filter == selected
+        // All first, then YouTube's own topics (your interests), then the app's filters.
+        // A YouTube topic with the same name as one of the app's filters (e.g. "Live") is left out.
+        val shownTopics = topics.filterNot { t ->
+            HomeFilter.entries.any { it.label.equals(t.title, ignoreCase = true) || it.raw.equals(t.title, ignoreCase = true) }
+        }
+        val order = listOf<Any>(HomeFilter.All) + shownTopics + HomeFilter.entries.filter { it != HomeFilter.All }
+        items(order, key = { if (it is HomeChip) "topic-" + it.title else "filter-" + (it as HomeFilter).name }) { entry ->
+            val topic = entry as? HomeChip
+            val filter = entry as? HomeFilter ?: HomeFilter.All
+            val isSelected = if (topic != null) topic.title == selectedTopic?.title else selectedTopic == null && filter == selected
             Box(
                 modifier = Modifier
                     .clip(RoundedCornerShape(8.dp))
@@ -155,12 +166,12 @@ fun HomeFilterChips(
                             else -> Color(0xFFE5E5E5)
                         }
                     )
-                    .pressable(pressedScale = 0.94f) { onSelect(filter) }
+                    .pressable(pressedScale = 0.94f) { if (topic != null) onTopic(topic) else onSelect(filter) }
                     .padding(horizontal = 14.dp, vertical = 7.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
-                    filter.label,
+                    topic?.title ?: filter.label,
                     color = when {
                         isSelected -> if (isDark || isAmoled) Color.Black else Color.White
                         isDark || isAmoled -> Color.White
@@ -228,13 +239,29 @@ fun HomeScreen(
                 // the bottom bar.
                 HomeFilterChips(
                     selected = activeFilter,
-                    onSelect = { activeFilter = it },
+                    onSelect = { lib.selectTopic(null); activeFilter = it },
+                    topics = HomeTopics.chips,
+                    selectedTopic = lib.topic,
+                    onTopic = { activeFilter = HomeFilter.All; lib.selectTopic(it) },
                     modifier = Modifier.statusBarsPadding().padding(top = 6.dp),
                 )
             }
         },
     ) { top ->
+        val topicFeed = lib.topicFeed
         when {
+            // A YouTube topic (one of your interests) is picked: only that topic's videos.
+            lib.topic != null && topicFeed != null -> FeedList(
+                feed = topicFeed,
+                contentPadding = contentPadding.withTop(top),
+                onOpen = onOpen,
+                scrollToTop = scrollToTop,
+                indicatorTop = top,
+                filterScrollKey = lib.topic,
+                grid = HomeLayoutSettings.grid,
+                feedFilters = true,
+                pinchColumns = true,
+            )
             filteredVideos != null && filteredVideos.isEmpty() && !lib.home.loading -> {
                 Box(Modifier.fillMaxSize().padding(contentPadding.withTop(top))) {
                     EmptyState(

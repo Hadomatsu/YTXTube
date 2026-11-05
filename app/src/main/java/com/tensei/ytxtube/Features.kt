@@ -536,3 +536,17 @@ class VideoActions(
 )
 
 val LocalVideoActions = staticCompositionLocalOf { VideoActions() }
+
+
+/** One of YouTube's topic chips on Home and the token that loads its videos. */
+data class HomeChip(val title: String, val token: String)
+
+/** The topic chips from the last Home load (signed in). */
+object HomeTopics {
+    var chips by mutableStateOf<List<HomeChip>>(emptyList())
+        private set
+
+    fun update(list: List<HomeChip>) {
+        if (list.isNotEmpty()) chips = list
+    }
+}

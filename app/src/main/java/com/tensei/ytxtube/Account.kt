@@ -1635,6 +1635,33 @@ object InnerTube {
 
     suspend fun home(next: String? = null) = browse("FEwhat_to_watch", next)
 
+    /** The topic chips at the top of YouTube's home (All, Gaming, Bloons Tower Defense, ...). */
+    private fun parseTopicChips(root: JSONObject): List<HomeChip> {
+        val out = LinkedHashMap<String, HomeChip>()
+        root.walk { key, obj ->
+            when (key) {
+                "chipCloudChipRenderer" -> {
+                    val title = obj.text("text")?.trim().orEmpty()
+                    val token = obj.optJSONObject("navigationEndpoint")?.optJSONObject("continuationCommand")?.optString("token")
+                        ?.ifBlank { null } ?: obj.collectStrings("token").firstOrNull { it.isNotBlank() }
+                    if (title.isNotEmpty() && token != null) out.putIfAbsent(title, HomeChip(title, token))
+                }
+                "chipViewModel" -> {
+                    val title = obj.optString("text").trim()
+                    val token = obj.collectStrings("token").firstOrNull { it.isNotBlank() }
+                    if (title.isNotEmpty() && token != null) out.putIfAbsent(title, HomeChip(title, token))
+                }
+            }
+        }
+        // "All" is the normal home feed, which the app already shows.
+        return out.values.filterNot { it.title.equals("All", ignoreCase = true) || it.title.equals(I18n.t("filter_all", "All"), ignoreCase = true) }
+    }
+
+    /** The home feed narrowed to one topic chip. */
+    suspend fun topicFeed(chip: HomeChip, next: String? = null): FeedPage = withContext(Dispatchers.IO) {
+        parseFeed(post("browse", JSONObject().put("continuation", next ?: chip.token)))
+    }
+
     
 
 
@@ -1673,7 +1700,10 @@ object InnerTube {
         if (Account.signedIn && (next == null || !next.startsWith("anon_feed:"))) {
             val body = if (next != null) JSONObject().put("continuation", next)
                        else JSONObject().put("browseId", "FEwhat_to_watch")
-            val personal = runCatching { parseFeed(post("browse", body)) }.getOrNull()
+            val root = runCatching { post("browse", body) }.getOrNull()
+            // The first page carries YouTube's own topic chips (e.g. "Bloons Tower Defense").
+            if (next == null && root != null) runCatching { parseTopicChips(root) }.onSuccess { HomeTopics.update(it) }
+            val personal = root?.let { runCatching { parseFeed(it) }.getOrNull() }
             if (personal != null && (personal.videos.isNotEmpty() || personal.next != null)) {
                 return@withContext personal
             }
