@@ -334,6 +334,21 @@ fun CommentsCard(state: CommentsState, onOpen: () -> Unit, live: Boolean = false
 
 
 
+/** The comments panel's last height (a share of the screen), kept between videos and restarts. */
+object CommentsPanelHeight {
+    private val prefs by lazy {
+        YTXTubeApplication.appContext.getSharedPreferences("ui_prefs", android.content.Context.MODE_PRIVATE)
+    }
+
+    fun remembered(fullPx: Float): Float? =
+        runCatching { prefs.getFloat("comments_height", -1f) }.getOrDefault(-1f).takeIf { it > 0f }?.let { it * fullPx }
+
+    fun remember(heightPx: Float, fullPx: Float) {
+        if (fullPx <= 0f) return
+        runCatching { prefs.edit().putFloat("comments_height", (heightPx / fullPx).coerceIn(0f, 1f)).apply() }
+    }
+}
+
 @Composable
 fun CommentsPanel(
     state: CommentsState,
@@ -350,7 +365,12 @@ fun CommentsPanel(
         val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
         val fullPx = with(density) { (maxHeight - statusTop - 8.dp).toPx() }
         val partialPx = with(density) { (maxHeight - partialTop).toPx() }.coerceIn(fullPx * 0.35f, fullPx)
-        val height = remember { Animatable(partialPx) }
+        // The panel stays at whatever height it is let go at; below this it closes.
+        val floorPx = maxOf(with(density) { 180.dp.toPx() }, fullPx * 0.22f).coerceAtMost(partialPx)
+        // Opens at the height it was last left at, or just under the video the first time.
+        val height = remember {
+            Animatable(CommentsPanelHeight.remembered(fullPx)?.coerceIn(floorPx, fullPx) ?: partialPx)
+        }
 
         val slide = remember { Animatable(1f) }
         LaunchedEffect(Unit) { if (reduced) slide.snapTo(0f) else slide.animateTo(0f, spring(dampingRatio = 0.86f, stiffness = 550f)) }
@@ -361,22 +381,21 @@ fun CommentsPanel(
         BackHandler { close() }
         fun dragBy(dy: Float): Float {
             val before = height.value
-            val after = (before - dy).coerceIn(partialPx * 0.25f, fullPx)
+            val after = (before - dy).coerceIn(floorPx * 0.5f, fullPx)
             scope.launch { height.snapTo(after) }
             return before - after
         }
         fun settle(velocity: Float) {
             val h = height.value
+            val springy = spring<Float>(dampingRatio = 0.86f, stiffness = 550f)
             when {
-
-
-                h < partialPx * 0.7f || velocity > 1200f && h < partialPx - 1f || velocity > 1800f && h <= partialPx + 1f -> close()
-                velocity < -1200f -> scope.launch { height.animateTo(fullPx, spring(dampingRatio = 0.86f, stiffness = 550f)) }
-                velocity > 1200f -> scope.launch { height.animateTo(partialPx, spring(dampingRatio = 0.86f, stiffness = 550f)) }
-                else -> {
-                    val target = if (h > (partialPx + fullPx) / 2f) fullPx else partialPx
-                    scope.launch { height.animateTo(target, spring(dampingRatio = 0.86f, stiffness = 550f)) }
-                }
+                // Dragged below the lowest height, or flicked down hard from low down: close.
+                h < floorPx || velocity > 2400f && h <= partialPx + 1f -> close()
+                // A hard flick still jumps all the way up or back to just under the video.
+                velocity < -2400f -> scope.launch { height.animateTo(fullPx, springy); CommentsPanelHeight.remember(fullPx, fullPx) }
+                velocity > 2400f -> scope.launch { height.animateTo(partialPx, springy); CommentsPanelHeight.remember(partialPx, fullPx) }
+                // Otherwise it simply stays where it was let go.
+                else -> CommentsPanelHeight.remember(h, fullPx)
             }
         }
 
@@ -389,7 +408,7 @@ fun CommentsPanel(
 
                 fun pullBy(dy: Float): Float {
                     val before = height.value
-                    val after = (before - dy).coerceIn(partialPx * 0.25f, pullFrom)
+                    val after = (before - dy).coerceIn(floorPx * 0.5f, pullFrom)
                     scope.launch(start = CoroutineStart.UNDISPATCHED) { height.snapTo(after) }
                     return before - after
                 }
