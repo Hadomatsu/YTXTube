@@ -425,6 +425,7 @@ class PlayerState(private val scope: CoroutineScope) {
         }
         isMusicMode = false
         musicMore = null
+        musicGen++
         AudioOnly.set(false)
         runCatching { applyVideoTrack() }
         if (expand) expanded = true
@@ -441,6 +442,7 @@ class PlayerState(private val scope: CoroutineScope) {
     // playlist or album being played, then (with Autoplay on) from YouTube Music's radio for the
     // last song, so it never just stops or falls back to ordinary YouTube videos.
     private var musicMore: MusicFeeder? = null
+    private var musicGen = 0
     private var unshuffledMusic: List<VideoItem>? = null
     private val musicFill = kotlinx.coroutines.sync.Mutex()
 
@@ -469,6 +471,7 @@ class PlayerState(private val scope: CoroutineScope) {
             start = 0
         }
         list.forEach { known[it.id] = it }
+        musicGen++
         musicMore = more
         openMusicQueue(list, start, expand)
     }
@@ -495,16 +498,17 @@ class PlayerState(private val scope: CoroutineScope) {
     private suspend fun fillMusicQueue() {
         musicFill.lock()
         try {
-            repeat(3) {
+            repeat(4) {
                 if (!isMusicMode || musicQueue.size >= 5) return
-                var feeder = musicMore
-                if (feeder == null) {
+                val gen = musicGen
+                val feeder: MusicFeeder = musicMore ?: run {
                     if (!autoPlayEnabled) return
                     val seed = musicQueue.lastOrNull() ?: current ?: return
-                    feeder = MusicFeeds.radio(seed.id)
-                    musicMore = feeder
+                    MusicFeeds.radio(seed.id).also { musicMore = it }
                 }
                 val got = runCatching { feeder() }.getOrDefault(emptyList())
+                // A new queue was started meanwhile: these songs belong to the old one.
+                if (gen != musicGen) return@repeat
                 if (got.isEmpty()) {
                     musicMore = null
                     if (feeder.isRadio) return
