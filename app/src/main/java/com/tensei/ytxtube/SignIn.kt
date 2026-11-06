@@ -134,6 +134,17 @@ fun SignInScreen(onDone: () -> Unit, onCancel: () -> Unit) {
                         settings.domStorageEnabled = true
                         settings.userAgentString = WebSettings.getDefaultUserAgent(context).replace("; wv", "")
 
+                        // The email is read from Google's own pages as they show it, so finishing
+                        // does not have to wait for YouTube's heavy page to run anything.
+                        var seenEmail: String? = null
+                        fun readEmail(view: WebView) {
+                            view.evaluateJavascript(
+                                """(function(){ try { var m = document.body.innerText.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/); return m ? m[0] : ''; } catch(e){ return ''; } })()"""
+                            ) { js ->
+                                js?.replace("\"", "")?.trim()?.takeIf { it.contains("@") && it.length > 5 }?.let { seenEmail = it }
+                            }
+                        }
+
                         fun checkSignIn(view: WebView, url: String) {
                             if (finishing) return
                             val c1 = cookies.getCookie("https://www.youtube.com").orEmpty()
@@ -145,26 +156,25 @@ fun SignInScreen(onDone: () -> Unit, onCancel: () -> Unit) {
                             if (!Account.looksSignedIn(header)) return
                             if (!url.contains("youtube.com") && !header.contains("LOGIN_INFO") && !header.contains("SAPISID")) return
                             finishing = true
-                            view.evaluateJavascript(
-                                """(function(){ try { var m = document.body.innerText.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/); return m ? m[0] : ''; } catch(e){ return ''; } })()"""
-                            ) { jsEmail ->
-                                val cleanEmail = jsEmail?.replace("\"", "")?.trim()?.takeIf { it.contains("@") && it.length > 5 }
-                                scope.launch {
-                                    runCatching { Account.completeSignIn(header, cleanEmail) }
-                                        .onSuccess {
-                                            cookies.flush()
-                                            onDone()
-                                        }
-                                        .onFailure {
-                                            finishing = false
-                                            error = "Signed in, but YouTube didn't answer. Check your connection and try again."
-                                        }
-                                }
+                            // Signed in: YouTube's own (heavy) page is not needed, so stop it. On an
+                            // older phone loading it kept "Finishing sign-in" going for a long time.
+                            view.stopLoading()
+                            scope.launch {
+                                runCatching { Account.completeSignIn(header, seenEmail) }
+                                    .onSuccess {
+                                        cookies.flush()
+                                        onDone()
+                                    }
+                                    .onFailure {
+                                        finishing = false
+                                        error = "Signed in, but YouTube didn't answer. Check your connection and try again."
+                                    }
                             }
                         }
 
                         webViewClient = object : WebViewClient() {
                             override fun onPageFinished(view: WebView, url: String) {
+                                if (url.contains("accounts.google.com")) readEmail(view)
                                 checkSignIn(view, url)
                             }
 

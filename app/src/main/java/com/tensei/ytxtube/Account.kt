@@ -267,8 +267,13 @@ object Account {
             parseCookieHeader(cookieHeader, cookies)
         }
         persistCookies()
-        refreshClientConfig()
-        val rawP = fetchProfileFromNetwork()
+        // Both at once: the YouTube page for the client settings and the account's name and picture.
+        val rawP = kotlinx.coroutines.coroutineScope {
+            val config = async { refreshClientConfig() }
+            val profile = async { fetchProfileFromNetwork() }
+            config.await()
+            profile.await()
+        }
         val emailRegex = Regex("""[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}""")
         val detectedEmail = explicitEmail
             ?: emailRegex.find(rawP?.handle.orEmpty())?.value
