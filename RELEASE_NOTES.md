@@ -1,3 +1,3 @@
-YTXTube Custom 2.4.4
+YTXTube Custom 2.4.5
 
-- Sign-in finishes much faster, especially on older phones: YouTube's heavy page is no longer loaded once you are signed in, and the account details are fetched at the same time as the rest
+- Sign-in no longer gets stuck on "Finishing sign-in": the account is saved and used as soon as Google confirms it, and its name and picture load in the background

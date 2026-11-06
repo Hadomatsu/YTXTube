@@ -260,54 +260,74 @@ object Account {
         return "SAPISID" in names || "__Secure-3PAPISID" in names || "SID" in names
     }
 
-    suspend fun completeSignIn(cookieHeader: String, explicitEmail: String? = null) = withContext(Dispatchers.IO) {
-        saveActive()
-        synchronized(cookies) {
-            cookies.clear()
-            parseCookieHeader(cookieHeader, cookies)
-        }
-        persistCookies()
-        // Both at once: the YouTube page for the client settings and the account's name and picture.
-        val rawP = kotlinx.coroutines.coroutineScope {
-            val config = async { refreshClientConfig() }
-            val profile = async { fetchProfileFromNetwork() }
-            config.await()
-            profile.await()
-        }
+    /**
+     * Finishes signing in as soon as the session cookies are known: the account is saved and used
+     * at once, and its name and picture (plus YouTube's client settings) are fetched afterwards in
+     * the background. The sign-in screen used to wait for those two requests, which on a slow
+     * phone or connection could leave it on "Finishing sign-in" for a very long time.
+     */
+    suspend fun completeSignIn(cookieHeader: String, explicitEmail: String? = null) {
         val emailRegex = Regex("""[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}""")
-        val detectedEmail = explicitEmail
-            ?: emailRegex.find(rawP?.handle.orEmpty())?.value
-            ?: emailRegex.find(rawP?.name.orEmpty())?.value
-            ?: emailRegex.find(cookieHeader)?.value
-        val displayName = when {
-            rawP != null && isCleanAccountName(rawP.name) -> rawP.name
-            !detectedEmail.isNullOrBlank() -> detectedEmail
-            !rawP?.handle.isNullOrBlank() && isCleanAccountName(rawP.handle) -> rawP.handle
-            else -> "Google Account"
-        }
-        val p = Profile(displayName, rawP?.handle ?: detectedEmail, rawP?.avatar)
-        val id = accountId(cookieHeader)
-        withContext(Dispatchers.Main) {
-            val entry = StoredAccount(
-                id = id,
-                name = p.name,
-                handle = p.handle,
-                avatar = p.avatar,
-                cookies = cookieHeader(),
-                clientVersion = clientVersion,
-                visitor = visitorData,
-                email = detectedEmail,
-            )
-            val index = entries.indexOfFirst { it.id == id || sameSession(it.cookies, cookieHeader) }
-            if (index >= 0) entries[index] = entry else entries += entry
-            activeAccountId = id
-            profile = p
-            store?.apply {
-                put(KEY_NAME, p.name); put(KEY_HANDLE, p.handle); put(KEY_AVATAR, p.avatar)
+        withContext(Dispatchers.IO) {
+            saveActive()
+            synchronized(cookies) {
+                cookies.clear()
+                parseCookieHeader(cookieHeader, cookies)
             }
-            persistAccounts()
-            publish()
+            persistCookies()
         }
+        val id = accountId(cookieHeader)
+        val email = explicitEmail ?: emailRegex.find(cookieHeader)?.value
+        withContext(Dispatchers.Main) {
+            val known = entries.firstOrNull { it.id == id || sameSession(it.cookies, cookieHeader) }
+            val name = known?.name?.takeIf { isCleanAccountName(it) } ?: email ?: "Google Account"
+            val p = Profile(name, known?.handle ?: email, known?.avatar)
+            saveEntry(id, p, email ?: known?.email, cookieHeader)
+        }
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.IO).launch {
+            val rawP = kotlinx.coroutines.coroutineScope {
+                val config = async { refreshClientConfig() }
+                val profile = async { fetchProfileFromNetwork() }
+                config.await()
+                profile.await()
+            }
+            val detectedEmail = email
+                ?: emailRegex.find(rawP?.handle.orEmpty())?.value
+                ?: emailRegex.find(rawP?.name.orEmpty())?.value
+            val displayName = when {
+                rawP != null && isCleanAccountName(rawP.name) -> rawP.name
+                !detectedEmail.isNullOrBlank() -> detectedEmail
+                !rawP?.handle.isNullOrBlank() && isCleanAccountName(rawP.handle) -> rawP.handle
+                else -> "Google Account"
+            }
+            val p = Profile(displayName, rawP?.handle ?: detectedEmail, rawP?.avatar)
+            withContext(Dispatchers.Main) {
+                // Only if this account is still the one in use.
+                if (activeAccountId == id) saveEntry(id, p, detectedEmail, cookieHeader)
+            }
+        }
+    }
+
+    private fun saveEntry(id: String, p: Profile, email: String?, cookieHeader: String) {
+        val entry = StoredAccount(
+            id = id,
+            name = p.name,
+            handle = p.handle,
+            avatar = p.avatar,
+            cookies = cookieHeader(),
+            clientVersion = clientVersion,
+            visitor = visitorData,
+            email = email,
+        )
+        val index = entries.indexOfFirst { it.id == id || sameSession(it.cookies, cookieHeader) }
+        if (index >= 0) entries[index] = entry else entries += entry
+        activeAccountId = id
+        profile = p
+        store?.apply {
+            put(KEY_NAME, p.name); put(KEY_HANDLE, p.handle); put(KEY_AVATAR, p.avatar)
+        }
+        persistAccounts()
+        publish()
     }
 
             private val BLACKLISTED_ACCOUNT_NAMES = setOf(
