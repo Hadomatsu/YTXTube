@@ -242,6 +242,8 @@ object YouTube {
 
     suspend fun details(id: String): VideoDetails = withContext(Dispatchers.IO) {
         HdrFormats.prefetch(id)
+        // Premium audio is looked for at the same time, not after (the player used to wait for it).
+        PremiumAudio.prefetch(id)
         val info = StreamCache.getOrLoad(id)
         HdrFormats.install(id, info)
         val picked = StreamSelection.pick(info)

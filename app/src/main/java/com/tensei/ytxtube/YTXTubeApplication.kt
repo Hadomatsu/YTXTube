@@ -29,8 +29,8 @@ class YTXTubeApplication : Application(), ImageLoaderFactory {
 
 
         val poTokenGenerator = PoTokenGenerator()
-        poTokenGenerator.initialize()
-        YoutubeStreamExtractor.setPoTokenProvider(YtxPoTokenProvider(poTokenGenerator))
+        val poTokens = YtxPoTokenProvider(poTokenGenerator)
+        YoutubeStreamExtractor.setPoTokenProvider(poTokens)
 
 
         YoutubeStreamExtractor.setFetchIosClient(true)
@@ -61,6 +61,7 @@ class YTXTubeApplication : Application(), ImageLoaderFactory {
         SponsorBlock.init(this)
         SearchHistory.init(this)
         Downloads.init(this)
+        PlaybackWarmup.start(poTokens)
 
         getSystemService(android.net.ConnectivityManager::class.java)?.registerDefaultNetworkCallback(
             object : android.net.ConnectivityManager.NetworkCallback() {

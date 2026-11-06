@@ -1067,7 +1067,8 @@ private fun MusicCard(item: MusicItem, onClick: () -> Unit, onMenu: () -> Unit, 
     Column(
         Modifier
             .then(if (fill) Modifier.fillMaxWidth() else Modifier.width(width))
-            .pressable(pressedScale = 0.96f, onLongClick = onMenu, onClick = onClick),
+            .pressable(pressedScale = 0.96f, onLongClick = onMenu, onClick = onClick)
+            .then(item.videoId?.let { Modifier.prefetchOnPress(it) } ?: Modifier),
     ) {
         Box(
             Modifier
@@ -1136,6 +1137,8 @@ private fun MusicRow(
         Modifier
             .fillMaxWidth()
             .pressable(pressedScale = 0.98f, onLongClick = onMenu, onClick = onClick)
+            // The song starts loading the moment the finger touches it.
+            .then(item.videoId?.let { Modifier.prefetchOnPress(it) } ?: Modifier)
             .padding(start = 16.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

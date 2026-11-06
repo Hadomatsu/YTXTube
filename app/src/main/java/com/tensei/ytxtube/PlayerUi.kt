@@ -1248,24 +1248,22 @@ fun BitChordMusicPlayer(
     var showTrackMenu by remember(item.id) { mutableStateOf(false) }
     var showLyrics by remember(item.id) { mutableStateOf(false) }
     var showQueue by remember(item.id) { mutableStateOf(false) }
-    var lyrics by remember(item.id) { mutableStateOf<LyricsDoc?>(null) }
-    var lyricsLoading by remember(item.id) { mutableStateOf(false) }
+    // Lyrics come from LyricsStore: usually already looked up when the song started, and saved.
+    val lyrics = LyricsStore.doc(item.id)
+    val lyricsLoading = LyricsStore.isLoading(item.id)
     var englishScript by remember(item.id) { mutableStateOf(PlaybackPrefs.romanizeLyrics) }
-    var romanized by remember(item.id) { mutableStateOf<List<String?>?>(null) }
+    // Worked out again if the lyrics switch to a better (word by word) version.
+    var romanized by remember(item.id, lyrics) { mutableStateOf<List<String?>?>(null) }
 
     LaunchedEffect(item.id, showLyrics) {
-        if (showLyrics && lyrics == null && !lyricsLoading) {
-            lyricsLoading = true
-            lyrics = runCatching {
-                InnerTube.musicLyrics(item.id, item.title, item.channel, maxOf(item.durationSec, state.durationMs / 1000L))
-            }.getOrNull()
-            lyricsLoading = false
+        if (showLyrics && lyrics == null) {
+            LyricsStore.load(item, maxOf(item.durationSec, state.durationMs / 1000L))
         }
     }
     LaunchedEffect(item.id, lyrics, englishScript) {
         val doc = lyrics ?: return@LaunchedEffect
         if (englishScript && romanized == null) {
-            romanized = LyricsRomanizer.romanize(item.id, doc.lines.map { it.text })
+            romanized = LyricsRomanizer.romanize(item.id + ":" + doc.lines.size + ":" + doc.source, doc.lines.map { it.text })
         }
     }
     val albumScale by animateFloatAsState(

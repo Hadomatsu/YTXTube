@@ -14,6 +14,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.collectLatest
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
@@ -443,6 +444,28 @@ class PlayerState(private val scope: CoroutineScope) {
     // last song, so it never just stops or falls back to ordinary YouTube videos.
     private var musicMore: MusicFeeder? = null
     private var musicGen = 0
+    private var nextSongWatch: Job? = null
+
+    /**
+     * Music: the next song's streams and lyrics are fetched while this one plays, so skipping or
+     * the song ending moves on at once. Started with the first music queue (not in init, where the
+     * queue does not exist yet).
+     */
+    private fun watchNextSong() {
+        if (nextSongWatch != null) return
+        nextSongWatch = scope.launch {
+            snapshotFlow { if (isMusicMode) musicQueue.firstOrNull() else null }
+                .collectLatest { next ->
+                    if (next == null || next.localUri != null) return@collectLatest
+                    delay(2_500)
+                    withContext(Dispatchers.IO) {
+                        StreamCache.prefetch(next.id)
+                        PremiumAudio.prefetch(next.id)
+                    }
+                    LyricsStore.prefetch(next)
+                }
+        }
+    }
     private var unshuffledMusic: List<VideoItem>? = null
     private val musicFill = kotlinx.coroutines.sync.Mutex()
 
@@ -547,6 +570,7 @@ class PlayerState(private val scope: CoroutineScope) {
         unshuffledMusic = unshuffledMusic?.filter { it.id != item.id }
         if (expand) expanded = true
         topUpMusicQueue()
+        watchNextSong()
         if (current?.id == item.id && error == null) return
         known[item.id] = item
         show(item, startPlayback = true)
@@ -581,7 +605,11 @@ class PlayerState(private val scope: CoroutineScope) {
         Log.i("YTXTubeTime", "open ${item.id}")
         if (startPlayback) Net.prewarmMediaConnection()
         current = item
-        if (isMusicMode) RecentMusic.record(item)
+        if (isMusicMode) {
+            RecentMusic.record(item)
+            // Lyrics are looked up right away, so they are there when the lyrics are opened.
+            if (item.durationSec > 0) LyricsStore.prefetch(item)
+        }
         details = null
         error = null
         firstFrameRendered = false
@@ -657,6 +685,7 @@ class PlayerState(private val scope: CoroutineScope) {
                 .onSuccess { d ->
                     Log.i("YTXTubeTime", "details +${android.os.SystemClock.elapsedRealtime() - openedAt}ms")
                     details = d
+                    if (isMusicMode) LyricsStore.prefetch(item, d.item.durationSec)
                     refreshTracks()
                     // The extractor sometimes hands back only a couple of related videos, so top
                     // short lists up as well, not just empty ones.

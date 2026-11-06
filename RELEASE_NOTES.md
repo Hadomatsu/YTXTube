@@ -1,13 +1,6 @@
-YTXTube Custom 2.4.1
+YTXTube Custom 2.4.2: faster videos and lyrics
 
-- The update checker now also looks at ytxtube-build, where new versions are built.
-
-2.4.0: Music is now real YouTube Music, signed in with your account.
-
-- Home with mood chips, Quick picks and every shelf, loading more as you scroll
-- Explore: new releases, charts, moods and genres
-- Library: playlists, liked songs, albums, artists, history and downloads
-- Real YouTube Music search with suggestions, top result and filters
-- Full playlists and albums (every page), artist pages with subscribe, shuffle and radio
-- No more duplicate songs in queues
-- Queue works like YouTube Music: a song starts its radio, playlists continue page by page, shuffle shuffles Up next
+- The first video after opening the app starts faster: YouTube's anti-bot token and player code are now prepared while the app opens, for the right session
+- Premium audio is looked up at the same time as the video, so the player no longer waits for it afterwards
+- Music: the next song (streams and lyrics) loads while the current one plays, and songs start loading as soon as you touch them
+- Lyrics: all lyric sources are asked at once, lyrics are looked up when the song starts and saved on the phone, and they switch to word by word timing when that arrives

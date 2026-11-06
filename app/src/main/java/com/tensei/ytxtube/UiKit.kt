@@ -265,7 +265,10 @@ fun Modifier.prefetchOnPress(videoId: String): Modifier = pointerInput(videoId) 
             }
             @Suppress("UNREACHABLE_CODE") false
         }
-        if (scrolled != true) StreamCache.prefetch(videoId)
+        if (scrolled != true) {
+            StreamCache.prefetch(videoId)
+            PremiumAudio.prefetch(videoId)
+        }
     }
 }
 

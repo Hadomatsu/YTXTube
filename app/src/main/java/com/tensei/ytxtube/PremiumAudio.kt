@@ -55,14 +55,27 @@ object PremiumAudio {
     fun prefetch(videoId: String): Future<*>? {
         if (!wanted() || videoId in failed) return null
         cache[videoId]?.let { if (System.currentTimeMillis() - it.at < MAX_AGE_MS) return null }
-        return pool.submit {
-            val found = runCatching { resolve(videoId) }
-                .onFailure { Log.w(TAG, "no premium audio for $videoId: ${it.message}") }
-                .getOrNull()
-            cache[videoId] = Entry(System.currentTimeMillis(), found)
-            Log.i(TAG, "premium audio for $videoId: " + (found?.let { "itag ${it.itag}" } ?: "none"))
+        // Already being looked for (it now starts with the video's own loading): share that.
+        inflight[videoId]?.let { return it }
+        synchronized(inflight) {
+            inflight[videoId]?.let { return it }
+            val task = pool.submit {
+                try {
+                    val found = runCatching { resolve(videoId) }
+                        .onFailure { Log.w(TAG, "no premium audio for $videoId: ${it.message}") }
+                        .getOrNull()
+                    cache[videoId] = Entry(System.currentTimeMillis(), found)
+                    Log.i(TAG, "premium audio for $videoId: " + (found?.let { "itag ${it.itag}" } ?: "none"))
+                } finally {
+                    inflight.remove(videoId)
+                }
+            }
+            inflight[videoId] = task
+            return task
         }
     }
+
+    private val inflight = ConcurrentHashMap<String, Future<*>>()
 
     /** The Premium stream was refused while playing: use the normal stream for this video from now on. */
     fun markFailed(videoId: String) {

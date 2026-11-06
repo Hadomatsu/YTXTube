@@ -824,12 +824,20 @@ object InnerTube {
 
 
 
+    /**
+     * A song's lyrics from every source at once. The sources used to be asked one after another
+     * (the first with up to 20 seconds of patience), so lyrics often took a long time. Now the best
+     * synced result is returned as soon as nothing better can still arrive (or shortly after the
+     * first synced one, if only the slow word-by-word sources are left); when those finish later
+     * with word timing, [onBetter] gets the upgrade.
+     */
     suspend fun musicLyrics(
         videoId: String,
         title: String,
         artist: String,
         durationSec: Long = 0L,
-    ): LyricsDoc? = withContext(Dispatchers.IO) {
+        onBetter: ((LyricsDoc) -> Unit)? = null,
+    ): LyricsDoc? {
         val cleanTitle = title.replace(Regex("(?i)\\(official.*?\\)|\\[official.*?\\]|\\(audio\\)|\\[audio\\]|\\(video\\)|\\[video\\]|\\(lyric.*?\\)"), "")
             .replace(Regex("(?i)ft\\..*|feat\\..*"), "")
             .trim()
@@ -842,138 +850,135 @@ object InnerTube {
         }
         val cleanArtist = artistName.split(",", "&", "feat.", "ft.", " - ").firstOrNull()?.trim() ?: artistName
 
-
-        var plainFromServices: LyricsDoc? = null
-        // Every lyrics service BitChord uses, asked at once, Apple Music word timing first
-        // (Settings, Music & Lyrics). The app's own LRCLIB and YouTube Music lookups follow.
-        if (PlaybackPrefs.lyricsMode == LyricsMode.WORD_SYNCED) {
-            val found = kotlinx.coroutines.withTimeoutOrNull(20_000) {
+        // Runs outside the caller, so a slow source can still finish (and upgrade) after we answer.
+        val bg = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.IO)
+        val words = if (PlaybackPrefs.lyricsMode == LyricsMode.WORD_SYNCED) bg.async {
+            kotlinx.coroutines.withTimeoutOrNull(20_000) {
                 com.tensei.ytxtube.bclyrics.BitChordLyrics.lookup(videoId, title, artistName, durationSec * 1000L, album)
             }
-            if (found != null && found.synced) return@withContext found
-            if (found != null) plainFromServices = found
-        }
+        } else null
+        val lrclib = bg.async { runCatching { lrclibGet(cleanTitle, cleanArtist) }.getOrNull() }
+        val ytm = bg.async { runCatching { ytMusicLyrics(videoId) }.getOrNull() }
+        val search = bg.async { runCatching { lrclibSearch(cleanTitle, cleanArtist, durationSec) }.getOrNull() }
 
-        var plainFallback: LyricsDoc? = plainFromServices
-        runCatching {
-            val encT = java.net.URLEncoder.encode(cleanTitle, "UTF-8")
-            val encA = java.net.URLEncoder.encode(cleanArtist, "UTF-8")
-            val url = "https://lrclib.net/api/get?track_name=$encT&artist_name=$encA"
-            val req = Request.Builder()
-                .url(url)
-                .header("User-Agent", "YTXTube/1.1 (https://github.com/Koustubh12345/YTXTube)")
-                .build()
-            Net.client.newCall(req).execute().use { r ->
-                if (r.isSuccessful) {
-                    val json = JSONObject(r.body?.string().orEmpty())
-                    json.optString("syncedLyrics").takeIf { it.isNotBlank() }?.let { lrc ->
-                        val doc = parseLyrics(lrc)
-                        if (doc.synced) return@withContext doc
-                    }
-                    json.optString("plainLyrics").takeIf { it.isNotBlank() }?.let { plain ->
-                        plainFallback = parseLyrics(plain)
-                    }
-                }
-            }
-        }
+        // In order of preference.
+        val sources = listOfNotNull(words, lrclib, ytm, search)
+        fun done(d: kotlinx.coroutines.Deferred<LyricsDoc?>) = d.isCompleted
+        @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+        fun value(d: kotlinx.coroutines.Deferred<LyricsDoc?>): LyricsDoc? =
+            if (d.isCompleted) runCatching { d.getCompleted() }.getOrNull() else null
 
-
-        runCatching {
-            val nextBody = JSONObject().put("videoId", videoId)
-            val nextResp = postMusic("next", nextBody)
-            val tabs = nextResp.optJSONObject("contents")
-                ?.optJSONObject("singleColumnMusicWatchNextResultsRenderer")
-                ?.optJSONObject("tabbedRenderer")
-                ?.optJSONObject("watchNextTabbedResultsRenderer")
-                ?.optJSONArray("tabs")
-            var lyricsBrowseId: String? = null
-            if (tabs != null) {
-                for (i in 0 until tabs.length()) {
-                    val tab = tabs.optJSONObject(i)?.optJSONObject("tabRenderer") ?: continue
-                    val endpoint = tab.optJSONObject("endpoint")?.optJSONObject("browseEndpoint")
-                    val bId = endpoint?.optString("browseId")
-                    val tName = tab.optString("title")
-                    if (bId != null && (bId.startsWith("MPLYt") || tName.equals("Lyrics", ignoreCase = true))) {
-                        lyricsBrowseId = bId
-                        break
-                    }
-                }
-            }
-            if (lyricsBrowseId != null) {
-                val browseResp = postMusic("browse", JSONObject().put("browseId", lyricsBrowseId))
-                val sectionList = browseResp.optJSONObject("contents")
-                    ?.optJSONObject("sectionListRenderer")
-                    ?.optJSONArray("contents")
-                val shelf = sectionList?.optJSONObject(0)?.optJSONObject("musicDescriptionShelfRenderer")
-                val runs = shelf?.optJSONObject("description")?.optJSONArray("runs")
-                if (runs != null && runs.length() > 0) {
-                    val sb = java.lang.StringBuilder()
-                    for (k in 0 until runs.length()) {
-                        sb.append(runs.optJSONObject(k)?.optString("text").orEmpty())
-                    }
-                    val ytLyrics = sb.toString().trim()
-                    if (ytLyrics.isNotBlank() && !ytLyrics.startsWith("Provided to YouTube by")) {
-                        val doc = parseLyrics(ytLyrics)
-                        if (doc.synced) return@withContext doc
-                        if (plainFallback == null) plainFallback = doc
-                    }
-                }
-            }
-        }
-
-        // One more chance at a synced match. This runs even when YouTube Music gave us plain
-        // lyrics: a synced lrclib result is what drives the karaoke highlight.
-        var foundSynced: LyricsDoc? = null
-        runCatching {
-            val searchUrl = "https://lrclib.net/api/search?q=" +
-                java.net.URLEncoder.encode("$cleanTitle $cleanArtist", "UTF-8")
-            val searchReq = Request.Builder()
-                .url(searchUrl)
-                .header("User-Agent", "YTXTube/1.1 (https://github.com/Koustubh12345/YTXTube)")
-                .build()
-            Net.client.newCall(searchReq).execute().use { r ->
-                if (!r.isSuccessful) return@runCatching
-                val text = r.body?.string().orEmpty()
-                if (!text.startsWith("[")) return@runCatching
-                val arr = JSONArray(text)
-                var bestSynced: LyricsDoc? = null
-                var bestDelta = Long.MAX_VALUE
-                var plain: LyricsDoc? = null
-                for (i in 0 until arr.length()) {
-                    val entry = arr.optJSONObject(i) ?: continue
-                    val doc = entry.optString("syncedLyrics").takeIf { it.isNotBlank() }?.let(::parseLyrics)
-                    if (doc != null && doc.synced) {
-                        val itemDuration = entry.optLong("duration", -1L)
-                        val delta = if (durationSec > 0 && itemDuration > 0) {
-                            kotlin.math.abs(itemDuration - durationSec)
-                        } else {
-                            0L
+        var syncedSince = 0L
+        try {
+            while (true) {
+                val bestSyncedIndex = sources.indexOfFirst { value(it)?.synced == true }
+                if (bestSyncedIndex >= 0) {
+                    if (syncedSince == 0L) syncedSince = System.currentTimeMillis()
+                    val betterPending = sources.take(bestSyncedIndex).any { !done(it) }
+                    val waited = System.currentTimeMillis() - syncedSince
+                    if (!betterPending || waited > 1_500) {
+                        val best = value(sources[bestSyncedIndex])!!
+                        val pending = sources.take(bestSyncedIndex).filter { !done(it) }
+                        if (pending.isNotEmpty() && onBetter != null) {
+                            bg.launch {
+                                for (d in pending) {
+                                    val doc = runCatching { d.await() }.getOrNull()
+                                    if (doc != null && doc.synced) { onBetter(doc); break }
+                                }
+                            }
                         }
-                        if (delta < bestDelta) {
-                            bestDelta = delta
-                            bestSynced = doc
-                        }
+                        return best
                     }
-                    if (plain == null) {
-                        plain = entry.optString("plainLyrics").takeIf { it.isNotBlank() }?.let(::parseLyrics)
-                    }
+                } else if (sources.all { done(it) }) {
+                    // Nothing synced anywhere: the first plain text, in the same order.
+                    return sources.firstNotNullOfOrNull { value(it)?.takeIf { d -> d.lines.isNotEmpty() } }
                 }
-                if (bestSynced != null) {
-                    foundSynced = bestSynced
-                } else if (plainFallback == null) {
-                    plainFallback = plain
-                }
+                kotlinx.coroutines.delay(60)
             }
+        } finally {
+            // Sources nobody is waiting for any more are stopped; an upgrade still running is kept.
+            if (onBetter == null) bg.cancel()
+            else bg.launch { kotlinx.coroutines.delay(25_000); bg.cancel() }
         }
-
-        foundSynced?.let { return@withContext it }
-        plainFallback?.let { return@withContext it }
-        return@withContext null
     }
 
-    
+    private fun lrclibGet(cleanTitle: String, cleanArtist: String): LyricsDoc? {
+        val encT = java.net.URLEncoder.encode(cleanTitle, "UTF-8")
+        val encA = java.net.URLEncoder.encode(cleanArtist, "UTF-8")
+        val req = Request.Builder()
+            .url("https://lrclib.net/api/get?track_name=$encT&artist_name=$encA")
+            .header("User-Agent", "YTXTube/1.1 (https://github.com/Koustubh12345/YTXTube)")
+            .build()
+        Net.client.newCall(req).execute().use { r ->
+            if (!r.isSuccessful) return null
+            val json = JSONObject(r.body?.string().orEmpty())
+            json.optString("syncedLyrics").takeIf { it.isNotBlank() }?.let { lrc ->
+                val doc = parseLyrics(lrc)
+                if (doc.synced) return doc
+            }
+            return json.optString("plainLyrics").takeIf { it.isNotBlank() }?.let { parseLyrics(it) }
+        }
+    }
 
+    private fun ytMusicLyrics(videoId: String): LyricsDoc? {
+        val nextResp = postMusic("next", JSONObject().put("videoId", videoId))
+        val tabs = nextResp.optJSONObject("contents")
+            ?.optJSONObject("singleColumnMusicWatchNextResultsRenderer")
+            ?.optJSONObject("tabbedRenderer")
+            ?.optJSONObject("watchNextTabbedResultsRenderer")
+            ?.optJSONArray("tabs") ?: return null
+        var lyricsBrowseId: String? = null
+        for (i in 0 until tabs.length()) {
+            val tab = tabs.optJSONObject(i)?.optJSONObject("tabRenderer") ?: continue
+            val bId = tab.optJSONObject("endpoint")?.optJSONObject("browseEndpoint")?.optString("browseId")
+            if (bId != null && (bId.startsWith("MPLYt") || tab.optString("title").equals("Lyrics", ignoreCase = true))) {
+                lyricsBrowseId = bId
+                break
+            }
+        }
+        val id = lyricsBrowseId ?: return null
+        val browseResp = postMusic("browse", JSONObject().put("browseId", id))
+        val runs = browseResp.optJSONObject("contents")
+            ?.optJSONObject("sectionListRenderer")
+            ?.optJSONArray("contents")
+            ?.optJSONObject(0)?.optJSONObject("musicDescriptionShelfRenderer")
+            ?.optJSONObject("description")?.optJSONArray("runs") ?: return null
+        val text = (0 until runs.length()).joinToString("") { runs.optJSONObject(it)?.optString("text").orEmpty() }.trim()
+        if (text.isBlank() || text.startsWith("Provided to YouTube by")) return null
+        return parseLyrics(text)
+    }
 
+    /** LRCLIB's search: the synced match closest in length to the song, else its first plain text. */
+    private fun lrclibSearch(cleanTitle: String, cleanArtist: String, durationSec: Long): LyricsDoc? {
+        val searchUrl = "https://lrclib.net/api/search?q=" + java.net.URLEncoder.encode("$cleanTitle $cleanArtist", "UTF-8")
+        val searchReq = Request.Builder()
+            .url(searchUrl)
+            .header("User-Agent", "YTXTube/1.1 (https://github.com/Koustubh12345/YTXTube)")
+            .build()
+        Net.client.newCall(searchReq).execute().use { r ->
+            if (!r.isSuccessful) return null
+            val text = r.body?.string().orEmpty()
+            if (!text.startsWith("[")) return null
+            val arr = JSONArray(text)
+            var bestSynced: LyricsDoc? = null
+            var bestDelta = Long.MAX_VALUE
+            var plain: LyricsDoc? = null
+            for (i in 0 until arr.length()) {
+                val entry = arr.optJSONObject(i) ?: continue
+                val doc = entry.optString("syncedLyrics").takeIf { it.isNotBlank() }?.let(::parseLyrics)
+                if (doc != null && doc.synced) {
+                    val itemDuration = entry.optLong("duration", -1L)
+                    val delta = if (durationSec > 0 && itemDuration > 0) kotlin.math.abs(itemDuration - durationSec) else 0L
+                    if (delta < bestDelta) {
+                        bestDelta = delta
+                        bestSynced = doc
+                    }
+                }
+                if (plain == null) plain = entry.optString("plainLyrics").takeIf { it.isNotBlank() }?.let(::parseLyrics)
+            }
+            return bestSynced ?: plain
+        }
+    }
 
     private fun parseLyrics(raw: String): LyricsDoc {
         val timeTag = Regex("\\[(\\d{1,3}):(\\d{2})(?:[.:](\\d{1,3}))?\\]")

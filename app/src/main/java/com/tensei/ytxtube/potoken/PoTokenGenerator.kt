@@ -43,6 +43,22 @@ class PoTokenGenerator {
     }
   }
 
+  /**
+   * Builds the token generator for [sessionId] ahead of time, so the first video does not wait for
+   * it. (The old start-up warm-up used a made-up session id, so the first real video threw that
+   * generator away and built a new one anyway.) Blocks; call it off the main thread.
+   */
+  fun prewarm(sessionId: String) {
+    if (!webViewSupported || webViewBadImpl) return
+    try {
+      runBlocking {
+        withTimeout(20_000L) { getWebClientPoToken(WARM_VIDEO_ID, sessionId, forceRecreate = false) }
+      }
+    } catch (e: Exception) {
+      Log.w(TAG, "poToken warm-up failed: ${e.message}")
+    }
+  }
+
   fun getWebClientPoToken(videoId: String, sessionId: String): PoTokenResult? {
     Log.d(TAG, "getWebClientPoToken called: videoId=$videoId, sessionId=$sessionId")
     Log.d(TAG, "WebView state: supported=$webViewSupported, badImpl=$webViewBadImpl")
@@ -107,6 +123,7 @@ class PoTokenGenerator {
 
   private companion object {
     const val POTOKEN_TIMEOUT_MS = 8_000L
+    const val WARM_VIDEO_ID = "jNQXAC9IVRw"
   }
 
   private suspend fun getWebClientPoToken(

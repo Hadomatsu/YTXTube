@@ -57,6 +57,12 @@ class YtxPoTokenProvider(private val generator: PoTokenGenerator) : PoTokenProvi
 
     override fun getWebClientPoToken(videoId: String?): PoTokenResult? = resolvePoToken(videoId)
 
+    /** Gets the token generator ready for this session before the first video. Blocks. */
+    fun warmUp() {
+        val sessionId = Account.visitorData() ?: guestVisitorData() ?: return
+        generator.prewarm(sessionId)
+    }
+
     // A token minted for the web client is not valid for these clients (see the class comment).
     override fun getWebEmbedClientPoToken(videoId: String?): PoTokenResult? = null
 
