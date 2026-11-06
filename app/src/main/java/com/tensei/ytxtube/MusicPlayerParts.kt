@@ -137,7 +137,7 @@ internal fun MusicQueueSheet(
             )
             if (queue.isEmpty()) {
                 Text(
-                    "Nothing queued. When this song ends, a related song plays automatically.",
+                    "Nothing queued yet. With Autoplay on, YouTube Music's radio carries on after this song.",
                     fontSize = 14.sp,
                     color = c.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),

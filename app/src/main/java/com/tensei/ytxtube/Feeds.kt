@@ -167,6 +167,9 @@ class LibraryData(scope: CoroutineScope) {
 
     val home = FeedState(scope, freshOnRefresh = true) { InnerTube.homeFeed(it) }
 
+    /** The Music tab (YouTube Music), kept while you move around the app. */
+    val music = MusicData(scope)
+
     /** The chosen topic chip on Home and its own feed, or null for the normal feed. */
     var topic by mutableStateOf<HomeChip?>(null)
         private set

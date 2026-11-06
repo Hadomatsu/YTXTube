@@ -96,6 +96,25 @@ class PlayerState(private val scope: CoroutineScope) {
     }
 
     fun toggleShuffle() {
+        if (isMusicMode) {
+            // Music: Up next itself is shuffled, and put back in order when shuffle goes off.
+            shuffleEnabled = !shuffleEnabled
+            if (shuffleEnabled) {
+                unshuffledMusic = musicQueue
+                musicQueue = musicQueue.shuffled()
+            } else {
+                val order = unshuffledMusic
+                if (order != null) {
+                    val left = musicQueue.map { it.id }.toHashSet()
+                    val ordered = order.filter { it.id in left }
+                    val orderedIds = ordered.map { it.id }.toHashSet()
+                    musicQueue = ordered + musicQueue.filter { it.id !in orderedIds }
+                }
+                unshuffledMusic = null
+            }
+            actionMessage = if (shuffleEnabled) "Shuffle on" else "Shuffle off"
+            return
+        }
         val player = controller ?: return
         val next = !player.shuffleModeEnabled
         player.shuffleModeEnabled = next
@@ -180,7 +199,10 @@ class PlayerState(private val scope: CoroutineScope) {
     }
 
     fun removeFromMusicQueue(index: Int) {
+        val gone = musicQueue.getOrNull(index)
         musicQueue = musicQueue.filterIndexed { i, _ -> i != index }
+        if (gone != null) unshuffledMusic = unshuffledMusic?.filter { it.id != gone.id }
+        topUpMusicQueue()
     }
 
     /** The countdown card at the end of a video, when Autoplay is on. */
@@ -402,6 +424,7 @@ class PlayerState(private val scope: CoroutineScope) {
             if (videoHistory.size > 100) videoHistory.removeAt(0)
         }
         isMusicMode = false
+        musicMore = null
         AudioOnly.set(false)
         runCatching { applyVideoTrack() }
         if (expand) expanded = true
@@ -411,7 +434,96 @@ class PlayerState(private val scope: CoroutineScope) {
     }
 
     fun openMusic(item: VideoItem, expand: Boolean = true) {
-        openMusicQueue(listOf(item), 0, expand)
+        startMusic(listOf(item), 0, MusicFeeds.radio(item.id), expand = expand)
+    }
+
+    // Up next the YouTube Music way: once it runs low, more songs come from the rest of the
+    // playlist or album being played, then (with Autoplay on) from YouTube Music's radio for the
+    // last song, so it never just stops or falls back to ordinary YouTube videos.
+    private var musicMore: MusicFeeder? = null
+    private var unshuffledMusic: List<VideoItem>? = null
+    private val musicFill = kotlinx.coroutines.sync.Mutex()
+
+    /**
+     * Plays [items] from [index] as a new music queue. [more] brings the songs after them (the
+     * rest of a playlist, or a radio); [shuffle] plays them in random order.
+     */
+    fun startMusic(
+        items: List<VideoItem>,
+        index: Int,
+        more: MusicFeeder? = null,
+        shuffle: Boolean = false,
+        expand: Boolean = true,
+    ) {
+        if (items.isEmpty()) return
+        val distinct = items.distinctBy { it.id }
+        val first = if (shuffle) distinct.random() else distinct.getOrNull(index.coerceIn(0, distinct.size - 1)) ?: return
+        var list = distinct
+        var start = distinct.indexOfFirst { it.id == first.id }.coerceAtLeast(0)
+        if (shuffle) shuffleEnabled = true
+        unshuffledMusic = null
+        if (shuffleEnabled) {
+            val after = distinct.filter { it.id != first.id }
+            unshuffledMusic = distinct.drop(start + 1)
+            list = listOf(first) + after.shuffled()
+            start = 0
+        }
+        list.forEach { known[it.id] = it }
+        musicMore = more
+        openMusicQueue(list, start, expand)
+    }
+
+    /** A radio of songs like this one, starting with it. */
+    fun startRadio(item: VideoItem) {
+        startMusic(listOf(item), 0, MusicFeeds.radio(item.id), expand = expanded)
+        actionMessage = "Radio: ${item.title}"
+    }
+
+    fun addToMusicQueue(item: VideoItem) {
+        if (current == null || !isMusicMode) { openMusic(item, expand = false); return }
+        known[item.id] = item
+        musicQueue = musicQueue.filter { it.id != item.id } + item
+        unshuffledMusic = unshuffledMusic?.let { it.filter { q -> q.id != item.id } + item }
+        actionMessage = "Added to queue"
+    }
+
+    private fun topUpMusicQueue() {
+        if (!isMusicMode || musicQueue.size >= 5 || musicFill.isLocked) return
+        scope.launch { fillMusicQueue() }
+    }
+
+    private suspend fun fillMusicQueue() {
+        musicFill.lock()
+        try {
+            repeat(3) {
+                if (!isMusicMode || musicQueue.size >= 5) return
+                var feeder = musicMore
+                if (feeder == null) {
+                    if (!autoPlayEnabled) return
+                    val seed = musicQueue.lastOrNull() ?: current ?: return
+                    feeder = MusicFeeds.radio(seed.id)
+                    musicMore = feeder
+                }
+                val got = runCatching { feeder() }.getOrDefault(emptyList())
+                if (got.isEmpty()) {
+                    musicMore = null
+                    if (feeder.isRadio) return
+                    return@repeat
+                }
+                val seen = HashSet<String>()
+                current?.id?.let(seen::add)
+                musicQueue.forEach { seen.add(it.id) }
+                musicHistory.takeLast(50).forEach { seen.add(it.id) }
+                val fresh = got.filter { seen.add(it.id) }
+                fresh.forEach { known[it.id] = it }
+                if (fresh.isEmpty()) return@repeat
+                musicQueue = musicQueue + if (shuffleEnabled && !feeder.isRadio) fresh.shuffled() else fresh
+                unshuffledMusic = unshuffledMusic?.plus(fresh)
+                if (musicQueue.size >= 5) return
+            }
+        } finally {
+            musicFill.unlock()
+        }
     }
 
     
@@ -428,13 +540,22 @@ class PlayerState(private val scope: CoroutineScope) {
         isMusicMode = true
         applyVideoTrack()
         musicQueue = items.drop(index + 1).filter { it.id != item.id }
+        unshuffledMusic = unshuffledMusic?.filter { it.id != item.id }
         if (expand) expanded = true
+        topUpMusicQueue()
         if (current?.id == item.id && error == null) return
         known[item.id] = item
         show(item, startPlayback = true)
     }
 
     fun playNextMusic(item: VideoItem) {
+        if (isMusicMode && current != null) {
+            known[item.id] = item
+            musicQueue = listOf(item) + musicQueue.filter { it.id != item.id }
+            unshuffledMusic = unshuffledMusic?.let { listOf(item) + it.filter { q -> q.id != item.id } }
+            actionMessage = "Playing next"
+            return
+        }
         val player = controller ?: return
         known[item.id] = item
         if (current == null || player.mediaItemCount == 0) { openMusic(item, expand = false); return }
@@ -742,6 +863,14 @@ class PlayerState(private val scope: CoroutineScope) {
 
         if (isMusicMode && musicQueue.isNotEmpty()) {
             skipNext()
+            return
+        }
+        if (isMusicMode) {
+            // Wait for the playlist's next page or the radio, then carry on.
+            scope.launch {
+                fillMusicQueue()
+                if (current?.id == currId && musicQueue.isNotEmpty()) skipNext()
+            }
             return
         }
         val relList = details?.related.orEmpty().filter { it.id != currId }
@@ -1400,9 +1529,13 @@ class PlayerState(private val scope: CoroutineScope) {
                 if (p.currentMediaItemIndex + 1 < p.mediaItemCount) {
                     p.seekTo(p.currentMediaItemIndex + 1, 0L)
                     p.play()
+                } else if (isMusicMode) {
+                    // Music carries straight on through Up next; Autoplay only decides whether a
+                    // radio follows once the songs you chose run out.
+                    autoPlayNext()
                 } else if (autoPlayEnabled) {
-                    // Videos: a short countdown with Cancel first. Music carries straight on.
-                    if (isMusicMode) autoPlayNext() else startUpNext()
+                    // Videos: a short countdown with Cancel first.
+                    startUpNext()
                 }
             }
         }

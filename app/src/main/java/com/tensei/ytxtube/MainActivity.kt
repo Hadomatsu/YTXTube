@@ -687,10 +687,8 @@ fun YtxTubeApp() {
                     scrollToTop = scrollToTop[Tab.Home] ?: 0,
                 )
                 Tab.Music -> MusicScreen(
-                    lib, contentPadding, onOpen = player::openMusic, onSearch = { openSearch = true },
+                    lib, player, contentPadding,
                     onAccount = { openSettings = true },
-                    onPlayNext = player::playNextMusic,
-                    onOpenQueue = { items, index -> player.openMusicQueue(items, index) },
                     scrollToTop = scrollToTop[Tab.Music] ?: 0,
                 )
                 Tab.Shorts -> ShortsScreen(

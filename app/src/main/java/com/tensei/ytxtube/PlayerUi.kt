@@ -1635,6 +1635,8 @@ fun BitChordMusicPlayer(
                 context.startActivity(Intent.createChooser(send, item.title))
             },
             onDismiss = { showTrackMenu = false },
+            onAddToQueue = { state.addToMusicQueue(item) },
+            onStartRadio = { state.startRadio(item) },
         )
     }
 
