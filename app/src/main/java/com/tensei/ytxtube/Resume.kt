@@ -112,6 +112,8 @@ class ResumeSaver(private val player: Player) : Player.Listener {
     }
 
     fun saveNow() {
+        // Songs are not given resume points (they always start from zero).
+        if (NowPlayingMode.music) return
         val id = player.currentMediaItem?.mediaId ?: return
         lastId = id
         ResumeStore.save(id, player.currentPosition, player.duration)
@@ -124,6 +126,7 @@ class ResumeSaver(private val player: Player) : Player.Listener {
 
     override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) {
 
+        if (NowPlayingMode.music) return
         val oldId = oldPosition.mediaItem?.mediaId
         if (oldId != null && oldId != newPosition.mediaItem?.mediaId) {
             val duration = player.duration.takeIf { lastId == oldId } ?: 0L
@@ -133,6 +136,6 @@ class ResumeSaver(private val player: Player) : Player.Listener {
     }
 
     override fun onPlaybackStateChanged(state: Int) {
-        if (state == Player.STATE_ENDED) player.currentMediaItem?.mediaId?.let { ResumeStore.save(it, Long.MAX_VALUE, Long.MAX_VALUE) }
+        if (state == Player.STATE_ENDED && !NowPlayingMode.music) player.currentMediaItem?.mediaId?.let { ResumeStore.save(it, Long.MAX_VALUE, Long.MAX_VALUE) }
     }
 }

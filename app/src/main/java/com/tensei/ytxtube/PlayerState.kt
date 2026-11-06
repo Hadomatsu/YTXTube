@@ -795,7 +795,8 @@ class PlayerState(private val scope: CoroutineScope) {
     private fun startPlayback(item: VideoItem) {
         val player = controller ?: run { pendingStart = item; return }
 
-        val start = if (PlaybackPrefs.resume) ResumeStore.startPosition(item.id) else 0L
+        // Songs always start from the beginning; only videos pick up where you left off.
+        val start = if (PlaybackPrefs.resume && !isMusicMode) ResumeStore.startPosition(item.id) else 0L
         resumedAt = if (start > 0L && !isMusicMode) start else null
         replaceCurrent(player, item, positionMs = start)
         player.play()
