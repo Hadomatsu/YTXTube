@@ -199,9 +199,25 @@ class UpdateState(private val scope: CoroutineScope) {
         if (!downloading) visible = false
     }
 
+    /**
+     * Where releases are published. Builds now run in ytxtube-build (GitHub stopped running them in
+     * YTXTube); both are checked so whichever has the newest version wins.
+     */
+    private val RELEASE_REPOS = listOf("Hadomatsu/ytxtube-build", "Hadomatsu/YTXTube")
+
     private fun fetchLatest(): UpdateInfo? {
+        var best: UpdateInfo? = null
+        for (repo in RELEASE_REPOS) {
+            val found = runCatching { fetchLatestFrom(repo) }.getOrNull() ?: continue
+            val current = best
+            if (current == null || isNewerVersion(found.version, current.version)) best = found
+        }
+        return best
+    }
+
+    private fun fetchLatestFrom(repo: String): UpdateInfo? {
         val request = Request.Builder()
-            .url("https://api.github.com/repos/Hadomatsu/YTXTube/releases/latest")
+            .url("https://api.github.com/repos/$repo/releases/latest")
             .header("Accept", "application/vnd.github+json")
             .header("User-Agent", "YTXTube/${BuildConfig.VERSION_NAME}")
             .build()

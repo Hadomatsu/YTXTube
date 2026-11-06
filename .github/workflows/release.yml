@@ -89,14 +89,7 @@ jobs:
           files: |
             YTXTube.apk
             YTXTok.apk
-          body: |
-            Custom build on top of YTXTube.
-
-            - Home feed shows videos side by side (2 columns on the cover screen, more on the open screen).
-            - Subtitle button on the player, captions switch on without delay.
-            - Word by word captions: only the words already spoken are shown.
-            - Installs next to the original YTXTube (different app id).
-            - YTXTok.apk is the separate TikTok app (own app id, own icon).
+          body_path: RELEASE_NOTES.md
           draft: false
           prerelease: false
         env:
