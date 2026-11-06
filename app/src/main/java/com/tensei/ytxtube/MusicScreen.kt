@@ -90,6 +90,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -662,7 +663,7 @@ fun MusicScreen(
         }
         data.stack.lastOrNull()?.let { route ->
             key(route.key) {
-                Box(Modifier.fillMaxSize().background(c.background)) {
+                Box(Modifier.fillMaxSize().background(c.background).blockTouchesBelow()) {
                     when (route) {
                         is MusicCollectionRoute -> MusicCollectionPage(data.collection(route.browseId), actions, contentPadding, onMenu)
                         is MusicArtistRoute -> MusicArtistPage(data.artist(route.browseId), actions, contentPadding, onMenu)
@@ -678,6 +679,10 @@ fun MusicScreen(
     }
     }
 }
+
+/** A page laid over another must not let taps fall through to the one underneath. */
+private fun Modifier.blockTouchesBelow(): Modifier =
+    pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent() } }
 
 // ---------------------------------------------------------------------------------------- top
 
@@ -1007,7 +1012,7 @@ private fun MusicSectionView(
                     val columns = if (navs) (maxWidth / 170.dp).toInt().coerceIn(2, 4) else (maxWidth / 165.dp).toInt().coerceIn(2, 5)
                     Column(verticalArrangement = Arrangement.spacedBy(if (navs) 10.dp else 16.dp)) {
                         section.items.chunked(columns).forEach { rowItems ->
-                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                                 rowItems.forEach { item ->
                                     Box(Modifier.weight(1f)) {
                                         if (navs) MoodButton(item) { actions.open(item) }
@@ -1672,7 +1677,7 @@ private fun MusicSearch(
     val keyboard = LocalSoftwareKeyboardController.current
     val editing = data.submitted == null || data.query != data.submitted
     LaunchedEffect(Unit) { if (data.submitted == null) runCatching { focus.requestFocus() } }
-    Column(Modifier.fillMaxSize().background(c.background).statusBarsPadding()) {
+    Column(Modifier.fillMaxSize().background(c.background).blockTouchesBelow().statusBarsPadding()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = { data.closeSearch() }) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back", tint = c.onSurface) }
             Box(

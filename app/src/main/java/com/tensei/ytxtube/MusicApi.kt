@@ -272,12 +272,12 @@ object YTMusic {
         val first = runCatching {
             if (legacy) post(endpoint, base, "&ctoken=$enc&continuation=$enc&type=next")
             else post(endpoint, JSONObject().put("continuation", raw))
-        }.map(parse)
+        }.mapCatching(parse)
         first.getOrNull()?.let { if (!empty(it)) return it }
         val second = runCatching {
             if (legacy) post(endpoint, JSONObject().put("continuation", raw))
             else post(endpoint, base, "&ctoken=$enc&continuation=$enc&type=next")
-        }.map(parse)
+        }.mapCatching(parse)
         second.getOrNull()?.let { return it }
         return first.getOrThrow()
     }
