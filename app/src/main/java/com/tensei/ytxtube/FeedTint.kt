@@ -20,6 +20,7 @@ import androidx.compose.material3.LocalTextStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.util.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -181,10 +182,7 @@ fun Modifier.thumbnailGlow(
             }
     }
     return drawBehind {
-        // The colour reaches further down the card: past the channel line, most of the way to
-        // the bottom, instead of stopping where the channel line starts.
-        val metaTop = fadeEndPx().takeIf { !it.isNaN() && it > 0f }?.coerceAtMost(size.height)
-        val end = metaTop?.let { it + (size.height - it) * 0.85f } ?: size.height
+        val end = fadeEndPx().takeIf { !it.isNaN() && it > 0f }?.coerceAtMost(size.height) ?: size.height
         // An eased fade, so there is no visible line where the colour runs out.
         val brush = Brush.verticalGradient(
             0f to top,
@@ -196,20 +194,29 @@ fun Modifier.thumbnailGlow(
             endY = end,
         )
         drawRect(brush)
-        // Soften the left and right sides too, so the colour has no hard edge where the card ends.
-        val edge = 26.dp.toPx().coerceAtMost(size.width / 3f)
-        val f = edge / size.width
+        // Soften the left and right sides, so the colour has no hard edge where the card ends.
+        // Right under the picture the colour spreads almost to the corners; lower down the sides
+        // fade in more, so the glow fans out from the picture's bottom edge.
         val clear = background.copy(alpha = 0f)
-        drawRect(
-            Brush.horizontalGradient(
-                0f to background,
-                f * 0.45f to background.copy(alpha = 0.6f),
-                f to clear,
-                1f - f to clear,
-                1f - f * 0.45f to background.copy(alpha = 0.6f),
-                1f to background,
-            ),
-        )
+        val bands = 16
+        val bandH = size.height / bands
+        for (i in 0 until bands) {
+            val t = (i + 0.5f) / bands
+            val edge = lerp(6.dp.toPx(), 34.dp.toPx(), t).coerceAtMost(size.width / 3f)
+            val f = edge / size.width
+            drawRect(
+                Brush.horizontalGradient(
+                    0f to background,
+                    f * 0.45f to background.copy(alpha = 0.6f),
+                    f to clear,
+                    1f - f to clear,
+                    1f - f * 0.45f to background.copy(alpha = 0.6f),
+                    1f to background,
+                ),
+                topLeft = Offset(0f, i * bandH),
+                size = androidx.compose.ui.geometry.Size(size.width, bandH + 0.5f),
+            )
+        }
     }
 }
 
