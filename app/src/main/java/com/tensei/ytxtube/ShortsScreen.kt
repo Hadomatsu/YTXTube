@@ -134,6 +134,14 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.CompletableDeferred
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import kotlin.math.roundToInt
 import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.withContext
 import org.schabi.newpipe.extractor.stream.StreamInfo
@@ -168,7 +176,10 @@ private class ShortsFeedState(
         error = null
         scope.launch {
             // The first page is usually fetched already, a few seconds after the app started.
-            val warmed = ShortsWarmup.takeFirstPage()
+            val warmed = ShortsWarmup.takeFirstPage()?.let { page ->
+                // Anything watched since it was fetched is left out.
+                page.copy(videos = page.videos.filter { !SeenShorts.isSeen(it.id) && it.id !in seen })
+            }?.takeIf { it.videos.size >= 4 }
             runCatching { warmed ?: InnerTube.shorts(null, seen) }
                 .onSuccess { page ->
                     videos = merge(page.videos)
@@ -280,6 +291,16 @@ fun ShortsScreen(
     }
 
     val pager = rememberPagerState(initialPage = restored?.page ?: 0, pageCount = { feed.videos.size })
+    // Stills of the Shorts around this one: the first frame of the next ones (made by a hidden
+    // second player) and the last frame of the ones you left, shown instead of thumbnails so a
+    // swipe goes straight from video to video.
+    val frames = remember { ShortsFrames() }
+    val grabber = remember { ShortsFrameGrabber(context) }
+    val mainView = remember { ShortsViewRef() }
+    // The Short that plays. It moves as soon as a swipe is let go (not when it has settled), so
+    // the next Short is already starting while it slides in.
+    var activePage by remember { mutableIntStateOf(restored?.page ?: 0) }
+    val dragged by pager.interactionSource.collectIsDraggedAsState()
     DisposableEffect(feed) {
         onDispose {
             if (startItem == null) ShortsWarmup.keep(feed.videos, feed.nextToken, feed.seenIds, pager.settledPage)
@@ -292,7 +313,7 @@ fun ShortsScreen(
             feed.videos.getOrNull(target + 1)?.let { StreamCache.prefetch(it.id) }
         }
     }
-    val page = if (feed.videos.isEmpty()) 0 else pager.settledPage.coerceIn(0, feed.videos.lastIndex)
+    val page = if (feed.videos.isEmpty()) 0 else activePage.coerceIn(0, feed.videos.lastIndex)
     val current = feed.videos.getOrNull(page)
 
     LaunchedEffect(page, feed.videos.size) {
@@ -328,6 +349,7 @@ fun ShortsScreen(
         onDispose {
             exo.release()
             preload.release()
+            grabber.release()
         }
     }
 
@@ -373,6 +395,8 @@ fun ShortsScreen(
     }
 
     var info by remember { mutableStateOf<StreamInfo?>(null) }
+    // Which Short the player has actually drawn a frame of; until then its still covers the video.
+    var renderedId by remember { mutableStateOf<String?>(null) }
     var playError by remember { mutableStateOf<String?>(null) }
     var playing by remember { mutableStateOf(true) }
     var buffering by remember { mutableStateOf(false) }
@@ -449,9 +473,50 @@ fun ShortsScreen(
                     preload.releaseAdoptedIfCurrent(exo.currentMediaItem?.mediaId)
                 }
             }
+
+            override fun onRenderedFirstFrame() {
+                val id = exo.currentMediaItem?.mediaId
+                // Two frames later the video view is showing it, so the still can go without a
+                // flash of black in between.
+                scope.launch {
+                    withFrameNanos { }
+                    withFrameNanos { }
+                    renderedId = id
+                }
+            }
         }
         exo.addListener(listener)
         onDispose { exo.removeListener(listener) }
+    }
+
+    // The Short being left keeps its last frame on screen while it slides away (and if you come
+    // back to it, until it plays again from where you were).
+    fun captureLeaving(id: String?) {
+        val view = mainView.view ?: return
+        if (id == null || renderedId != id || exo.currentMediaItem?.mediaId != id) return
+        if (!view.isAvailable) return
+        val size = exo.videoSize
+        val (w, h) = stillSize(size.width, size.height)
+        val bmp = runCatching { view.getBitmap(w, h) }.getOrNull() ?: return
+        frames.putLast(id, bmp.asImageBitmap(), exo.currentPosition)
+    }
+
+    LaunchedEffect(pager, feed) {
+        snapshotFlow { Triple(pager.isScrollInProgress, dragged, pager.currentPage) to pager.settledPage }
+            .collect { (live, settled) ->
+                val (scrolling, holding, nearest) = live
+                val next = when {
+                    !scrolling -> settled
+                    // Let go: the page it is sliding to plays now.
+                    !holding -> nearest
+                    // Still under the finger: nothing changes yet.
+                    else -> activePage
+                }
+                if (next != activePage) {
+                    captureLeaving(feed.videos.getOrNull(activePage)?.id)
+                    activePage = next
+                }
+            }
     }
     LaunchedEffect(exo) {
         while (true) {
@@ -466,6 +531,7 @@ fun ShortsScreen(
         if (currentId == null) return@LaunchedEffect
         SeenShorts.markSeen(context, currentId)
         loading = true
+        renderedId = null
         exo.pause()
         info = null
         playError = null
@@ -486,7 +552,7 @@ fun ShortsScreen(
             val count = withContext(Dispatchers.IO) { fetchDislikeCount(currentId) }
             if (current?.id == currentId) dislikes = count
         }
-        val loaded = withContext(Dispatchers.IO) {
+        val loaded = StreamCache.get(currentId) ?: withContext(Dispatchers.IO) {
             runCatching { StreamCache.getOrLoad(currentId) }.getOrNull()
         }
         info = loaded
@@ -502,7 +568,9 @@ fun ShortsScreen(
             playError = "This Short has no playable stream."
             return@LaunchedEffect
         }
-        exo.setMediaSource(source)
+        // Back to a Short you swiped away from: carry on where you were.
+        val resumeAt = frames.lastPosition(currentId)
+        exo.setMediaSource(source, resumeAt)
         exo.prepare()
         exo.play()
         if (Account.signedIn) {
@@ -539,6 +607,23 @@ fun ShortsScreen(
         }
     }
 
+    // First frames of the next Shorts (and the one before, if it was never played), made one at
+    // a time by a hidden, muted player once this Short is playing.
+    LaunchedEffect(feed.videos, page) {
+        withTimeoutOrNull(2_500) { snapshotFlow { loading }.first { !it } }
+        delay(200)
+        val targets = feed.videos.drop(page + 1).take(4) + listOfNotNull(feed.videos.getOrNull(page - 1))
+        for (item in targets) {
+            if (frames.has(item.id)) continue
+            val loaded = StreamCache.get(item.id) ?: withContext(Dispatchers.IO) {
+                runCatching { StreamCache.getOrLoad(item.id) }.getOrNull()
+            } ?: continue
+            val source = shortsPreviewSource(context, loaded, item.id) ?: continue
+            val still = grabber.grab(source) ?: continue
+            frames.putFirst(item.id, still)
+        }
+    }
+
     LaunchedEffect(muted) { exo.volume = if (muted) 0f else 1f }
 
     fun requireSignIn(): Boolean {
@@ -564,6 +649,14 @@ fun ShortsScreen(
     val feedBackdrop = rememberLayerBackdrop()
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
+        // The hidden player's view, where first frames are drawn to be copied. It sits under
+        // everything, behind a black cover, so it is never seen.
+        AndroidView(
+            factory = { ctx -> TextureView(ctx).also { grabber.attach(it) } },
+            modifier = Modifier.size(180.dp, 320.dp),
+            onRelease = { view -> grabber.detach(view) },
+        )
+        Box(Modifier.size(180.dp, 320.dp).background(Color.Black))
         if (feed.videos.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 if (feed.loading) {
@@ -588,8 +681,6 @@ fun ShortsScreen(
                 pageSpacing = 0.dp,
             ) { index ->
                 val item = feed.videos.getOrNull(index) ?: return@VerticalPager
-                val pageOffset = ((pager.currentPage - index) + pager.currentPageOffsetFraction)
-                    .absoluteValue.coerceIn(0f, 1f)
                 val pageFocus = remember { FocusRequester() }
                 var selfFocused by remember { mutableStateOf(false) }
                 LaunchedEffect(index, page) {
@@ -609,6 +700,9 @@ fun ShortsScreen(
                     Modifier
                         .fillMaxSize()
                         .graphicsLayer {
+                            // Read while drawing, so scrolling does not recompose every page.
+                            val pageOffset = ((pager.currentPage - index) + pager.currentPageOffsetFraction)
+                                .absoluteValue.coerceIn(0f, 1f)
                             val s = 1f - 0.05f * pageOffset
                             scaleX = s
                             scaleY = s
@@ -654,26 +748,16 @@ fun ShortsScreen(
                     // Everything the glass samples lives in this layer. The buttons are drawn
                     // outside it so a backdrop can never contain the surface that samples it.
                     Box(Modifier.fillMaxSize().layerBackdrop(backdrop)) {
+                    // The still of a Short (where you left it, or its first frame) in exactly the
+                    // place and size of its video, so the video simply carries on from it.
+                    val still = frames.last(item.id) ?: frames.first(item.id)
                     if (index == page && playError == null) {
-
-
-                        ShortsVideo(exo, Modifier.fillMaxSize())
-                    } else {
-                        AsyncImage(
-                            model = item.thumbnail ?: feedThumbnailUrl(item.id),
-                            contentDescription = null,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize(),
-                        )
-                        Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.25f)))
-                        if (index != page) {
-                            Icon(
-                                Icons.Rounded.PlayArrow,
-                                contentDescription = null,
-                                tint = Color.White.copy(alpha = 0.85f),
-                                modifier = Modifier.size(64.dp).align(Alignment.Center),
-                            )
+                        ShortsVideo(exo, Modifier.fillMaxSize(), onView = { mainView.view = it })
+                        if (renderedId != item.id) {
+                            ShortsStill(item, still, Modifier.fillMaxSize())
                         }
+                    } else {
+                        ShortsStill(item, still, Modifier.fillMaxSize())
                     }
 
 
@@ -1368,8 +1452,160 @@ private fun countLabel(value: Long, fallback: String = "Like"): String = when {
 
 
 
+/** Where the Short's video view is now, so its last frame can be copied when you swipe away. */
+private class ShortsViewRef {
+    var view: TextureView? = null
+}
+
+/** Stills of Shorts: first frames from the hidden player, last frames of the ones you left. */
+@Stable
+private class ShortsFrames {
+    private class Last(val image: ImageBitmap, val positionMs: Long)
+
+    private val firsts = mutableStateMapOf<String, ImageBitmap>()
+    private val lasts = mutableStateMapOf<String, Last>()
+    private val order = ArrayDeque<String>()
+
+    private fun touch(id: String) {
+        order.remove(id)
+        order.addLast(id)
+        // About 2 MB each; keep the dozen nearest.
+        while (order.size > 12) {
+            val old = order.removeFirst()
+            firsts.remove(old)
+            lasts.remove(old)
+        }
+    }
+
+    fun has(id: String) = firsts.containsKey(id) || lasts.containsKey(id)
+    fun first(id: String): ImageBitmap? = firsts[id]
+    fun last(id: String): ImageBitmap? = lasts[id]?.image
+    fun lastPosition(id: String): Long = lasts[id]?.positionMs ?: 0L
+
+    fun putFirst(id: String, image: ImageBitmap) {
+        firsts[id] = image
+        touch(id)
+    }
+
+    fun putLast(id: String, image: ImageBitmap, positionMs: Long) {
+        lasts[id] = Last(image, positionMs)
+        touch(id)
+    }
+}
+
+/** The size a still is copied at: the video's shape, at most 540 pixels wide. */
+private fun stillSize(videoW: Int, videoH: Int): Pair<Int, Int> {
+    val w = if (videoW > 0) videoW else 9
+    val h = if (videoH > 0) videoH else 16
+    val outW = minOf(540, maxOf(w, 270))
+    val outH = (outW * h.toFloat() / w).roundToInt().coerceAtLeast(1)
+    return outW to outH
+}
+
+/**
+ * A second, muted player that only loads a Short far enough to draw its first frame into a
+ * hidden view, which is then copied as a still. Uses the same cached stream as the real player.
+ */
+@OptIn(UnstableApi::class)
+private class ShortsFrameGrabber(context: Context) {
+    private val player: ExoPlayer = ExoPlayer.Builder(context)
+        .setLoadControl(
+            DefaultLoadControl.Builder()
+                .setBufferDurationsMs(300, 800, 100, 100)
+                .build(),
+        )
+        .setBandwidthMeter(PlaybackBandwidth.get())
+        .build()
+        .apply {
+            volume = 0f
+            playWhenReady = false
+            trackSelectionParameters = trackSelectionParameters.buildUpon()
+                .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, true)
+                .build()
+        }
+
+    private var view: TextureView? = null
+    private var rendered: CompletableDeferred<Unit>? = null
+    private var released = false
+
+    init {
+        player.addListener(object : Player.Listener {
+            override fun onRenderedFirstFrame() {
+                rendered?.complete(Unit)
+            }
+        })
+    }
+
+    fun attach(textureView: TextureView) {
+        view = textureView
+        runCatching { player.setVideoTextureView(textureView) }
+    }
+
+    fun detach(textureView: TextureView) {
+        if (view === textureView) view = null
+        runCatching { player.clearVideoTextureView(textureView) }
+    }
+
+    suspend fun grab(source: MediaSource): ImageBitmap? {
+        if (released) return null
+        val target = view ?: return null
+        val done = CompletableDeferred<Unit>()
+        rendered = done
+        try {
+            player.setMediaSource(source)
+            player.prepare()
+            withTimeoutOrNull(5_000) { done.await() } ?: return null
+            // Let the view pick the frame up before copying it.
+            delay(60)
+            if (released || !target.isAvailable) return null
+            val size = player.videoSize
+            val (w, h) = stillSize(size.width, size.height)
+            return runCatching { target.getBitmap(w, h) }.getOrNull()?.asImageBitmap()
+        } finally {
+            rendered = null
+            if (!released) {
+                runCatching {
+                    player.stop()
+                    player.clearMediaItems()
+                }
+            }
+        }
+    }
+
+    fun release() {
+        released = true
+        runCatching { player.release() }
+    }
+}
+
+/** A Short's still (or, before there is one, its thumbnail) fitted exactly like its video. */
 @Composable
-private fun ShortsVideo(player: ExoPlayer, modifier: Modifier = Modifier) {
+private fun ShortsStill(item: VideoItem, still: ImageBitmap?, modifier: Modifier = Modifier) {
+    BoxWithConstraints(modifier.background(Color.Black), contentAlignment = Alignment.Center) {
+        val ratio = if (still != null && still.height > 0) still.width.toFloat() / still.height else 9f / 16f
+        val containerRatio = if (maxHeight.value > 0f) maxWidth / maxHeight else ratio
+        val w = if (ratio >= containerRatio) maxWidth else maxHeight * ratio
+        val h = if (ratio >= containerRatio) maxWidth / ratio else maxHeight
+        if (still != null) {
+            Image(
+                bitmap = still,
+                contentDescription = null,
+                contentScale = ContentScale.FillBounds,
+                modifier = Modifier.size(w, h),
+            )
+        } else {
+            AsyncImage(
+                model = item.thumbnail ?: feedThumbnailUrl(item.id),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.size(w, h),
+            )
+        }
+    }
+}
+
+@Composable
+private fun ShortsVideo(player: ExoPlayer, modifier: Modifier = Modifier, onView: (TextureView?) -> Unit = {}) {
     var video by remember { mutableStateOf(VideoSize(0, 0)) }
     DisposableEffect(player) {
         val listener = object : Player.Listener {
@@ -1398,14 +1634,15 @@ private fun ShortsVideo(player: ExoPlayer, modifier: Modifier = Modifier) {
 
 
                 TextureView(context).apply {
-
-
                     runCatching { player.setVideoTextureView(this) }
+                    onView(this)
                 }
             },
             modifier = Modifier.size(videoWidth, videoHeight),
             update = { },
-            onRelease = { view -> runCatching { player.clearVideoTextureView(view) } },
+            onRelease = { view ->
+                runCatching { player.clearVideoTextureView(view) }
+            },
         )
     }
 }
@@ -1569,6 +1806,18 @@ private fun createStreamSource(context: Context, stream: Stream, mediaId: String
         .setMediaId(mediaId)
         .build()
     return ProgressiveMediaSource.Factory(dsFactory).createMediaSource(mediaItem)
+}
+
+/** Only the video of a Short (the same stream the player uses, so it comes from the cache). */
+@OptIn(UnstableApi::class)
+private fun shortsPreviewSource(context: Context, info: StreamInfo, mediaId: String): MediaSource? {
+    val picked = StreamSelection.pickShorts(info)
+    val stream = picked.video?.takeIf { !it.content.isNullOrBlank() }
+        ?: picked.muxed?.takeIf { !it.content.isNullOrBlank() }
+        ?: info.videoOnlyStreams.firstOrNull { it.isUrl }
+        ?: info.videoStreams.firstOrNull { it.isUrl }
+        ?: return null
+    return createStreamSource(context, stream, mediaId)
 }
 
 @OptIn(UnstableApi::class)

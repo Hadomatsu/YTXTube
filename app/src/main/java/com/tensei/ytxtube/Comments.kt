@@ -369,12 +369,15 @@ object CommentsPanelHeight {
     }
 
     fun remembered(fullPx: Float): Float? =
-        runCatching { prefs.getFloat("comments_height", -1f) }.getOrDefault(-1f).takeIf { it > 0f }?.let { it * fullPx }
+        runCatching { prefs.getFloat(KEY, -1f) }.getOrDefault(-1f).takeIf { it > 0f }?.let { it * fullPx }
 
     fun remember(heightPx: Float, fullPx: Float) {
         if (fullPx <= 0f) return
-        runCatching { prefs.edit().putFloat("comments_height", (heightPx / fullPx).coerceIn(0f, 1f)).apply() }
+        runCatching { prefs.edit().putFloat(KEY, (heightPx / fullPx).coerceIn(0f, 1f)).apply() }
     }
+
+    // New key with the taller default, so a height saved for the old, lower default starts over.
+    private const val KEY = "comments_height_v2"
 }
 
 @Composable
@@ -399,7 +402,8 @@ fun CommentsPanel(
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val statusTop = if (floating) 0.dp else WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
         val fullPx = with(density) { (maxHeight - statusTop - (if (floating) 0.dp else 8.dp)).toPx() }
-        val partialPx = with(density) { (maxHeight - partialTop).toPx() }.coerceIn(fullPx * 0.35f, fullPx)
+        // Half again as tall as the space under the video, so more comments fit at a glance.
+        val partialPx = (with(density) { (maxHeight - partialTop).toPx() } * 1.5f).coerceIn(fullPx * 0.35f, fullPx)
         // The panel stays at whatever height it is let go at; below this it closes.
         val floorPx = maxOf(with(density) { 180.dp.toPx() }, fullPx * 0.22f).coerceAtMost(partialPx)
         // Opens at the height it was last left at, or just under the video the first time.

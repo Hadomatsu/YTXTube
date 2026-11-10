@@ -118,8 +118,19 @@ fun Modifier.frostedGlass(
     if (backdrop == null || !GlassQuality.effectsSupported) {
         return clip(shape).background(if (GlassQuality.effectsSupported) tint.copy(alpha = 0.97f) else MaterialTheme.colorScheme.surfaceContainerLow)
     }
-    val edge = if (isDarkTheme() || ThemeSettings.mode == "amoled") Color.White.copy(alpha = 0.10f) else Color.Black.copy(alpha = 0.06f)
+    val amoled = ThemeSettings.mode == "amoled"
+    val dark = amoled || isDarkTheme()
+    val edge = if (dark) Color.White.copy(alpha = 0.10f) else Color.Black.copy(alpha = 0.06f)
+    // A solid base under the blur. A recorded page often has no background of its own (the
+    // player's details are drawn straight over the app), and without this the sharp page behind
+    // showed through the panel instead of the frosted copy.
+    val base = when {
+        amoled -> Color.Black
+        dark -> Color(0xFF0E0E10)
+        else -> Color(0xFFF2F2F5)
+    }
     return this
+        .background(base, shape)
         .drawBackdrop(
             backdrop = backdrop,
             shape = { shape },

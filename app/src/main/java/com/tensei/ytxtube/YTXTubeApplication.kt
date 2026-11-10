@@ -19,6 +19,9 @@ class YTXTubeApplication : Application(), ImageLoaderFactory {
     override fun onCreate() {
         super.onCreate()
         appContext = applicationContext
+        // Shorts already watched must be known before the first Shorts feed is fetched (the warm-up
+        // a few seconds in), or a fresh start shows Shorts from earlier again.
+        Thread { SeenShorts.init(this) }.start()
         TvMode.init(this)
         LanguageSettings.init(this)
         GlassQuality.init(this)

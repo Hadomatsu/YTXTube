@@ -1184,18 +1184,26 @@ object SeenShorts {
     private const val KEY_SEEN = "seen_ids"
     private const val MAX_SEEN = 5000
     private val memorySeen = LinkedHashSet<String>()
-    private var initialized = false
+    @Volatile private var initialized = false
 
+    @Synchronized
     fun init(context: Context) {
         if (initialized) return
-        initialized = true
         runCatching {
             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             val saved = prefs.getString(KEY_SEEN, "") ?: ""
             if (saved.isNotEmpty()) {
-                saved.split(",").filter { it.isNotBlank() }.forEach { memorySeen.add(it) }
+                val ids = saved.split(",").filter { it.isNotBlank() }
+                synchronized(memorySeen) {
+                    // Anything marked while this was loading stays the newest.
+                    val marked = memorySeen.toList()
+                    memorySeen.clear()
+                    ids.forEach { memorySeen.add(it) }
+                    marked.forEach { memorySeen.remove(it); memorySeen.add(it) }
+                }
             }
         }
+        initialized = true
     }
 
     fun markSeen(context: Context, videoId: String) {
@@ -1215,19 +1223,27 @@ object SeenShorts {
         }
     }
 
+    /** Loads the saved list if nothing has yet (a feed can be fetched before any Short is marked). */
+    private fun ensureInit() {
+        if (!initialized) runCatching { init(YTXTubeApplication.appContext) }
+    }
+
     fun isSeen(videoId: String): Boolean {
+        ensureInit()
         synchronized(memorySeen) {
             return memorySeen.contains(videoId)
         }
     }
 
     fun allSeen(): Set<String> {
+        ensureInit()
         synchronized(memorySeen) {
             return memorySeen.toSet()
         }
     }
 
     fun filterUnseen(videos: List<VideoItem>): List<VideoItem> {
+        ensureInit()
         synchronized(memorySeen) {
             if (memorySeen.isEmpty()) return videos
             return videos.filter { it.id !in memorySeen }
