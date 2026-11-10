@@ -140,8 +140,15 @@ fun Modifier.thumbnailGlow(
     val raw by produceState(ThumbTint.cached(videoId), videoId, url) {
         if (value == null) value = ThumbTint.load(context, videoId, url)
     }
-    val target = remember(raw, background) {
-        raw?.let { lerp(background, ThumbTint.forBackground(it, background), strength) } ?: background
+    // AMOLED mixes the glow from dark mode's background (not pure black), so the colour is just
+    // as bright as in dark mode; only the very end of the fade is black.
+    val amoled = ThemeSettings.mode == "amoled"
+    val seed = ThemeSettings.seed
+    val glowBase = remember(amoled, seed, background) {
+        if (amoled) schemeFor(context, seed, true).background else background
+    }
+    val target = remember(raw, glowBase) {
+        raw?.let { lerp(glowBase, ThumbTint.forBackground(it, glowBase), strength) } ?: background
     }
     val top by animateColorAsState(target, tween(420), label = "thumb-glow")
     if (LocalPlayerGlass.current != null) {
@@ -174,12 +181,15 @@ fun Modifier.thumbnailGlow(
             }
     }
     return drawBehind {
-        val end = fadeEndPx().takeIf { !it.isNaN() && it > 0f }?.coerceAtMost(size.height) ?: size.height
+        // The colour reaches further down the card: past the channel line, most of the way to
+        // the bottom, instead of stopping where the channel line starts.
+        val metaTop = fadeEndPx().takeIf { !it.isNaN() && it > 0f }?.coerceAtMost(size.height)
+        val end = metaTop?.let { it + (size.height - it) * 0.85f } ?: size.height
         // An eased fade, so there is no visible line where the colour runs out.
         val brush = Brush.verticalGradient(
             0f to top,
-            0.3f to lerp(background, top, 0.55f),
-            0.6f to lerp(background, top, 0.2f),
+            0.3f to lerp(glowBase, top, 0.55f),
+            0.6f to lerp(glowBase, top, 0.2f),
             0.85f to lerp(background, top, 0.04f),
             1f to background,
             startY = 0f,
