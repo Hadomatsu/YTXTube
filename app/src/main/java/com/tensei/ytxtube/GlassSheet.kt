@@ -1,5 +1,10 @@
 package com.tensei.ytxtube
 
+import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawOutline
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.draw.drawWithContent
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
@@ -119,6 +124,11 @@ fun Modifier.frostedGlass(
      * bottom, so the screen's rounded corners do not cut it off.
      */
     edgeFadesAtBottom: Boolean = false,
+    /**
+     * How much of the panel is on screen, from its top, when part of it is slid off the bottom.
+     * The edge then fades out before the shown bottom instead of the panel's own.
+     */
+    visibleHeight: (() -> Float)? = null,
 ): Modifier {
     val tint = frostedTint(strength)
     if (backdrop == null || !GlassQuality.effectsSupported) {
@@ -147,7 +157,19 @@ fun Modifier.frostedGlass(
             onDrawSurface = { drawRect(tint) },
         )
         .then(
-            if (edgeFadesAtBottom) {
+            if (edgeFadesAtBottom && visibleHeight != null) {
+                Modifier.drawWithContent {
+                    drawContent()
+                    val stroke = 0.75.dp.toPx()
+                    val shown = visibleHeight().coerceIn(1f, size.height)
+                    val brush = Brush.verticalGradient(
+                        0f to edge, 0.62f to edge, 0.9f to Color.Transparent, 1f to Color.Transparent,
+                        startY = 0f, endY = shown,
+                    )
+                    val outline = shape.createOutline(Size(size.width - stroke, size.height - stroke), layoutDirection, this)
+                    translate(stroke / 2f, stroke / 2f) { drawOutline(outline, brush, style = Stroke(stroke)) }
+                }
+            } else if (edgeFadesAtBottom) {
                 Modifier.border(
                     0.75.dp,
                     Brush.verticalGradient(0f to edge, 0.62f to edge, 0.9f to Color.Transparent, 1f to Color.Transparent),

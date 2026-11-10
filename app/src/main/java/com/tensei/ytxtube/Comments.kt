@@ -1,5 +1,6 @@
 package com.tensei.ytxtube
 
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.foundation.background
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
@@ -440,6 +441,12 @@ private fun CommentsPanelContent(
         val height = remember {
             Animatable(if (floating) fullPx else CommentsPanelHeight.remembered(fullPx)?.coerceIn(floorPx, fullPx) ?: partialPx)
         }
+        // While the panel is dragged or springing it is laid out once at full height and only
+        // slid (a draw-only change), so nothing recomposes or re-measures per frame; when it
+        // comes to rest it takes its real height again. Resizing it every frame made every
+        // comment row recompose and the list and blur rebuild, which dropped the drag to ~20 fps.
+        var moving by remember { mutableStateOf(false) }
+        var panelPx by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
 
         val slide = remember { Animatable(1f) }
         LaunchedEffect(Unit) { if (reduced) slide.snapTo(0f) else slide.animateTo(0f, spring(dampingRatio = 0.86f, stiffness = 550f)) }
@@ -451,7 +458,8 @@ private fun CommentsPanelContent(
         fun dragBy(dy: Float): Float {
             val before = height.value
             val after = (before - dy).coerceIn(floorPx * 0.5f, fullPx)
-            scope.launch { height.snapTo(after) }
+            // Applied at once (not on the next dispatch), so fast moves are never lost or late.
+            scope.launch(start = CoroutineStart.UNDISPATCHED) { height.snapTo(after) }
             return before - after
         }
         fun settle(velocity: Float) {
@@ -461,10 +469,10 @@ private fun CommentsPanelContent(
                 // Dragged below the lowest height, or flicked down hard from low down: close.
                 h < floorPx || velocity > 2400f && h <= partialPx + 1f -> close()
                 // A hard flick still jumps all the way up or back to just under the video.
-                velocity < -2400f -> scope.launch { height.animateTo(fullPx, springy); if (!floating) CommentsPanelHeight.remember(fullPx, fullPx) }
-                velocity > 2400f -> scope.launch { height.animateTo(partialPx, springy); if (!floating) CommentsPanelHeight.remember(partialPx, fullPx) }
+                velocity < -2400f -> scope.launch { height.animateTo(fullPx, springy); moving = false; if (!floating) CommentsPanelHeight.remember(fullPx, fullPx) }
+                velocity > 2400f -> scope.launch { height.animateTo(partialPx, springy); moving = false; if (!floating) CommentsPanelHeight.remember(partialPx, fullPx) }
                 // Otherwise it simply stays where it was let go.
-                else -> if (!floating) CommentsPanelHeight.remember(h, fullPx)
+                else -> { moving = false; if (!floating) CommentsPanelHeight.remember(h, fullPx) }
             }
         }
 
@@ -489,7 +497,7 @@ private fun CommentsPanelContent(
 
                 override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
                     if (source != NestedScrollSource.UserInput || available.y <= 0f) return Offset.Zero
-                    if (!pulling) { pulling = true; pullFrom = height.value }
+                    if (!pulling) { pulling = true; pullFrom = height.value; moving = true }
                     return Offset(0f, pullBy(available.y))
                 }
 
@@ -502,14 +510,23 @@ private fun CommentsPanelContent(
             }
         }
         val shape = if (floating) RoundedCornerShape(24.dp) else RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+        // Full height while moving; its real height (read here only then) when at rest.
+        val layoutPx = if (moving) fullPx else height.value
         Column(
             Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .height(with(density) { height.value.toDp() })
-                .graphicsLayer { translationY = slide.value * size.height }
+                .height(with(density) { layoutPx.toDp() })
+                .onSizeChanged { panelPx = it.height.toFloat() }
+                .graphicsLayer {
+                    val shown = height.value
+                    translationY = (size.height - shown).coerceAtLeast(0f) + slide.value * shown
+                }
                 .then(
-                    if (backdrop != null && GlassQuality.effectsSupported) Modifier.frostedGlass(backdrop, shape, blur = 34.dp, strength = 1.12f, edgeFadesAtBottom = !floating)
+                    if (backdrop != null && GlassQuality.effectsSupported) Modifier.frostedGlass(
+                        backdrop, shape, blur = 34.dp, strength = 1.12f, edgeFadesAtBottom = !floating,
+                        visibleHeight = { height.value },
+                    )
                     else Modifier
                         .shadow(16.dp, shape, ambientColor = Color.Black.copy(alpha = 0.18f), spotColor = Color.Black.copy(alpha = 0.22f))
                         .clip(shape)
@@ -526,6 +543,7 @@ private fun CommentsPanelContent(
                     .draggable(
                         state = rememberDraggableState { dragBy(it) },
                         orientation = Orientation.Vertical,
+                        onDragStarted = { moving = true },
                         onDragStopped = { v -> settle(v) },
                     ),
             ) {
@@ -566,13 +584,17 @@ private fun CommentsPanelContent(
                 }
                 item { Spacer(Modifier.height(12.dp)) }
             }
-            if (Account.signedIn) Composer(state) else Text(
-                I18n.t("sign_in_to_comment", "Sign in to comment."),
-                color = c.onSurfaceVariant, fontSize = 13.sp,
-                modifier = Modifier.fillMaxWidth().background(c.surfaceContainer).padding(horizontal = 20.dp, vertical = 14.dp),
-            )
+            // While the panel is taller than what is shown, the typing bar is lifted by the
+            // hidden part, so it stays at the bottom of the screen.
+            Column(Modifier.fillMaxWidth().graphicsLayer { translationY = -(panelPx - height.value).coerceAtLeast(0f) }) {
+                if (Account.signedIn) Composer(state) else Text(
+                    I18n.t("sign_in_to_comment", "Sign in to comment."),
+                    color = c.onSurfaceVariant, fontSize = 13.sp,
+                    modifier = Modifier.fillMaxWidth().background(c.surfaceContainer).padding(horizontal = 20.dp, vertical = 14.dp),
+                )
 
-            Spacer(Modifier.fillMaxWidth().background(if (Account.signedIn) c.surfaceContainer else c.surfaceContainer).windowInsetsBottomHeight(WindowInsets.navigationBars))
+                Spacer(Modifier.fillMaxWidth().background(if (Account.signedIn) c.surfaceContainer else c.surfaceContainer).windowInsetsBottomHeight(WindowInsets.navigationBars))
+            }
         }
     }
 }
