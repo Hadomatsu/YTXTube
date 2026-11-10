@@ -1,7 +1,10 @@
-YTXTube Custom 2.6.7: flex mode's look for the normal player
+YTXTube Custom 2.6.8: video page polish, Continue watching page
 
-- The normal player page now has flex mode's background: the video's picture, heavily blurred and dimmed, behind the title, buttons, comments and up next
-- Like, dislike, save, download and share are glass buttons over it; the ones that are on turn your theme colour
-- The comments and queue cards are soft see-through cards on the picture
-- The progress bar under the video (and in fullscreen) is in your theme colour, like flex mode, instead of white and red
-- Frosted comments now blur the picture too
+- Video page cards: no black block under the pictures. The text sits right on the blurred background, a glow in the thumbnail's colour comes from under the picture, and the text has a soft shadow so it stays readable
+- Folded, the video page cards have slightly rounded pictures with a little room at the sides
+- AMOLED: new switch "Colours in the video screen" under the theme choice. The app stays pure black, the video page gets the blurred picture colours
+- Comments take the playing video's colour: replies, likes, timestamps and the send button (Shorts, the player and flex mode)
+- The comments panel's bright edge fades out before the bottom, so the screen's rounded corners no longer cut it off
+- Shorts: with the comments open, tap anywhere on the Short to put them away
+- Home card glow: AMOLED is as bright as dark mode, and right under the picture the glow spreads almost to the corners
+- Continue watching: the title and arrow open a page with all your started videos
