@@ -1,8 +1,8 @@
-YTXTube Custom 2.6.3: Shorts go straight to the video
+YTXTube Custom 2.6.4: smooth Shorts swiping, roomier side comments
 
-- Swiping Shorts no longer shows a thumbnail first: the next Shorts' first frames are made in advance by a hidden muted player, so the Short sliding in already looks like its video, in exactly the same place and size, and simply starts moving
-- The Short you swipe to starts playing as soon as you let go, while it is still sliding in, instead of after it has settled
-- The Short you leave keeps its last frame while it slides away, and swiping back to it carries on where you were
-- Fixed Shorts you had already watched coming back after a restart or an update (the list of watched Shorts was only loaded after the first feed was fetched)
-- Comments open half again as tall
-- Comments on normal videos are properly frosted now: the sharp page behind no longer shows through
+- No more wrong-video flash when swiping up and down: the Short you leave is taken out of the player before the next one's view appears, so not one frame of it can show on the next Short
+- No more black flashes: the video view is see-through until its first frame, with the Short's still under it, and the next Shorts' thumbnails are loaded ahead for any whose first frame isn't ready yet
+- Shorts you already watched (in this app or anywhere else) no longer come back: the feed stopped pulling from your watch history, which is what kept repeating the same Shorts in the same order
+- Unfolded, Shorts comments now run down the whole right side (about 1.7x taller); the buttons sit at the top just left of them and the bottom bar is put away while they are open
+- The Shorts progress bar is as wide as the video instead of running across the whole screen, stops before the comments, and only shows its dot while you drag it
+- Hold anywhere on a Short for 2x speed; letting go no longer pauses the Short

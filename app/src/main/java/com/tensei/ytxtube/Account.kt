@@ -1099,7 +1099,9 @@ object InnerTube {
         var continuationToken: String? = null
 
         if (Account.signedIn) {
-            val shelves = listOf("FEshorts", "FEwhat_to_watch", "FEsubscriptions", "FEhistory")
+            // Not the watch history: that is Shorts already watched, newest first, which came back
+            // as the same Shorts in the same order.
+            val shelves = listOf("FEshorts", "FEwhat_to_watch", "FEsubscriptions")
             if (next != null) {
                 if (next.startsWith("shelf:")) {
                     val parts = next.removePrefix("shelf:").split(":", limit = 2)
@@ -1212,7 +1214,7 @@ object InnerTube {
         var continuationToken: String? = null
 
         if (Account.signedIn) {
-            val shelves = listOf("FEshorts", "FEwhat_to_watch", "FEsubscriptions", "FEhistory").shuffled()
+            val shelves = listOf("FEshorts", "FEwhat_to_watch", "FEsubscriptions").shuffled()
             for (browseId in shelves) {
                 if (result.size >= 15) break
                 val page = runCatching {

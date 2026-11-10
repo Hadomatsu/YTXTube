@@ -135,6 +135,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.CompletableDeferred
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.runtime.withFrameNanos
@@ -397,6 +400,8 @@ fun ShortsScreen(
     var info by remember { mutableStateOf<StreamInfo?>(null) }
     // Which Short the player has actually drawn a frame of; until then its still covers the video.
     var renderedId by remember { mutableStateOf<String?>(null) }
+    // The shape of the playing Short, so the progress bar can span the video and not the screen.
+    var videoAspect by remember { mutableFloatStateOf(9f / 16f) }
     var playError by remember { mutableStateOf<String?>(null) }
     var playing by remember { mutableStateOf(true) }
     var buffering by remember { mutableStateOf(false) }
@@ -453,6 +458,12 @@ fun ShortsScreen(
                 if (isPlaying) playing = true
             }
 
+            override fun onVideoSizeChanged(videoSize: VideoSize) {
+                if (videoSize.width > 0 && videoSize.height > 0) {
+                    videoAspect = videoSize.width * videoSize.pixelWidthHeightRatio / videoSize.height
+                }
+            }
+
             override fun onPlaybackStateChanged(state: Int) {
                 buffering = state == Player.STATE_BUFFERING
                 if (state == Player.STATE_READY) {
@@ -475,6 +486,7 @@ fun ShortsScreen(
             }
 
             override fun onRenderedFirstFrame() {
+                if (!mainView.acceptFrames) return
                 val id = exo.currentMediaItem?.mediaId
                 // Two frames later the video view is showing it, so the still can go without a
                 // flash of black in between.
@@ -501,6 +513,23 @@ fun ShortsScreen(
         frames.putLast(id, bmp.asImageBitmap(), exo.currentPosition)
     }
 
+    // Switches the player to another Short right away, before its page is drawn with the video
+    // view. The old Short is taken out first, so not a single frame of it can land in the new
+    // Short's view (that was the wrong-video flash when swiping up and down).
+    fun startShort(id: String?) {
+        renderedId = null
+        mainView.closeGate()
+        exo.pause()
+        exo.clearVideoSurface()
+        exo.clearMediaItems()
+        if (id == null) return
+        val loaded = StreamCache.get(id) ?: return
+        val source = preload.take(id) ?: shortsSource(context, loaded, id) ?: return
+        exo.setMediaSource(source, frames.lastPosition(id))
+        exo.prepare()
+        exo.playWhenReady = active
+    }
+
     LaunchedEffect(pager, feed) {
         snapshotFlow { Triple(pager.isScrollInProgress, dragged, pager.currentPage) to pager.settledPage }
             .collect { (live, settled) ->
@@ -514,6 +543,7 @@ fun ShortsScreen(
                 }
                 if (next != activePage) {
                     captureLeaving(feed.videos.getOrNull(activePage)?.id)
+                    startShort(feed.videos.getOrNull(next)?.id)
                     activePage = next
                 }
             }
@@ -530,9 +560,13 @@ fun ShortsScreen(
     LaunchedEffect(currentId) {
         if (currentId == null) return@LaunchedEffect
         SeenShorts.markSeen(context, currentId)
-        loading = true
-        renderedId = null
-        exo.pause()
+        // Usually the swipe has already started this Short (see startShort).
+        val started = exo.currentMediaItem?.mediaId == currentId
+        loading = !started || exo.playbackState != Player.STATE_READY
+        if (!started) {
+            renderedId = null
+            exo.pause()
+        }
         info = null
         playError = null
         position = 0L
@@ -562,17 +596,20 @@ fun ShortsScreen(
             return@LaunchedEffect
         }
         likeCount = loaded.likeCount
-        val source = preload.take(currentId) ?: shortsSource(context, loaded, currentId)
-        if (source == null) {
-            loading = false
-            playError = "This Short has no playable stream."
-            return@LaunchedEffect
+        if (exo.currentMediaItem?.mediaId != currentId) {
+            val source = preload.take(currentId) ?: shortsSource(context, loaded, currentId)
+            if (source == null) {
+                loading = false
+                playError = "This Short has no playable stream."
+                return@LaunchedEffect
+            }
+            renderedId = null
+            // Back to a Short you swiped away from: carry on where you were.
+            val resumeAt = frames.lastPosition(currentId)
+            exo.setMediaSource(source, resumeAt)
+            exo.prepare()
+            exo.play()
         }
-        // Back to a Short you swiped away from: carry on where you were.
-        val resumeAt = frames.lastPosition(currentId)
-        exo.setMediaSource(source, resumeAt)
-        exo.prepare()
-        exo.play()
         if (Account.signedIn) {
             runCatching { InnerTube.videoState(currentId) }.getOrNull()?.let { st ->
                 liked = st.like == LikeStatus.Like
@@ -592,6 +629,18 @@ fun ShortsScreen(
         preload.setCurrentPlayingIndex(page)
         preload.keepOnly(keep)
         if (upcoming.isEmpty()) return@LaunchedEffect
+        // Thumbnails of the next Shorts in the image cache, for any Short whose first frame is
+        // not ready yet, so its page is never empty while it slides in.
+        runCatching {
+            val images = coil.Coil.imageLoader(context)
+            upcoming.forEach { next ->
+                images.enqueue(
+                    coil.request.ImageRequest.Builder(context)
+                        .data(next.thumbnail ?: feedThumbnailUrl(next.id))
+                        .build(),
+                )
+            }
+        }
         // The Short on screen first: the ones after it start once it is playing (or after a
         // moment), so they never slow down the one you are waiting for.
         withTimeoutOrNull(2_500) { snapshotFlow { loading }.first { !it } }
@@ -643,8 +692,18 @@ fun ShortsScreen(
     val glassTint = glassOverlayFill(0.5f)
     // Unfolded (or any wide screen) the comments open as a panel beside the buttons instead of
     // over the bottom of the screen.
-    val sideComments = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp >= 600
+    val screenWidth = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp
+    val sideComments = screenWidth >= 600
     val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val sidePanelWidth = (screenWidth.dp * 0.46f).coerceIn(320.dp, 520.dp)
+    val sideOpen = commentsOpen && sideComments
+    // With the comments open the bottom bar is put away, so its space goes to the Short.
+    val bottomSpace by animateDpAsState(
+        targetValue = if (commentsOpen) minOf(bottomInset, navBottom + 12.dp) else bottomInset,
+        animationSpec = spring(dampingRatio = 0.9f, stiffness = 420f),
+        label = "shortsBottom",
+    )
     // The whole feed, recorded so the comments slide up over it as frosted glass.
     val feedBackdrop = rememberLayerBackdrop()
 
@@ -752,6 +811,9 @@ fun ShortsScreen(
                     // place and size of its video, so the video simply carries on from it.
                     val still = frames.last(item.id) ?: frames.first(item.id)
                     if (index == page && playError == null) {
+                        // Under the video too: the view is see-through until it has a frame, so
+                        // there is never black in between.
+                        ShortsStill(item, still, Modifier.fillMaxSize())
                         ShortsVideo(exo, Modifier.fillMaxSize(), onView = { mainView.view = it })
                         if (renderedId != item.id) {
                             ShortsStill(item, still, Modifier.fillMaxSize())
@@ -792,13 +854,18 @@ fun ShortsScreen(
                             .fillMaxSize()
                             .pointerInput(index == page) {
                                 if (index != page) return@pointerInput
+                                // Hold anywhere on the Short for 2x speed. Letting go of a hold is
+                                // not a tap, so it no longer pauses the Short.
+                                var heldFast = false
                                 detectTapGestures(
-                                    onTap = { togglePlayback() },
+                                    onTap = { if (!heldFast) togglePlayback() },
                                     onPress = {
+                                        heldFast = false
                                         var activated = false
                                         val holdJob = scope.launch {
-                                            kotlinx.coroutines.delay(200)
+                                            kotlinx.coroutines.delay(220)
                                             activated = true
+                                            heldFast = true
                                             is2xSpeed = true
                                             exo.setPlaybackSpeed(2.0f)
                                         }
@@ -920,13 +987,19 @@ fun ShortsScreen(
                     if (index == page && !inPip) {
                         val currentLikeCount = if (likeCount >= 0) (likeCount + likeBump).coerceAtLeast(0L) else if (liked) 1L else -1L
                         val currentDislikes = if (dislikes >= 0) (dislikes + dislikeBump).coerceAtLeast(0L) else if (disliked) 1L else -1L
-                        // With the comments open beside the video (unfolded), the buttons slide up
-                                // to the top right, labels tucked away, to make room under them.
-                        val railUp = commentsOpen && sideComments
+                        // With the comments open beside the video (unfolded), the buttons go to the
+                        // top, just left of the comments, labels tucked away, so the comments can
+                        // use the whole height.
+                        val railUp = sideOpen
                         val railBias by animateFloatAsState(
                             targetValue = if (railUp) -1f else 1f,
                             animationSpec = spring(dampingRatio = 0.9f, stiffness = 420f),
                             label = "railBias",
+                        )
+                        val railShift by animateDpAsState(
+                            targetValue = if (railUp) sidePanelWidth + 8.dp else 0.dp,
+                            animationSpec = spring(dampingRatio = 0.9f, stiffness = 420f),
+                            label = "railShift",
                         )
                         ShortsRail(
                             modifier = Modifier
@@ -934,8 +1007,9 @@ fun ShortsScreen(
                                 .padding(
                                     end = 8.dp,
                                     top = statusTop + RailTopGap,
-                                    bottom = bottomInset + 22.dp,
-                                ),
+                                    bottom = bottomSpace + 22.dp,
+                                )
+                                .graphicsLayer { translationX = -railShift.toPx() },
                             compact = railUp,
                             item = item,
                             info = info,
@@ -996,8 +1070,8 @@ fun ShortsScreen(
                                 .align(Alignment.BottomStart)
                                 .padding(
                                     start = 16.dp,
-                                    end = 82.dp,
-                                    bottom = bottomInset + 20.dp,
+                                    end = if (sideOpen) sidePanelWidth + 24.dp else 82.dp,
+                                    bottom = bottomSpace + 20.dp,
                                 ),
                             item = item,
                             info = info,
@@ -1033,14 +1107,21 @@ fun ShortsScreen(
                         )
 
 
-                        if (duration > 0) {
+                        if (duration > 0) BoxWithConstraints(Modifier.fillMaxSize()) {
                             val shownPosition = if (scrubbing) scrubPosition else position
                             val fraction = (shownPosition.toFloat() / duration).coerceIn(0f, 1f)
+                            // Under the video itself: as wide as the video (not across the black
+                            // sides on a wide screen), and stopping short of the comments.
+                            val videoW = minOf(maxWidth, maxHeight * videoAspect)
+                            val left = (maxWidth - videoW) / 2
+                            val right = if (sideOpen) minOf(left + videoW, maxWidth - sidePanelWidth - 20.dp) else left + videoW
+                            val barW = (right - left).coerceAtLeast(96.dp)
                             Canvas(
                                 Modifier
                                     .align(Alignment.BottomStart)
-                                    .fillMaxWidth()
-                                    .padding(bottom = bottomInset + 2.dp)
+                                    .offset(x = left)
+                                    .width(barW)
+                                    .padding(bottom = bottomSpace + 2.dp)
                                     .height(20.dp)
                                     .pointerInput(duration) {
                                         awaitEachGesture {
@@ -1073,7 +1154,7 @@ fun ShortsScreen(
                                     },
                             ) {
                                 val y = size.height / 2f
-                                val stroke = 2.5.dp.toPx()
+                                val stroke = if (scrubbing) 4.dp.toPx() else 2.5.dp.toPx()
                                 drawLine(
                                     Color.White.copy(alpha = 0.24f),
                                     Offset(0f, y),
@@ -1088,11 +1169,14 @@ fun ShortsScreen(
                                     strokeWidth = stroke,
                                     cap = StrokeCap.Round,
                                 )
-                                drawCircle(
-                                    Color.White,
-                                    radius = if (scrubbing) 5.5.dp.toPx() else 4.dp.toPx(),
-                                    center = Offset(size.width * fraction, y),
-                                )
+                                // The dot only while you drag; otherwise just a clean line.
+                                if (scrubbing) {
+                                    drawCircle(
+                                        Color.White,
+                                        radius = 6.dp.toPx(),
+                                        center = Offset(size.width * fraction, y),
+                                    )
+                                }
                             }
                         }
                     }
@@ -1131,18 +1215,17 @@ fun ShortsScreen(
             }
         }
 
-        if (commentsOpen && sideComments) {
-            // Unfolded: a panel on the right, under the buttons, above the bottom bar. The Short
-            // keeps playing in place beside it.
+        if (sideOpen) {
+            // Unfolded: a panel down the whole right side, from under the top buttons to the
+            // bottom (the bottom bar is put away), with the Short playing in place beside it.
             BoxWithConstraints(Modifier.fillMaxSize()) {
-                val top = statusTop + RailTopGap + CompactRailHeight + 14.dp
-                val bottomPad = bottomInset + 22.dp
-                val panelWidth = (maxWidth * 0.46f).coerceIn(320.dp, 520.dp)
+                val top = statusTop + RailTopGap
+                val bottomPad = navBottom + 12.dp
                 Box(
                     Modifier
                         .align(Alignment.BottomEnd)
                         .padding(end = 8.dp, bottom = bottomPad)
-                        .width(panelWidth)
+                        .width(sidePanelWidth)
                         .height((maxHeight - top - bottomPad).coerceAtLeast(260.dp)),
                 ) {
                     CommentsPanel(
@@ -1312,8 +1395,6 @@ private val LocalRailCompact = androidx.compose.runtime.staticCompositionLocalOf
 /** Room under the top bar for the buttons when they move up. */
 private val RailTopGap = 64.dp
 
-/** Five 38 dp buttons, 8 dp apart, without labels. */
-private val CompactRailHeight = 38.dp * 5 + 8.dp * 4
 
 @Composable
 private fun ShortsAction(
@@ -1455,6 +1536,21 @@ private fun countLabel(value: Long, fallback: String = "Like"): String = when {
 /** Where the Short's video view is now, so its last frame can be copied when you swipe away. */
 private class ShortsViewRef {
     var view: TextureView? = null
+
+    /**
+     * False from a switch until the main thread has caught up with everything the player sent
+     * before it, so a "first frame" message from the Short being left is never taken as the new
+     * Short's.
+     */
+    var acceptFrames = true
+    private var gate = 0
+    private val main = android.os.Handler(android.os.Looper.getMainLooper())
+
+    fun closeGate() {
+        val mine = ++gate
+        acceptFrames = false
+        main.post { if (gate == mine) acceptFrames = true }
+    }
 }
 
 /** Stills of Shorts: first frames from the hidden player, last frames of the ones you left. */
@@ -1634,6 +1730,8 @@ private fun ShortsVideo(player: ExoPlayer, modifier: Modifier = Modifier, onView
 
 
                 TextureView(context).apply {
+                    // See-through until the first frame arrives (the still underneath shows).
+                    isOpaque = false
                     runCatching { player.setVideoTextureView(this) }
                     onView(this)
                 }
