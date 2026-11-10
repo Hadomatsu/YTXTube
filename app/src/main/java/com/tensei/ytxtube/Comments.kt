@@ -509,7 +509,7 @@ private fun CommentsPanelContent(
                 .height(with(density) { height.value.toDp() })
                 .graphicsLayer { translationY = slide.value * size.height }
                 .then(
-                    if (backdrop != null && GlassQuality.effectsSupported) Modifier.frostedGlass(backdrop, shape, blur = 34.dp, strength = 1.12f)
+                    if (backdrop != null && GlassQuality.effectsSupported) Modifier.frostedGlass(backdrop, shape, blur = 34.dp, strength = 1.12f, edgeFadesAtBottom = !floating)
                     else Modifier
                         .shadow(16.dp, shape, ambientColor = Color.Black.copy(alpha = 0.18f), spotColor = Color.Black.copy(alpha = 0.22f))
                         .clip(shape)

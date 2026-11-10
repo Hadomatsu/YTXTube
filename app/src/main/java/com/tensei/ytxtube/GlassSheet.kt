@@ -44,6 +44,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
@@ -113,6 +114,11 @@ fun Modifier.frostedGlass(
     shape: Shape,
     blur: Dp = 32.dp,
     strength: Float = 1f,
+    /**
+     * For a panel that runs to the bottom of the screen: the bright edge fades out before the
+     * bottom, so the screen's rounded corners do not cut it off.
+     */
+    edgeFadesAtBottom: Boolean = false,
 ): Modifier {
     val tint = frostedTint(strength)
     if (backdrop == null || !GlassQuality.effectsSupported) {
@@ -140,7 +146,17 @@ fun Modifier.frostedGlass(
             },
             onDrawSurface = { drawRect(tint) },
         )
-        .border(0.75.dp, edge, shape)
+        .then(
+            if (edgeFadesAtBottom) {
+                Modifier.border(
+                    0.75.dp,
+                    Brush.verticalGradient(0f to edge, 0.62f to edge, 0.9f to Color.Transparent, 1f to Color.Transparent),
+                    shape,
+                )
+            } else {
+                Modifier.border(0.75.dp, edge, shape)
+            },
+        )
 }
 
 /** A small glass control (round button, chip) over [backdrop], or a solid one without glass. */
