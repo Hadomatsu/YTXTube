@@ -925,6 +925,15 @@ private fun AppearanceThemeContent(context: Context) {
                 }
             }
             }
+            if (ThemeSettings.mode == "amoled") {
+                Spacer(Modifier.height(6.dp))
+                SettingsSwitchRow(
+                    title = "Colours in the video screen",
+                    subtitle = "Everything else stays pure black. The video page gets the video's blurred picture behind it, with glass buttons",
+                    checked = ThemeSettings.amoledPlayerColors,
+                    onCheckedChange = { ThemeSettings.updateAmoledPlayerColors(it) },
+                )
+            }
         }
 
         HorizontalDivider(color = c.onSurface.copy(alpha = 0.08f))

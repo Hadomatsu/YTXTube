@@ -11,6 +11,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.material3.LocalTextStyle
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
@@ -127,6 +134,35 @@ fun Modifier.thumbnailGlow(
         raw?.let { lerp(background, ThumbTint.forBackground(it, background), strength) } ?: background
     }
     val top by animateColorAsState(target, tween(420), label = "thumb-glow")
+    if (LocalPlayerGlass.current != null) {
+        // On the video page the cards sit on the blurred picture, so nothing fades to the page
+        // colour (that was a black block). The thumbnail's colour glows out from under the
+        // picture like light and fades to nothing, softly at the sides too.
+        val glow = raw?.let { ThumbTint.forBackground(it, background) } ?: top
+        return graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+            .drawBehind {
+                val end = size.height
+                drawRect(
+                    Brush.verticalGradient(
+                        0f to glow.copy(alpha = 0.55f),
+                        0.25f to glow.copy(alpha = 0.32f),
+                        0.6f to glow.copy(alpha = 0.10f),
+                        1f to glow.copy(alpha = 0f),
+                        startY = 0f,
+                        endY = end,
+                    ),
+                )
+                drawRect(
+                    Brush.horizontalGradient(
+                        0f to Color.Transparent,
+                        0.12f to Color.Black,
+                        0.88f to Color.Black,
+                        1f to Color.Transparent,
+                    ),
+                    blendMode = BlendMode.DstIn,
+                )
+            }
+    }
     return drawBehind {
         val end = fadeEndPx().takeIf { !it.isNaN() && it > 0f }?.coerceAtMost(size.height) ?: size.height
         // An eased fade, so there is no visible line where the colour runs out.
@@ -155,4 +191,19 @@ fun Modifier.thumbnailGlow(
             ),
         )
     }
+}
+
+
+/**
+ * Card text style. On the video page, where the cards sit on the blurred picture, the text gets
+ * a soft shadow so it stays readable over any colour.
+ */
+@Composable
+fun cardTextStyle(): TextStyle {
+    val base = LocalTextStyle.current
+    if (LocalPlayerGlass.current == null) return base
+    val dark = ThemeSettings.mode == "amoled" || isDarkTheme()
+    val shadow = if (dark) Shadow(Color.Black.copy(alpha = 0.75f), Offset(0f, 1.5f), 8f)
+    else Shadow(Color.White.copy(alpha = 0.9f), Offset(0f, 1f), 6f)
+    return base.copy(shadow = shadow)
 }

@@ -455,6 +455,9 @@ object ThemeSettings {
     /** Hide the clock, battery and other status icons; a swipe down from the top shows them briefly. */
     var hideStatusBar by mutableStateOf(true)
         private set
+    /** With AMOLED: the app stays pure black, but the video page gets the blurred picture colours. */
+    var amoledPlayerColors by mutableStateOf(false)
+        private set
 
     fun init(context: Context) {
         val p = context.getSharedPreferences("appearance", Context.MODE_PRIVATE).also { prefs = it }
@@ -462,6 +465,12 @@ object ThemeSettings {
         mode = p.getString("mode", "system") ?: "system"
         useSystemFont = p.getBoolean("use_system_font", false)
         hideStatusBar = p.getBoolean("hide_status_bar", true)
+        amoledPlayerColors = p.getBoolean("amoled_player_colors", false)
+    }
+
+    fun updateAmoledPlayerColors(enabled: Boolean) {
+        amoledPlayerColors = enabled
+        prefs?.edit()?.putBoolean("amoled_player_colors", enabled)?.apply()
     }
 
     fun updateHideStatusBar(enabled: Boolean) {

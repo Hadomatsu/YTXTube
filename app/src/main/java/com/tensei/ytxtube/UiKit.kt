@@ -420,6 +420,7 @@ fun VideoCard(video: VideoItem, onClick: () -> Unit, modifier: Modifier = Modifi
             Column(Modifier.weight(1f)) {
                 Text(
                     video.title,
+                    style = cardTextStyle(),
                     fontWeight = FontWeight.Normal,
                     fontSize = 15.sp,
                     lineHeight = 20.sp,
@@ -430,6 +431,7 @@ fun VideoCard(video: VideoItem, onClick: () -> Unit, modifier: Modifier = Modifi
                 Text(
                     metaLine(video.channel, video.views, video.uploaded, video.isLive),
                     modifier = Modifier.onPlaced { metaTop = with(density) { 12.dp.toPx() } + it.positionInParent().y },
+                    style = cardTextStyle(),
                     color = c.onSurfaceVariant,
                     fontSize = 12.sp,
                     lineHeight = 16.sp,
@@ -497,6 +499,7 @@ fun VideoCardGrid(video: VideoItem, onClick: () -> Unit, modifier: Modifier = Mo
             Column(Modifier.weight(1f)) {
                 Text(
                     video.title,
+                    style = cardTextStyle(),
                     fontWeight = FontWeight.Medium,
                     fontSize = 13.sp,
                     lineHeight = 17.sp,
@@ -507,6 +510,7 @@ fun VideoCardGrid(video: VideoItem, onClick: () -> Unit, modifier: Modifier = Mo
                 Text(
                     metaLine(video.channel, video.views, video.uploaded, video.isLive),
                     modifier = Modifier.onPlaced { metaTop = with(density) { 8.dp.toPx() } + it.positionInParent().y },
+                    style = cardTextStyle(),
                     color = c.onSurfaceVariant,
                     fontSize = 11.sp,
                     lineHeight = 14.sp,

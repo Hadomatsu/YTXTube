@@ -216,7 +216,8 @@ fun PlayerScreen(
     val commentsBackdrop = com.kyant.backdrop.backdrops.rememberLayerBackdrop()
     // What the glass buttons on the page refract: only the blurred picture behind the page.
     val detailsBackdrop = com.kyant.backdrop.backdrops.rememberLayerBackdrop()
-    val pictureBackground = GlassQuality.effectsSupported && ThemeSettings.mode != "amoled" && !state.isMusicMode
+    val pictureBackground = GlassQuality.effectsSupported && !state.isMusicMode &&
+        (ThemeSettings.mode != "amoled" || ThemeSettings.amoledPlayerColors)
 
     val context = LocalContext.current
     var dominantColor by remember(item.id) { mutableStateOf(c.primaryContainer) }
