@@ -159,15 +159,7 @@ fun HomeFilterChips(
             val isSelected = if (topic != null) topic.title == selectedTopic?.title else selectedTopic == null && filter == selected
             Box(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(
-                        when {
-                            isSelected -> if (isDark || isAmoled) Color.White else Color.Black
-                            isAmoled -> Color(0xFF161616)
-                            isDark -> Color(0xFF272727)
-                            else -> Color(0xFFE5E5E5)
-                        }
-                    )
+                    .topicChip(isSelected)
                     .pressable(pressedScale = 0.94f) { if (topic != null) onTopic(topic) else onSelect(filter) }
                     .padding(horizontal = 14.dp, vertical = 7.dp),
                 contentAlignment = Alignment.Center,
@@ -336,15 +328,7 @@ fun SubFilterChips(
             val isSelected = filter == selected
             Box(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(
-                        when {
-                            isSelected -> if (isDark || isAmoled) Color.White else Color.Black
-                            isAmoled -> Color(0xFF161616)
-                            isDark -> Color(0xFF272727)
-                            else -> Color(0xFFE5E5E5)
-                        }
-                    )
+                    .topicChip(isSelected)
                     .pressable(pressedScale = 0.94f) { onSelect(filter) }
                     .padding(horizontal = 14.dp, vertical = 7.dp),
                 contentAlignment = Alignment.Center,

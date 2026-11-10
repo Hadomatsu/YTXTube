@@ -5,6 +5,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
@@ -51,6 +52,9 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.kyant.backdrop.Backdrop
+import com.kyant.backdrop.drawBackdrop
+import com.kyant.backdrop.effects.blur
+import com.kyant.backdrop.effects.vibrancy
 import kotlinx.coroutines.launch
 
 /*
@@ -97,6 +101,35 @@ fun Modifier.frostedPanel(
     )
     return if (backdrop != null && GlassQuality.effectsSupported) liquidGlass(backdrop, spec)
     else clip(shape).background(if (GlassQuality.effectsSupported) tint.copy(alpha = 0.97f) else MaterialTheme.colorScheme.surfaceContainerLow)
+}
+
+/**
+ * Frosted glass: what is behind is only blurred and tinted, with a hairline edge, and none of the
+ * liquid glass bending. Used where text is read for a long time (comments).
+ */
+@Composable
+fun Modifier.frostedGlass(
+    backdrop: Backdrop?,
+    shape: Shape,
+    blur: Dp = 32.dp,
+    strength: Float = 1f,
+): Modifier {
+    val tint = frostedTint(strength)
+    if (backdrop == null || !GlassQuality.effectsSupported) {
+        return clip(shape).background(if (GlassQuality.effectsSupported) tint.copy(alpha = 0.97f) else MaterialTheme.colorScheme.surfaceContainerLow)
+    }
+    val edge = if (isDarkTheme() || ThemeSettings.mode == "amoled") Color.White.copy(alpha = 0.10f) else Color.Black.copy(alpha = 0.06f)
+    return this
+        .drawBackdrop(
+            backdrop = backdrop,
+            shape = { shape },
+            effects = {
+                vibrancy()
+                blur(blur.toPx())
+            },
+            onDrawSurface = { drawRect(tint) },
+        )
+        .border(0.75.dp, edge, shape)
 }
 
 /** A small glass control (round button, chip) over [backdrop], or a solid one without glass. */
@@ -204,5 +237,27 @@ private fun GlassSheetFrame(entry: GlassSheetEntry, backdrop: Backdrop?) {
             }
             entry.content(this)
         }
+    }
+}
+
+/**
+ * A topic chip in a header (Home's topics, Subscriptions' filters, Music's moods and sections):
+ * the chosen one solid, the others liquid glass over what scrolls under the header.
+ */
+@Composable
+fun Modifier.topicChip(selected: Boolean, shape: Shape = RoundedCornerShape(8.dp)): Modifier {
+    val amoled = ThemeSettings.mode == "amoled"
+    val dark = amoled || isDarkTheme()
+    val backdrop = LocalGlassBackdrop.current
+    return when {
+        selected -> clip(shape).background(if (dark) Color.White else Color.Black)
+        backdrop != null && GlassQuality.effectsSupported -> glassControl(backdrop, shape)
+        else -> clip(shape).background(
+            when {
+                amoled -> Color(0xFF161616)
+                dark -> Color(0xFF272727)
+                else -> Color(0xFFE5E5E5)
+            },
+        )
     }
 }

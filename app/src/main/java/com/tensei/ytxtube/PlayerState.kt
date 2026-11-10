@@ -296,10 +296,15 @@ class PlayerState(private val scope: CoroutineScope) {
      */
     var wideStage by mutableStateOf(false)
 
+    /**
+     * The shape of the windowed player: the video's own, so a wider video (2:1, cinema) has no
+     * black bars above and below. A taller video is held to 16:9 on a wide screen (the page below
+     * needs the room) and to 4:5 on a phone.
+     */
     val stageAspect: Float get() = when {
         AudioOnly.enabled -> AudioStageAspect
-        wideStage -> StageFrameAspect
-        else -> min(videoAspect.coerceIn(StageMinAspect, StageMaxAspect), StageFrameAspect)
+        wideStage -> videoAspect.coerceIn(StageFrameAspect, StageMaxAspect)
+        else -> videoAspect.coerceIn(StageMinAspect, StageMaxAspect)
     }
     var firstFrameRendered by mutableStateOf(false)
         private set

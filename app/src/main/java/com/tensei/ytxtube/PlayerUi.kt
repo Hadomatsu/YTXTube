@@ -232,19 +232,19 @@ fun PlayerScreen(
         }
     }
     val ambientColor by animateColorAsState(dominantColor, tween(600), label = "ambient")
-    val ambientDrift: androidx.compose.runtime.State<Float> = if (GlassQuality.effectsSupported) {
-        val ambientMotion = androidx.compose.animation.core.rememberInfiniteTransition(label = "ambientDrift")
-        ambientMotion.animateFloat(
-            initialValue = 0f,
-            targetValue = 1f,
-            animationSpec = androidx.compose.animation.core.infiniteRepeatable(
-                animation = tween(14_000, easing = androidx.compose.animation.core.LinearEasing),
-                repeatMode = androidx.compose.animation.core.RepeatMode.Reverse,
-            ),
-            label = "ambientDriftValue",
-        )
-    } else {
-        remember { androidx.compose.runtime.mutableFloatStateOf(0.5f) }
+    // The glow drifts across 14 seconds. It only moves while the full page is open and the glow
+    // is drawn at all, and 30 steps a second are as smooth to the eye as 60 for something this
+    // slow, so the page is not redrawn every frame while a video plays.
+    val ambientDrift = remember { androidx.compose.runtime.mutableFloatStateOf(0.5f) }
+    val driftOn = GlassQuality.effectsSupported && state.expanded && !state.isMusicMode && ThemeSettings.mode != "amoled"
+    LaunchedEffect(driftOn) {
+        if (!driftOn) return@LaunchedEffect
+        val start = android.os.SystemClock.uptimeMillis() - (ambientDrift.floatValue * 14_000f).toLong()
+        while (true) {
+            val t = ((android.os.SystemClock.uptimeMillis() - start) % 28_000L) / 14_000f
+            ambientDrift.floatValue = if (t <= 1f) t else 2f - t
+            kotlinx.coroutines.delay(33)
+        }
     }
 
     val isDark = isDarkTheme()
@@ -1081,21 +1081,18 @@ fun MiniPlayer(
             }
         }
 
-        val progress = if (state.durationMs > 0) (state.positionMs.toFloat() / state.durationMs).coerceIn(0f, 1f) else 0f
+        // Drawn from the position at draw time, so the mini player is not rebuilt four times a second.
         Box(
             Modifier
                 .align(Alignment.BottomStart)
                 .fillMaxWidth()
                 .height(2.dp)
-                .background(Color.White.copy(alpha = 0.38f)),
-        ) {
-            Box(
-                Modifier
-                    .fillMaxHeight()
-                    .fillMaxWidth(progress)
-                    .background(Color(0xFFFF0000)),
-            )
-        }
+                .background(Color.White.copy(alpha = 0.38f))
+                .drawBehind {
+                    val progress = if (state.durationMs > 0) (state.positionMs.toFloat() / state.durationMs).coerceIn(0f, 1f) else 0f
+                    drawRect(Color(0xFFFF0000), size = size.copy(width = size.width * progress))
+                },
+        )
     }
 }
 
@@ -1177,25 +1174,24 @@ private fun RowScope.MiniDetails(state: PlayerState, interactive: Boolean) {
         }
 
 
-        val progress = if (state.durationMs > 0) (state.positionMs.toFloat() / state.durationMs).coerceIn(0f, 1f) else 0f
+        // Drawn from the position at draw time, so the mini player is not rebuilt four times a second.
         Box(
             Modifier
                 .align(Alignment.BottomStart)
                 .fillMaxWidth()
                 .height(3.dp)
                 .background(c.onSurface.copy(alpha = 0.1f))
-        ) {
-            Box(
-                Modifier
-                    .fillMaxHeight()
-                    .fillMaxWidth(progress)
-                    .background(
-                        Brush.horizontalGradient(
-                            listOf(Color(0xFFFF2D55), Color(0xFFFF0000)),
-                        ),
-                    ),
-            )
-        }
+                .drawBehind {
+                    val progress = if (state.durationMs > 0) (state.positionMs.toFloat() / state.durationMs).coerceIn(0f, 1f) else 0f
+                    val w = size.width * progress
+                    if (w > 0f) {
+                        drawRect(
+                            Brush.horizontalGradient(listOf(Color(0xFFFF2D55), Color(0xFFFF0000)), startX = 0f, endX = w),
+                            size = size.copy(width = w),
+                        )
+                    }
+                },
+        )
     }
 }
 

@@ -1,8 +1,9 @@
-YTXTube Custom 2.6.0: one glass look everywhere
+YTXTube Custom 2.6.1: smoother, and more glass
 
-- Every bottom sheet (video options, quality, subtitles, queue, chapters, downloads, account, music menus, Up next) is now frosted liquid glass that blurs what is behind it, and can be pulled down to close
-- Comments are frosted glass over the video page, in Shorts and in flex mode, and keep their free height
-- Flex mode: the lower half sits on the video's own picture, blurred, with liquid glass controls and chips
-- Music: the same collapsing glass header as the other tabs; albums, playlists and artists glow with their blurred cover behind, with glass buttons
-- Header search buttons are liquid glass like the account button
-- With Liquid Glass switched off in Settings, everything falls back to plain solid surfaces
+- Flex mode no longer stutters: the hinge sensor was redrawing the whole app many times a second as the phone moved slightly in the hand; now only real posture changes do anything
+- Smoother everywhere while a video plays: the time, the seek bar, captions and the mini player's progress are redrawn on their own instead of rebuilding the whole player, and the player page's glow no longer redraws every frame
+- Comments are frosted glass (blurred, no bending)
+- Topic chips are liquid glass: Home topics, Subscriptions filters, and Music's sections, moods and library chips (now in the header)
+- Music tab: no logo or name at the top, just the sections, search and profile
+- The normal player takes the shape of wider videos (2:1, cinema), so no more black bars above and below
+- Flex mode: the Captions / Speed / Quality / Comments / Full video buttons are centred

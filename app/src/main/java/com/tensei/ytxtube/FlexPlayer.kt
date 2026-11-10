@@ -187,7 +187,11 @@ private fun FlexPanel(
                     FlexSeekBar(state)
                     FlexTransport(state, backdrop, wide)
                     Spacer(Modifier.height(6.dp))
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    // Centred under the play controls (it scrolls only if it does not fit).
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
                         item {
                             FlexChip(backdrop, Icons.Rounded.ClosedCaption, "Captions", selected = state.selectedSubtitleLanguage != null) {
                                 state.toggleCaptions()

@@ -12,16 +12,15 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.SideEffect
-import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import kotlin.math.roundToInt
 import androidx.window.layout.FoldingFeature
 import androidx.window.layout.WindowInfoTracker
 
@@ -36,9 +35,29 @@ data class FoldState(
     val hingeEnd: Int? = null,
     /** Where the posture came from, shown in Settings: "WindowManager", "hinge sensor" or "none". */
     val source: String = "none",
-    /** The hinge angle when the phone has a hinge sensor (180 = flat open). */
-    val angle: Float? = null,
 )
+
+/**
+ * The hinge angle sensor. Only two things are published: whether the phone is half open (with a
+ * little give either way), and the angle rounded to 5 degrees for Settings. The raw angle wobbles
+ * all the time in the hand, and publishing it used to redraw the whole app many times a second,
+ * which is what made video stutter in flex mode.
+ */
+object HingeSensor {
+    var halfOpen by mutableStateOf(false)
+        private set
+    var shownAngle by mutableStateOf<Int?>(null)
+        private set
+    var present by mutableStateOf(false)
+        internal set
+
+    internal fun onAngle(angle: Float) {
+        val rounded = (angle / 5f).roundToInt() * 5
+        if (rounded != shownAngle) shownAngle = rounded
+        val open = if (halfOpen) angle in 15f..165f else angle in 30f..150f
+        if (open != halfOpen) halfOpen = open
+    }
+}
 
 /**
  * Flex mode: on a foldable stood half open, the video plays on the upper half and the controls,
@@ -92,7 +111,7 @@ object FlexMode {
             FoldMode.Tabletop -> "half open, standing (tabletop)"
             FoldMode.Book -> "half open, like a book"
         }
-        val angle = s.angle?.let { " · hinge ${it.toInt()}°" }.orEmpty()
+        val angle = HingeSensor.shownAngle?.let { " · hinge $it°" }.orEmpty()
         val from = when (s.source) {
             "none" -> "no fold information from this phone"
             else -> "from ${s.source}"
@@ -111,20 +130,12 @@ fun TrackFoldPosture(activity: Activity) {
             }
         }
     }
-    val hinge = rememberHingeAngle(activity)
-    val angle = hinge.value
+    ListenToHinge(activity)
     val config = LocalConfiguration.current
     val landscape = config.screenWidthDp > config.screenHeightDp
     // The big inner screen; the cover screen (folded) never gets flex mode.
     val innerScreen = config.smallestScreenWidthDp >= 480
-
-    // A little give either way, so holding it near the edge of "half open" does not flicker.
-    val halfOpen = remember { BooleanArray(1) }
-    if (angle != null) {
-        halfOpen[0] = if (halfOpen[0]) angle in 15f..165f else angle in 30f..150f
-    } else {
-        halfOpen[0] = false
-    }
+    val halfOpenBySensor = HingeSensor.halfOpen
 
     val f = feature
     val state = when {
@@ -135,10 +146,9 @@ fun TrackFoldPosture(activity: Activity) {
                 hingeStart = if (across) f.bounds.top else f.bounds.left,
                 hingeEnd = if (across) f.bounds.bottom else f.bounds.right,
                 source = "WindowManager",
-                angle = angle,
             )
         }
-        halfOpen[0] && innerScreen -> {
+        halfOpenBySensor && innerScreen -> {
             // WindowManager is silent (or says flat): the hinge sensor decides. On a book-style
             // foldable the hinge runs across the screen when it is turned sideways.
             val across = f?.let { it.orientation == FoldingFeature.Orientation.HORIZONTAL } ?: landscape
@@ -147,33 +157,32 @@ fun TrackFoldPosture(activity: Activity) {
                 hingeStart = f?.let { if (across) it.bounds.top else it.bounds.left },
                 hingeEnd = f?.let { if (across) it.bounds.bottom else it.bounds.right },
                 source = "hinge sensor",
-                angle = angle,
             )
         }
         else -> FoldState(
             mode = FoldMode.Flat,
             source = when {
                 f != null -> "WindowManager"
-                angle != null -> "hinge sensor"
+                HingeSensor.present -> "hinge sensor"
                 else -> "none"
             },
-            angle = angle,
         )
     }
-    SideEffect { FlexMode.state = state }
+    // Equal states are not published again, so nothing redraws until the posture really changes.
+    SideEffect { if (FlexMode.state != state) FlexMode.state = state }
 }
 
-/** The hinge angle, listened to only while the app is in the foreground. */
+/** Listens to the hinge angle sensor while the app is in the foreground. */
 @Composable
-private fun rememberHingeAngle(context: Context): State<Float?> {
-    val angle = remember { mutableStateOf<Float?>(null) }
+private fun ListenToHinge(context: Context) {
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     DisposableEffect(context, lifecycle) {
         val sm = context.getSystemService(Context.SENSOR_SERVICE) as? SensorManager
         val sensor = if (Build.VERSION.SDK_INT >= 30) sm?.getDefaultSensor(Sensor.TYPE_HINGE_ANGLE) else null
+        HingeSensor.present = sensor != null
         val listener = object : SensorEventListener {
             override fun onSensorChanged(event: SensorEvent) {
-                angle.value = event.values.firstOrNull()
+                event.values.firstOrNull()?.let(HingeSensor::onAngle)
             }
 
             override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
@@ -204,5 +213,4 @@ private fun rememberHingeAngle(context: Context): State<Float?> {
             stop()
         }
     }
-    return angle
 }

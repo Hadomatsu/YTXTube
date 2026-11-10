@@ -837,24 +837,7 @@ fun VideoContent(
                         Modifier.height(EdgeScrubTimeRowHeight),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text(formatDuration(state.scrubPreviewMs ?: state.positionMs), color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                        Text(
-                            " / " + formatDuration(state.durationMs),
-                            color = Color.White.copy(alpha = 0.72f), fontSize = 12.sp, fontWeight = FontWeight.Bold,
-                        )
-                        // The chapter playing now; tap it for the list of chapters.
-                        val chapterList = state.details?.chapters.orEmpty()
-                        val chapterNow = Chapters.indexAt(chapterList, state.scrubPreviewMs ?: state.positionMs)
-                        if (chapterNow >= 0) {
-                            Text(
-                                "  •  " + chapterList[chapterNow].title + "  ›",
-                                color = Color.White.copy(alpha = 0.9f), fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
-                                maxLines = 1, overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f).pressable { touched(); state.sheet = PlayerSheet.Chapters },
-                            )
-                        } else {
-                            Spacer(Modifier.weight(1f))
-                        }
+                        TimeAndChapter(state) { touched(); state.sheet = PlayerSheet.Chapters }
                         state.askSegment?.let { segment ->
                             SkipSegmentPill(segment, enabled = true) { touched(); state.skipSegment(segment) }
                             Spacer(Modifier.width(6.dp))
@@ -921,6 +904,8 @@ fun VideoContent(
             }
         }
 
+        // Captions change word by word; only the captions are rebuilt for them, not the whole player.
+        Isolated {
         val captionText = state.captionText
         if (!scrubbing && captionText != null) {
             val captionSize = when {
@@ -966,6 +951,7 @@ fun VideoContent(
                 )
             }
         }
+        }
 
         if (state.error == null && (!fullscreenControlsScrub || controlsVisible || scrubbing)) {
             val scrubActive = controlsVisible && interactive
@@ -994,7 +980,8 @@ fun VideoContent(
                     .graphicsLayer { alpha = scrubFade }
             }
             val chapterStarts = remember(state.details?.chapters) { state.details?.chapters.orEmpty().map { it.startMs } }
-            Scrubber(
+            // The position changes four times a second; only the bar is rebuilt for it.
+            Isolated { Scrubber(
                 segments = segments,
                 positionMs = state.positionMs,
                 bufferedMs = state.bufferedMs,
@@ -1022,7 +1009,7 @@ fun VideoContent(
                     else state.endScrubDragging()
                 },
                 modifier = scrubModifier.zIndex(10f),
-            )
+            ) }
         }
         if (scrubbing && scrubPreviewMs != null) {
             Box(
@@ -2358,5 +2345,28 @@ private fun UpNextCard(state: PlayerState, next: VideoItem, modifier: Modifier =
                     .padding(vertical = 9.dp),
             )
         }
+    }
+}
+
+/** The time, the length and the chapter playing now, rebuilt on their own as the video plays. */
+@Composable
+private fun androidx.compose.foundation.layout.RowScope.TimeAndChapter(state: PlayerState, onChapters: () -> Unit) {
+    Text(formatDuration(state.scrubPreviewMs ?: state.positionMs), color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+    Text(
+        " / " + formatDuration(state.durationMs),
+        color = Color.White.copy(alpha = 0.72f), fontSize = 12.sp, fontWeight = FontWeight.Bold,
+    )
+    // The chapter playing now; tap it for the list of chapters.
+    val chapterList = state.details?.chapters.orEmpty()
+    val chapterNow = Chapters.indexAt(chapterList, state.scrubPreviewMs ?: state.positionMs)
+    if (chapterNow >= 0) {
+        Text(
+            "  •  " + chapterList[chapterNow].title + "  ›",
+            color = Color.White.copy(alpha = 0.9f), fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+            maxLines = 1, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f).pressable(onClick = onChapters),
+        )
+    } else {
+        Spacer(Modifier.weight(1f))
     }
 }

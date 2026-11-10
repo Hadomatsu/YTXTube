@@ -655,8 +655,7 @@ fun MusicScreen(
             resetKey = data.tab,
             header = {
                 MusicTopBar(
-                    tab = data.tab,
-                    onTab = { data.tab = it },
+                    data,
                     onSearch = { data.searchOpen = true },
                     onAccount = onAccount,
                 )
@@ -698,32 +697,46 @@ private fun Modifier.blockTouchesBelow(): Modifier =
 // ---------------------------------------------------------------------------------------- top
 
 @Composable
-private fun MusicTopBar(tab: MusicTab, onTab: (MusicTab) -> Unit, onSearch: () -> Unit, onAccount: () -> Unit) {
-    val c = MaterialTheme.colorScheme
-    Column(Modifier.fillMaxWidth().statusBarsPadding()) {
+private fun MusicTopBar(data: MusicData, onSearch: () -> Unit, onAccount: () -> Unit) {
+    val glass = LocalGlassBackdrop.current
+    Column(Modifier.fillMaxWidth().statusBarsPadding().padding(top = 6.dp)) {
+        // No logo or name: the sections, then search and the profile, like the other tabs.
         Row(
-            Modifier.fillMaxWidth().padding(start = 16.dp, end = 10.dp, top = 6.dp, bottom = 2.dp),
+            Modifier.fillMaxWidth().padding(start = 12.dp, end = 10.dp, bottom = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            BrandMark()
-            Spacer(Modifier.width(6.dp))
-            Text(
-                "Music",
-                modifier = Modifier.weight(1f),
-                fontFamily = RoundedHeavy,
-                fontWeight = FontWeight.ExtraBold,
-                fontSize = 22.sp,
-                letterSpacing = (-0.5).sp,
-            )
+            Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                MusicTab.entries.forEach { t ->
+                    MusicPill(t.label, selected = t == data.tab, backdrop = glass) { data.tab = t }
+                }
+            }
             HeaderActions(onSearch = onSearch, onAccount = onAccount)
         }
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            MusicTab.entries.forEach { t ->
-                MusicPill(t.label, selected = t == tab, backdrop = LocalGlassBackdrop.current) { onTab(t) }
+        // The topics of the open section sit in the header too, so they are glass like the rest.
+        when (data.tab) {
+            MusicTab.Home -> if (data.homeChips.isNotEmpty()) {
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.padding(bottom = 8.dp),
+                ) {
+                    items(data.homeChips, key = { "chip:" + it.title }) { chip ->
+                        MusicPill(chip.title, selected = chip.params != null && chip.params == data.homeChip?.params, backdrop = glass) {
+                            data.selectChip(chip)
+                        }
+                    }
+                }
             }
+            MusicTab.Library -> LazyRow(
+                contentPadding = PaddingValues(horizontal = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.padding(bottom = 8.dp),
+            ) {
+                items(MusicLibraryTab.entries, key = { it.name }) { t ->
+                    MusicPill(t.label, selected = t == data.libraryTab, backdrop = glass) { data.libraryTab = t }
+                }
+            }
+            MusicTab.Explore -> Unit
         }
     }
 }
@@ -798,21 +811,6 @@ private fun MusicHome(
     LoadMoreWhenNearEnd(list, state.sections.size) { state.loadMore() }
     PullToRefresh(enabled = true, refreshing = state.loading && state.loaded, onRefresh = { state.refresh() }, topPadding = contentPadding.calculateTopPadding()) {
         LazyColumn(state = list, contentPadding = contentPadding, modifier = Modifier.fillMaxSize()) {
-            if (data.homeChips.isNotEmpty()) {
-                item(key = "chips") {
-                    LazyRow(
-                        contentPadding = PaddingValues(horizontal = 12.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.padding(bottom = 8.dp),
-                    ) {
-                        items(data.homeChips, key = { "chip:" + it.title }) { chip ->
-                            MusicPill(chip.title, selected = chip.params != null && chip.params == data.homeChip?.params) {
-                                data.selectChip(chip)
-                            }
-                        }
-                    }
-                }
-            }
             // Signed out, YouTube Music has no "Listen again"; the songs played here stand in.
             if (!Account.signedIn && data.homeChip == null && RecentMusic.items.isNotEmpty()) {
                 item(key = "recent") {
@@ -1632,19 +1630,8 @@ private fun MusicLibrary(
     onAccount: () -> Unit,
 ) {
     val tab = data.libraryTab
-    val chips: LazyListScope.() -> Unit = {
-        item(key = "libchips") {
-            LazyRow(
-                contentPadding = PaddingValues(horizontal = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.padding(bottom = 8.dp),
-            ) {
-                items(MusicLibraryTab.entries, key = { it.name }) { t ->
-                    MusicPill(t.label, selected = t == tab) { data.libraryTab = t }
-                }
-            }
-        }
-    }
+    // The section chips (Playlists, Songs, ...) are in the header now.
+    val chips: LazyListScope.() -> Unit = {}
     if (tab == MusicLibraryTab.Downloads) {
         val downloads = Downloads.musicDownloads.map { d ->
             MusicItem(MusicKind.Song, d.title, d.channel, d.thumbnail, videoId = d.videoId, durationSec = d.durationSec, artists = listOf(MusicRef(d.channel, null)))

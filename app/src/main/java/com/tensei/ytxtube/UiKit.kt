@@ -949,3 +949,12 @@ fun CommunityCard(post: CommunityPost, modifier: Modifier = Modifier) {
         Box(Modifier.fillMaxWidth().height(1.dp).background(c.outlineVariant.copy(alpha = 0.3f)))
     }
 }
+
+/**
+ * Runs [content] in its own recomposition scope: values that change often and are read inside it
+ * (the playback position, captions) rebuild only it, not the screen around it.
+ */
+@Composable
+fun Isolated(content: @Composable () -> Unit) {
+    content()
+}
