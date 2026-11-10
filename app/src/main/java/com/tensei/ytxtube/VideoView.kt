@@ -983,6 +983,9 @@ fun VideoContent(
             // The position changes four times a second; only the bar is rebuilt for it.
             Isolated { Scrubber(
                 segments = segments,
+                // The theme colour, like flex mode, instead of white and red.
+                played = MaterialTheme.colorScheme.primary,
+                activePlayed = MaterialTheme.colorScheme.primary,
                 positionMs = state.positionMs,
                 bufferedMs = state.bufferedMs,
                 durationMs = state.durationMs,
@@ -1109,6 +1112,7 @@ fun AudioOnlyStage(
                 track = c.surfaceContainerHighest,
                 buffered = c.primary.copy(alpha = 0.3f),
                 played = c.primary,
+                activePlayed = c.primary,
                 trackHeight = 6.dp,
                 knob = 8.dp,
                 knobDragging = 10.dp,
@@ -1890,6 +1894,7 @@ private fun Scrubber(
     track: Color = Color.White.copy(alpha = 0.3f),
     buffered: Color = Color.White.copy(alpha = 0.5f),
     played: Color = Color.White,
+    activePlayed: Color = ScrubberActiveRed,
     trackHeight: Dp = 4.dp,
     touchHeight: Dp = 24.dp,
     knob: Dp = 7.dp,
@@ -1909,7 +1914,7 @@ private fun Scrubber(
 
     val chromeActive = active || dragging
     val playedColor by animateColorAsState(
-        if (chromeActive) ScrubberActiveRed else played,
+        if (chromeActive) activePlayed else played,
         tween(160, easing = Motion.Emphasized),
         label = "scrubPlayed",
     )

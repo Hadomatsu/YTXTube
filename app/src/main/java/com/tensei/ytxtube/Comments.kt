@@ -310,7 +310,7 @@ fun CommentsCard(state: CommentsState, onOpen: () -> Unit, live: Boolean = false
                 onClick = onOpen,
             )
             .clip(shape)
-            .background(c.surfaceContainerLow)
+            .background(playerCardColor(c.surfaceContainerLow))
             .padding(horizontal = 12.dp, vertical = 8.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {

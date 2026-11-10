@@ -137,7 +137,7 @@ fun QueueCard(player: PlayerState, onOpen: () -> Unit) {
             .fillMaxWidth()
             .pressable(pressedScale = 0.98f, onClick = onOpen)
             .clip(RoundedCornerShape(24.dp))
-            .background(c.secondaryContainer)
+            .background(playerCardColor(c.secondaryContainer))
             .padding(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

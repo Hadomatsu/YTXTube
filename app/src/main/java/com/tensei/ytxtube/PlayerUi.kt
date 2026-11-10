@@ -214,6 +214,9 @@ fun PlayerScreen(
     val bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     var descriptionOpen by remember(item.id) { mutableStateOf(false) }
     val commentsBackdrop = com.kyant.backdrop.backdrops.rememberLayerBackdrop()
+    // What the glass buttons on the page refract: only the blurred picture behind the page.
+    val detailsBackdrop = com.kyant.backdrop.backdrops.rememberLayerBackdrop()
+    val pictureBackground = GlassQuality.effectsSupported && ThemeSettings.mode != "amoled" && !state.isMusicMode
 
     val context = LocalContext.current
     var dominantColor by remember(item.id) { mutableStateOf(c.primaryContainer) }
@@ -236,7 +239,7 @@ fun PlayerScreen(
     // is drawn at all, and 30 steps a second are as smooth to the eye as 60 for something this
     // slow, so the page is not redrawn every frame while a video plays.
     val ambientDrift = remember { androidx.compose.runtime.mutableFloatStateOf(0.5f) }
-    val driftOn = GlassQuality.effectsSupported && state.expanded && !state.isMusicMode && ThemeSettings.mode != "amoled"
+    val driftOn = GlassQuality.effectsSupported && state.expanded && !state.isMusicMode && ThemeSettings.mode != "amoled" && !pictureBackground
     LaunchedEffect(driftOn) {
         if (!driftOn) return@LaunchedEffect
         val start = android.os.SystemClock.uptimeMillis() - (ambientDrift.floatValue * 14_000f).toLong()
@@ -281,7 +284,7 @@ fun PlayerScreen(
             .drawBehind {
                 // AMOLED is meant to be pure black. The drifting status-bar/player glow
                 // is a normal-theme effect only; low-end devices skip it to keep playback smooth.
-                if (isAmoled || !GlassQuality.effectsSupported || state.isMusicMode || size.width < 10f || size.height < 10f) return@drawBehind
+                if (pictureBackground || isAmoled || !GlassQuality.effectsSupported || state.isMusicMode || size.width < 10f || size.height < 10f) return@drawBehind
                 val drift = ambientDrift.value
                 val topStrength = if (isAmoled) 0.40f else if (isDark) 0.35f else 0.22f
                 val bodyStrength = if (isAmoled) 0.30f else if (isDark) 0.26f else 0.16f
@@ -403,6 +406,17 @@ fun PlayerScreen(
         StatusIconsOverVideo(state)
         // The page is recorded so the comments, which slide up over it, are frosted glass.
         Box(Modifier.fillMaxSize().layerBackdrop(commentsBackdrop)) {
+        // Flex mode's look for the normal page too: the video's picture, blurred and dimmed,
+        // behind everything, with glass buttons over it.
+        if (pictureBackground) {
+            PlayerPictureBackground(
+                picture = item.thumbnail,
+                backdrop = detailsBackdrop,
+                dark = isDark || isAmoled,
+                modifier = Modifier.fillMaxSize().graphicsLayer { alpha = ramp(morph.progress.value, 0f, 0.6f) },
+            )
+        }
+        androidx.compose.runtime.CompositionLocalProvider(LocalPlayerGlass provides (if (pictureBackground) detailsBackdrop else null)) {
         Column(Modifier.fillMaxSize()) {
             Box(Modifier.zIndex(2f)) {
                 VideoStage(state, morph, onCollapse, onFullscreen, interactive)
@@ -467,6 +481,7 @@ fun PlayerScreen(
                     item(key = "relatedRetry") { RelatedRetry(onRetry = state::retryRelated) }
                 }
             }
+        }
         }
         }
 
@@ -823,14 +838,16 @@ private fun ActionPill(
     onClick: () -> Unit,
 ) {
     val c = MaterialTheme.colorScheme
-    val bg by androidx.compose.animation.animateColorAsState(if (active) c.primary else c.surfaceContainerHigh, tween(220), label = "pillBg")
+    val glass = LocalPlayerGlass.current
+    val rest = if (glass != null) Color.Transparent else c.surfaceContainerHigh
+    val bg by androidx.compose.animation.animateColorAsState(if (active) c.primary else rest, tween(220), label = "pillBg")
     val tint by androidx.compose.animation.animateColorAsState(if (active) c.onPrimary else c.onSurface, tween(220), label = "pillInk")
     Row(
         modifier = Modifier
             .squishOn(active)
             .height(36.dp)
             .pressable(onClick = onClick)
-
+            .then(if (glass != null) Modifier.glassControl(glass, shape) else Modifier)
             .background(bg, shape)
             .animateContentSize(spring(dampingRatio = 0.7f, stiffness = 500f))
             .padding(horizontal = 11.dp),
@@ -2013,5 +2030,41 @@ private fun StatusIconsOverVideo(state: PlayerState) {
         val controller = window?.let { androidx.core.view.WindowCompat.getInsetsController(it, view) }
         if (overVideo) controller?.isAppearanceLightStatusBars = false
         onDispose { if (overVideo && !state.fullscreen) controller?.isAppearanceLightStatusBars = !dark }
+    }
+}
+
+
+/** The backdrop the player page's glass buttons use, when the page has its picture background. */
+internal val LocalPlayerGlass = androidx.compose.runtime.staticCompositionLocalOf<Backdrop?> { null }
+
+/** A soft see-through card for the player page (comments, queue) over the picture background. */
+@Composable
+internal fun playerCardColor(fallback: Color): Color {
+    if (LocalPlayerGlass.current == null) return fallback
+    val dark = ThemeSettings.mode == "amoled" || isDarkTheme()
+    return if (dark) Color.White.copy(alpha = 0.08f) else Color.White.copy(alpha = 0.45f)
+}
+
+/** Flex mode's background: the video's picture, heavily blurred, darkened (or lightened). */
+@Composable
+private fun PlayerPictureBackground(
+    picture: String?,
+    backdrop: com.kyant.backdrop.backdrops.LayerBackdrop,
+    dark: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    Box(modifier.layerBackdrop(backdrop).background(if (dark) Color.Black else Color(0xFFF2F2F4))) {
+        AsyncImage(
+            model = picture,
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize().blur(70.dp),
+        )
+        Box(
+            Modifier.fillMaxSize().background(
+                if (dark) Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.42f), Color.Black.copy(alpha = 0.58f)))
+                else Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.5f), Color.White.copy(alpha = 0.66f))),
+            ),
+        )
     }
 }
