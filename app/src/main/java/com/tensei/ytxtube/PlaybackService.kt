@@ -533,6 +533,42 @@ private class StreamRecoverer(
             }
             return
         }
+        // The live finished while being watched: carry on as a recording from the same spot
+        // (no new extraction; YouTube calls a just-finished live unavailable for a while).
+        if (current != null && LiveDvr.ended(current.mediaId)) {
+            val id = current.mediaId
+            val position = player.currentPosition
+            StreamRecovery.markHandled(id)
+            main.post {
+                if (player.currentMediaItem?.mediaId != id) return@post
+                val index = player.currentMediaItemIndex
+                player.addMediaSource(index + 1, sources.createMediaSource(current))
+                player.removeMediaItem(index)
+                player.seekTo(index, position)
+                player.prepare()
+            }
+            return
+        }
+        // A piece past the newest one was refused: the live may just have finished, or the piece
+        // is not there yet. Ask again a little later from the same spot (no new extraction); if
+        // the live has finished by then, it carries on as a recording (above).
+        val refused = (error.cause as? androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException)?.dataSpec?.uri
+        if (current != null && LiveDvr.active(current.mediaId) &&
+            error.errorCode == PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS && LiveDvr.pastHead(current.mediaId, refused)
+        ) {
+            val id = current.mediaId
+            val position = player.currentPosition
+            StreamRecovery.markHandled(id)
+            main.postDelayed({
+                if (player.currentMediaItem?.mediaId != id || player.playerError == null) return@postDelayed
+                val index = player.currentMediaItemIndex
+                player.addMediaSource(index + 1, sources.createMediaSource(current))
+                player.removeMediaItem(index)
+                player.seekTo(index, position)
+                player.prepare()
+            }, LiveDvr.retryDelayMs(id))
+            return
+        }
         // A live played from its numbered pieces (rewind to the start) that fails for any other
         // reason than an expired link: play it from the HLS playlist instead.
         if (current != null && LiveDvr.active(current.mediaId) &&

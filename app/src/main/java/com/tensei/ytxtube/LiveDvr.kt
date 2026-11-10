@@ -57,7 +57,20 @@ object LiveDvr {
         val channels: Int,
     )
 
-    private class Plan(val segmentSec: Int, val startMs: Long, val video: List<Rep>, val audio: Rep)
+    private class Plan(val segmentSec: Int, val startMs: Long, val video: List<Rep>, val audio: Rep, head: Long) {
+        /** The newest piece YouTube has told us about, and when that number last went up. */
+        @Volatile var head: Long = head
+        @Volatile var headMovedAt: Long = System.currentTimeMillis()
+        /** The live has finished: no new pieces. The recording then plays like a normal video. */
+        @Volatile var ended = false
+
+        fun noteHead(n: Long) {
+            if (n > head) {
+                head = n
+                headMovedAt = System.currentTimeMillis()
+            }
+        }
+    }
 
     private val plans = ConcurrentHashMap<String, Plan>()
     private val failedAt = ConcurrentHashMap<String, Long>()
@@ -74,6 +87,19 @@ object LiveDvr {
         failedAt[id] = System.currentTimeMillis()
         plans.remove(id)
     }
+
+    /** A refused piece newer than the newest one known: the live may just have finished. */
+    fun pastHead(id: String?, failed: Uri?): Boolean {
+        val p = plans[id ?: return false] ?: return false
+        val sq = failed?.getQueryParameter("sq")?.toLongOrNull() ?: return false
+        return sq > p.head
+    }
+
+    /** How long to wait before asking for that piece again. */
+    fun retryDelayMs(id: String?): Long = (plans[id ?: ""]?.segmentSec ?: 5).let { maxOf(2L * it, 6L) * 1000L }
+
+    /** The live this was playing has finished; it carries on as a recording. */
+    fun ended(id: String?): Boolean = id != null && plans[id]?.ended == true
 
     /** Fell back within the last few seconds (the error that caused it is not shown). */
     fun justFellBack(id: String?): Boolean =
@@ -115,7 +141,7 @@ object LiveDvr {
             // Piece N started N pieces after the start. One piece of margin, so the newest piece
             // is only asked for once it is surely there.
             val start = System.currentTimeMillis() - head * segmentSec * 1000L
-            plans[id] = Plan(segmentSec, start, videos.map(::videoRep), audioRep(audio))
+            plans[id] = Plan(segmentSec, start, videos.map(::videoRep), audioRep(audio), head)
             Log.i(TAG, "$id: ${head + 1} pieces of ${segmentSec}s, rewind to the start enabled (${videos.size} qualities)")
         }.onFailure { Log.w(TAG, "$id: ${it.message}") }
     }
@@ -148,8 +174,9 @@ object LiveDvr {
             .setMediaId(id)
             .setMediaMetadata(mediaItem.mediaMetadata)
             .build()
-        Log.i(TAG, "media source $id: live from numbered pieces, rewind to the start")
-        return DashMediaSource.Factory(DefaultDashChunkSource.Factory(segments), DataSource.Factory { ManifestSource() })
+        Log.i(TAG, "media source $id: live from numbered pieces, rewind to the start" + if (ended(id)) " (finished: recording)" else "")
+        val watched = DataSource.Factory { SegmentSource(segments.createDataSource(), id) }
+        return DashMediaSource.Factory(DefaultDashChunkSource.Factory(watched), DataSource.Factory { ManifestSource() })
             .createMediaSource(item)
     }
 
@@ -161,7 +188,10 @@ object LiveDvr {
     private fun esc(s: String?): String = (s ?: "")
         .replace("&", "&amp;").replace("\"", "&quot;").replace("<", "&lt;").replace(">", "&gt;")
 
-    /** The live DASH description: every piece by number, from the start to now. */
+    /**
+     * The DASH description: every piece by number. While the live runs it grows with the clock;
+     * once the live has finished it is a fixed recording from the first piece to the last.
+     */
     private fun mpd(id: String): String? {
         val p = plans[id] ?: return null
         val now = System.currentTimeMillis()
@@ -171,9 +201,14 @@ object LiveDvr {
             "<SegmentTemplate media=\"${esc(rep.url)}&amp;sq=\$Number\$\" startNumber=\"0\" timescale=\"1000\" duration=\"${d * 1000}\"/>"
         val sb = StringBuilder()
         sb.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>")
-        sb.append(
+        if (p.ended) {
+            sb.append(
+                "<MPD xmlns=\"urn:mpeg:dash:schema:mpd:2011\" profiles=\"urn:mpeg:dash:profile:isoff-on-demand:2011\" type=\"static\" " +
+                    "mediaPresentationDuration=\"PT${(p.head + 1) * d}S\" minBufferTime=\"PT${d}S\">",
+            )
+        } else sb.append(
             "<MPD xmlns=\"urn:mpeg:dash:schema:mpd:2011\" profiles=\"urn:mpeg:dash:profile:isoff-live:2011\" type=\"dynamic\" " +
-                "availabilityStartTime=\"${iso(p.startMs)}\" publishTime=\"${iso(now)}\" minimumUpdatePeriod=\"PT30S\" " +
+                "availabilityStartTime=\"${iso(p.startMs)}\" publishTime=\"${iso(now)}\" minimumUpdatePeriod=\"PT${maxOf(2 * d, 6)}S\" " +
                 "timeShiftBufferDepth=\"PT${WINDOW_SEC}S\" suggestedPresentationDelay=\"PT${delay}S\" minBufferTime=\"PT${d}S\">",
         )
         sb.append("<Period id=\"0\" start=\"PT0S\">")
@@ -198,9 +233,38 @@ object LiveDvr {
         sb.append("</Representation></AdaptationSet>")
         sb.append("</Period>")
         // The player's clock is the phone's clock, the same one the start time came from.
-        sb.append("<UTCTiming schemeIdUri=\"urn:mpeg:dash:utc:direct:2014\" value=\"${iso(now)}\"/>")
+        if (!p.ended) sb.append("<UTCTiming schemeIdUri=\"urn:mpeg:dash:utc:direct:2014\" value=\"${iso(now)}\"/>")
         sb.append("</MPD>")
         return sb.toString()
+    }
+
+    /**
+     * The pieces themselves, watched on the way: each answer says how far the live has got. A
+     * piece past the newest one that is refused, while that number has not moved for a while,
+     * means the live has finished.
+     */
+    private class SegmentSource(private val upstream: DataSource, private val id: String) : DataSource by upstream {
+        override fun open(dataSpec: DataSpec): Long {
+            val sq = dataSpec.uri.getQueryParameter("sq")?.toLongOrNull()
+            try {
+                val length = upstream.open(dataSpec)
+                upstream.responseHeaders.entries
+                    .firstOrNull { it.key.equals("X-Head-Seqnum", ignoreCase = true) }
+                    ?.value?.firstOrNull()?.toLongOrNull()
+                    ?.let { plans[id]?.noteHead(it) }
+                return length
+            } catch (e: androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException) {
+                val p = plans[id]
+                if (p != null && sq != null && sq > p.head && !p.ended) {
+                    val still = System.currentTimeMillis() - p.headMovedAt
+                    if (still > maxOf(2L * p.segmentSec, 10L) * 1000L) {
+                        Log.i(TAG, "$id: the live has finished at piece ${p.head}; playing on as a recording")
+                        p.ended = true
+                    }
+                }
+                throw e
+            }
+        }
     }
 
     /** Serves the description above to the player, made fresh each time it is asked for. */
