@@ -1399,6 +1399,23 @@ private fun GeneralModificationContent(context: Context) {
         HorizontalDivider(color = c.onSurface.copy(alpha = 0.08f))
 
         SettingsSwitchRow(
+            title = "Flex mode (foldables)",
+            subtitle = "Stand the phone half open and the video plays above the fold, with the controls, up next and comments below. " + FlexMode.describe(),
+            checked = FlexMode.enabled,
+            onCheckedChange = { FlexMode.updateEnabled(it) },
+        )
+        if (FlexMode.enabled) {
+            SettingsSwitchRow(
+                title = "Flex mode held like a book",
+                subtitle = "Half open with the fold running down the screen: the video on the left page, the rest on the right",
+                checked = FlexMode.bookEnabled,
+                onCheckedChange = { FlexMode.updateBook(it) },
+            )
+        }
+
+        HorizontalDivider(color = c.onSurface.copy(alpha = 0.08f))
+
+        SettingsSwitchRow(
             title = I18n.t("hide_status_bar", "Hide status bar"),
             subtitle = I18n.t("hide_status_bar_sub", "Hide the time, battery and notification icons at the top. Swipe down from the top edge to see them for a moment"),
             checked = ThemeSettings.hideStatusBar,

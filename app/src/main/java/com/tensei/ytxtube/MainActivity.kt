@@ -490,13 +490,28 @@ fun YtxTubeApp() {
     val wideScreen = !TvMode.isTv && LocalConfiguration.current.screenWidthDp >= HomeGrid.TWO_COLUMNS_FROM_DP
     SideEffect { player.wideStage = wideScreen }
 
+    // Flex mode: a foldable stood half open puts the video above the fold and the controls below.
+    TrackFoldPosture(activity)
+    val flexPose = FlexMode.active
+    // "Full video" leaves flex mode until the phone is folded or opened differently.
+    var flexFull by remember { mutableStateOf(false) }
+    LaunchedEffect(flexPose) { flexFull = false }
+    val flexWanted = flexPose != FoldMode.Flat && playerOpen && !player.isMusicMode && !pip.active && !flexFull
+    var showFlex by remember { mutableStateOf(false) }
+    LaunchedEffect(flexWanted) {
+        // A moment's settling, so opening or closing the phone does not flash between layouts.
+        if (flexWanted) kotlinx.coroutines.delay(250)
+        showFlex = flexWanted
+    }
+
     val fullscreenBeforePip = remember { mutableStateOf(false) }
     val showFullscreen = if (pip.active) fullscreenBeforePip.value
+        else if (showFlex) false
         else if (isTabletOrTv) (playerOpen && (player.fullscreen || player.portraitFullscreen) && !player.isMusicMode)
         else (playerOpen && (landscape || player.fullscreen || player.portraitFullscreen) && !player.isMusicMode)
     SideEffect { if (!pip.active) fullscreenBeforePip.value = showFullscreen }
     LaunchedEffect(showFullscreen) { player.fullscreen = showFullscreen }
-    SystemBarsHidden(showFullscreen)
+    SystemBarsHidden(showFullscreen || showFlex)
 
     // The player page comes back out of black after leaving fullscreen instead of cutting in.
     val exitFade = remember { androidx.compose.animation.core.Animatable(1f) }
@@ -511,6 +526,8 @@ fun YtxTubeApp() {
         player.portraitFullscreen = false
         player.fullscreen = false
         player.expanded = true
+        // Back from the full video while still half open: flex mode again.
+        flexFull = false
         orientation.exitFullscreen()
     }
 
@@ -1042,7 +1059,20 @@ fun YtxTubeApp() {
             }
         }
 
-        if (showFullscreen) {
+        if (showFlex) {
+            Box(Modifier.fillMaxSize().layerBackdrop(playerBackdrop)) {
+                FlexPlayer(
+                    player,
+                    FlexMode.state,
+                    onOpen = player::open,
+                    onCollapse = { player.expanded = false },
+                    onFullVideo = {
+                        flexFull = true
+                        player.fullscreen = true
+                    },
+                )
+            }
+        } else if (showFullscreen) {
             // The screen goes fully black first and only then does the video settle in, so the
             // feed never shows through a half-faded video (that was the white outline). A swipe
             // up arrives already dark, because the page dimmed under the finger.

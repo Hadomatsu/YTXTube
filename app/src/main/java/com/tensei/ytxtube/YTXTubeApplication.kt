@@ -44,6 +44,7 @@ class YTXTubeApplication : Application(), ImageLoaderFactory {
         FeedFilters.init(this)
         WatchedStore.init(this)
         Haptics.init(this)
+        FlexMode.init(this)
         ShortsPrefs.init(this)
         VideoAccent.init(this)
         PlaybackSpeed.init(this)
