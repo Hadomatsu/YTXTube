@@ -386,20 +386,25 @@ fun CommentsPanel(
     creatorName: String = "",
     /** What is behind the panel, for frosted glass; null draws it solid. */
     backdrop: com.kyant.backdrop.Backdrop? = null,
+    /**
+     * A free-standing panel (Shorts beside the video on a wide screen): it fills the space it is
+     * given, has all corners rounded and does not leave room for the status bar.
+     */
+    floating: Boolean = false,
 ) {
     val c = MaterialTheme.colorScheme
     val density = LocalDensity.current
     val scope = rememberCoroutineScope()
     val reduced = rememberReducedMotion()
     BoxWithConstraints(Modifier.fillMaxSize()) {
-        val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-        val fullPx = with(density) { (maxHeight - statusTop - 8.dp).toPx() }
+        val statusTop = if (floating) 0.dp else WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+        val fullPx = with(density) { (maxHeight - statusTop - (if (floating) 0.dp else 8.dp)).toPx() }
         val partialPx = with(density) { (maxHeight - partialTop).toPx() }.coerceIn(fullPx * 0.35f, fullPx)
         // The panel stays at whatever height it is let go at; below this it closes.
         val floorPx = maxOf(with(density) { 180.dp.toPx() }, fullPx * 0.22f).coerceAtMost(partialPx)
         // Opens at the height it was last left at, or just under the video the first time.
         val height = remember {
-            Animatable(CommentsPanelHeight.remembered(fullPx)?.coerceIn(floorPx, fullPx) ?: partialPx)
+            Animatable(if (floating) fullPx else CommentsPanelHeight.remembered(fullPx)?.coerceIn(floorPx, fullPx) ?: partialPx)
         }
 
         val slide = remember { Animatable(1f) }
@@ -422,10 +427,10 @@ fun CommentsPanel(
                 // Dragged below the lowest height, or flicked down hard from low down: close.
                 h < floorPx || velocity > 2400f && h <= partialPx + 1f -> close()
                 // A hard flick still jumps all the way up or back to just under the video.
-                velocity < -2400f -> scope.launch { height.animateTo(fullPx, springy); CommentsPanelHeight.remember(fullPx, fullPx) }
-                velocity > 2400f -> scope.launch { height.animateTo(partialPx, springy); CommentsPanelHeight.remember(partialPx, fullPx) }
+                velocity < -2400f -> scope.launch { height.animateTo(fullPx, springy); if (!floating) CommentsPanelHeight.remember(fullPx, fullPx) }
+                velocity > 2400f -> scope.launch { height.animateTo(partialPx, springy); if (!floating) CommentsPanelHeight.remember(partialPx, fullPx) }
                 // Otherwise it simply stays where it was let go.
-                else -> CommentsPanelHeight.remember(h, fullPx)
+                else -> if (!floating) CommentsPanelHeight.remember(h, fullPx)
             }
         }
 
@@ -462,7 +467,7 @@ fun CommentsPanel(
                 }
             }
         }
-        val shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+        val shape = if (floating) RoundedCornerShape(24.dp) else RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
         Column(
             Modifier
                 .align(Alignment.BottomCenter)

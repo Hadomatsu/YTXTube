@@ -132,6 +132,9 @@ import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.flow.first
+import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.withContext
 import org.schabi.newpipe.extractor.stream.StreamInfo
 import kotlin.math.absoluteValue
@@ -141,8 +144,9 @@ import kotlin.math.absoluteValue
 private class ShortsFeedState(
     private val scope: kotlinx.coroutines.CoroutineScope,
     private val seed: VideoItem? = null,
+    restored: ShortsWarmup.Kept? = null,
 ) {
-    var videos by mutableStateOf(seed?.let { listOf(it) } ?: emptyList())
+    var videos by mutableStateOf(restored?.videos ?: seed?.let { listOf(it) } ?: emptyList())
         private set
     var loading by mutableStateOf(false)
         private set
@@ -150,17 +154,22 @@ private class ShortsFeedState(
         private set
     var error by mutableStateOf<String?>(null)
         private set
-    private var next: String? = null
-    private var loaded = false
+    private var next: String? = restored?.next
+    private var loaded = restored != null
 
-    private val seen = HashSet<String>()
+    private val seen = HashSet<String>().apply { restored?.seen?.let(::addAll) }
+
+    val nextToken: String? get() = next
+    val seenIds: Set<String> get() = seen
 
     fun load(ctx: Context? = null) {
         if (loading || loaded) return
         loading = true
         error = null
         scope.launch {
-            runCatching { InnerTube.shorts(null, seen) }
+            // The first page is usually fetched already, a few seconds after the app started.
+            val warmed = ShortsWarmup.takeFirstPage()
+            runCatching { warmed ?: InnerTube.shorts(null, seen) }
                 .onSuccess { page ->
                     videos = merge(page.videos)
                     seen += videos.map { it.id }
@@ -262,10 +271,27 @@ fun ShortsScreen(
             }
         }
     }
-    val feed = remember(startItem?.id) { ShortsFeedState(scope, startItem) }
-    LaunchedEffect(feed) { feed.load(context) }
+    // Coming back to the Shorts tab picks up where you left it (same feed, same Short).
+    val restored = remember(startItem?.id) { if (startItem == null) ShortsWarmup.restore() else null }
+    val feed = remember(startItem?.id) { ShortsFeedState(scope, startItem, restored) }
+    LaunchedEffect(feed) {
+        ShortsWarmup.noteUsed(context)
+        feed.load(context)
+    }
 
-    val pager = rememberPagerState(pageCount = { feed.videos.size })
+    val pager = rememberPagerState(initialPage = restored?.page ?: 0, pageCount = { feed.videos.size })
+    DisposableEffect(feed) {
+        onDispose {
+            if (startItem == null) ShortsWarmup.keep(feed.videos, feed.nextToken, feed.seenIds, pager.settledPage)
+        }
+    }
+    // As soon as a swipe is let go, start resolving the Short it is heading to, before it settles.
+    LaunchedEffect(pager, feed) {
+        snapshotFlow { pager.targetPage }.collect { target ->
+            feed.videos.getOrNull(target)?.let { StreamCache.prefetch(it.id) }
+            feed.videos.getOrNull(target + 1)?.let { StreamCache.prefetch(it.id) }
+        }
+    }
     val page = if (feed.videos.isEmpty()) 0 else pager.settledPage.coerceIn(0, feed.videos.lastIndex)
     val current = feed.videos.getOrNull(page)
 
@@ -492,12 +518,15 @@ fun ShortsScreen(
     // preload manager. It buffers the first seconds of each source in rank order;
     // a swipe then adopts that wrapped source instead of rebuilding it.
     LaunchedEffect(feed.videos, page) {
-        val upcoming = feed.videos.drop(page + 1).take(5)
+        val upcoming = feed.videos.drop(page + 1).take(6)
         val keep = upcoming.mapTo(HashSet()) { it.id }
         feed.videos.getOrNull(page)?.let { keep.add(it.id) }
         preload.setCurrentPlayingIndex(page)
         preload.keepOnly(keep)
         if (upcoming.isEmpty()) return@LaunchedEffect
+        // The Short on screen first: the ones after it start once it is playing (or after a
+        // moment), so they never slow down the one you are waiting for.
+        withTimeoutOrNull(2_500) { snapshotFlow { loading }.first { !it } }
 
         withContext(Dispatchers.IO) { upcoming.forEach { StreamCache.prefetch(it.id) } }
         upcoming.forEachIndexed { index, item ->
@@ -527,6 +556,10 @@ fun ShortsScreen(
     }
 
     val glassTint = glassOverlayFill(0.5f)
+    // Unfolded (or any wide screen) the comments open as a panel beside the buttons instead of
+    // over the bottom of the screen.
+    val sideComments = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp >= 600
+    val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     // The whole feed, recorded so the comments slide up over it as frosted glass.
     val feedBackdrop = rememberLayerBackdrop()
 
@@ -803,13 +836,23 @@ fun ShortsScreen(
                     if (index == page && !inPip) {
                         val currentLikeCount = if (likeCount >= 0) (likeCount + likeBump).coerceAtLeast(0L) else if (liked) 1L else -1L
                         val currentDislikes = if (dislikes >= 0) (dislikes + dislikeBump).coerceAtLeast(0L) else if (disliked) 1L else -1L
+                        // With the comments open beside the video (unfolded), the buttons slide up
+                                // to the top right, labels tucked away, to make room under them.
+                        val railUp = commentsOpen && sideComments
+                        val railBias by animateFloatAsState(
+                            targetValue = if (railUp) -1f else 1f,
+                            animationSpec = spring(dampingRatio = 0.9f, stiffness = 420f),
+                            label = "railBias",
+                        )
                         ShortsRail(
                             modifier = Modifier
-                                .align(Alignment.BottomEnd)
+                                .align(androidx.compose.ui.BiasAlignment(1f, railBias))
                                 .padding(
                                     end = 8.dp,
+                                    top = statusTop + RailTopGap,
                                     bottom = bottomInset + 22.dp,
                                 ),
+                            compact = railUp,
                             item = item,
                             info = info,
                             liked = liked,
@@ -848,9 +891,13 @@ fun ShortsScreen(
                             },
                             onShare = { share(item) },
                             onComments = {
-                                pauseForOverlay()
-                                comments.load(item.id)
-                                commentsOpen = true
+                                // The Short keeps playing while the comments are open.
+                                if (commentsOpen) {
+                                    commentsOpen = false
+                                } else {
+                                    comments.load(item.id)
+                                    commentsOpen = true
+                                }
                             },
                             onDownload = {
                                 pauseForOverlay()
@@ -1000,14 +1047,36 @@ fun ShortsScreen(
             }
         }
 
-        if (commentsOpen) {
+        if (commentsOpen && sideComments) {
+            // Unfolded: a panel on the right, under the buttons, above the bottom bar. The Short
+            // keeps playing in place beside it.
+            BoxWithConstraints(Modifier.fillMaxSize()) {
+                val top = statusTop + RailTopGap + CompactRailHeight + 14.dp
+                val bottomPad = bottomInset + 22.dp
+                val panelWidth = (maxWidth * 0.46f).coerceIn(320.dp, 520.dp)
+                Box(
+                    Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(end = 8.dp, bottom = bottomPad)
+                        .width(panelWidth)
+                        .height((maxHeight - top - bottomPad).coerceAtLeast(260.dp)),
+                ) {
+                    CommentsPanel(
+                        state = comments,
+                        partialTop = 0.dp,
+                        onClose = { commentsOpen = false },
+                        creatorAvatar = info?.uploaderAvatars?.maxByOrNull { it.width }?.url,
+                        creatorName = info?.uploaderName.orEmpty(),
+                        backdrop = feedBackdrop,
+                        floating = true,
+                    )
+                }
+            }
+        } else if (commentsOpen) {
             CommentsPanel(
                 state = comments,
                 partialTop = 0.dp,
-                onClose = {
-                    commentsOpen = false
-                    resumeAfterOverlayPanel()
-                },
+                onClose = { commentsOpen = false },
                 creatorAvatar = info?.uploaderAvatars?.maxByOrNull { it.width }?.url,
                 creatorName = info?.uploaderName.orEmpty(),
                 backdrop = feedBackdrop,
@@ -1120,12 +1189,14 @@ private fun ShortsRail(
     onDownload: () -> Unit,
     backdrop: Backdrop,
     glass: GlassSpec,
+    compact: Boolean = false,
 ) {
     Column(
         modifier = modifier,
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+      androidx.compose.runtime.CompositionLocalProvider(LocalRailCompact provides compact) {
         ShortsAction(
             icon = Icons.Rounded.ThumbUp,
             label = countLabel(likeCount, I18n.t("like", "Like")),
@@ -1147,8 +1218,18 @@ private fun ShortsRail(
         ShortsAction(Icons.Rounded.Comment, I18n.t("comments", "Comments"), backdrop = backdrop, glass = glass, onClick = onComments)
         ShortsAction(Icons.Rounded.Download, I18n.t("download", "Download"), backdrop = backdrop, glass = glass, onClick = onDownload)
         ShortsAction(Icons.Rounded.Share, I18n.t("share", "Share"), backdrop = backdrop, glass = glass, onClick = onShare)
+      }
     }
 }
+
+/** True while the buttons are tucked up beside the comments: their labels are hidden. */
+private val LocalRailCompact = androidx.compose.runtime.staticCompositionLocalOf { false }
+
+/** Room under the top bar for the buttons when they move up. */
+private val RailTopGap = 64.dp
+
+/** Five 38 dp buttons, 8 dp apart, without labels. */
+private val CompactRailHeight = 38.dp * 5 + 8.dp * 4
 
 @Composable
 private fun ShortsAction(
@@ -1180,14 +1261,18 @@ private fun ShortsAction(
         ) {
             Icon(icon, contentDescription = label, tint = tint, modifier = Modifier.size(20.dp))
         }
-        Spacer(Modifier.height(3.dp))
-        Text(
-            label,
-            color = Color.White,
-            fontSize = 10.sp,
-            fontWeight = FontWeight.SemiBold,
-            maxLines = 1,
-        )
+        AnimatedVisibility(visible = !LocalRailCompact.current) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Spacer(Modifier.height(3.dp))
+                Text(
+                    label,
+                    color = Color.White,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                )
+            }
+        }
     }
 }
 
@@ -1357,9 +1442,10 @@ private class ShortsPreloader(context: Context) {
             // head start, the ones after it progressively less.
             val distance = (rank - currentIndex).coerceAtLeast(1)
             val targetMs = when (distance) {
-                1 -> 5_000L
-                2 -> 3_000L
-                else -> 1_500L
+                1 -> 6_000L
+                2 -> 4_000L
+                3 -> 3_000L
+                else -> 2_000L
             }
             DefaultPreloadManager.PreloadStatus.specifiedRangeLoaded(targetMs)
         },

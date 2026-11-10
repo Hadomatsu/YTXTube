@@ -1,9 +1,8 @@
-YTXTube Custom 2.6.1: smoother, and more glass
+YTXTube Custom 2.6.2: faster Shorts, comments beside the video
 
-- Flex mode no longer stutters: the hinge sensor was redrawing the whole app many times a second as the phone moved slightly in the hand; now only real posture changes do anything
-- Smoother everywhere while a video plays: the time, the seek bar, captions and the mini player's progress are redrawn on their own instead of rebuilding the whole player, and the player page's glow no longer redraws every frame
-- Comments are frosted glass (blurred, no bending)
-- Topic chips are liquid glass: Home topics, Subscriptions filters, and Music's sections, moods and library chips (now in the header)
-- Music tab: no logo or name at the top, just the sections, search and profile
-- The normal player takes the shape of wider videos (2:1, cinema), so no more black bars above and below
-- Flex mode: the Captions / Speed / Quality / Comments / Full video buttons are centred
+- Opening comments on a Short no longer pauses it
+- Unfolded, Shorts comments open in a frosted panel on the right, under the buttons (which slide up to the top right), so the Short keeps playing in place beside them. Folded they still slide up from the bottom
+- Shorts start much faster: the feed and the first Shorts are fetched a few seconds after the app opens (only if you watch Shorts), so the tab plays straight away
+- Leaving the Shorts tab and coming back picks up the same Short instead of loading a new feed
+- Scrolling: six Shorts ahead are resolved and buffered at once (more for the next one), and the Short you swipe to starts loading the moment you let go
+- Tapping a Short on a channel starts loading it as your finger touches it

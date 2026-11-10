@@ -342,6 +342,11 @@ fun YtxTubeApp() {
         kotlinx.coroutines.delay(1_400)
         updateState.check()
     }
+    // Shorts ready before the tab is opened (only for people who watch Shorts); again after an
+    // account switch, since the feed is per account.
+    LaunchedEffect(Account.activeAccountId) {
+        ShortsWarmup.warm(appContext.applicationContext, delayMs = 3_500)
+    }
     LaunchedEffect(updateState.message) {
         updateState.message?.let { message ->
             android.widget.Toast.makeText(appContext, message, android.widget.Toast.LENGTH_SHORT).show()

@@ -569,6 +569,7 @@ private fun ShortTile(video: VideoItem, modifier: Modifier, onOpen: (VideoItem) 
             .fillMaxWidth()
             .aspectRatio(9f / 16f)
             .clip(RoundedCornerShape(14.dp))
+            .prefetchOnPress(video.id)
             .pressable(pressedScale = 0.95f) { onOpen(video) },
     ) {
         Thumbnail(video.thumbnail, Modifier.fillMaxSize(), radius = 0, videoId = video.id)
