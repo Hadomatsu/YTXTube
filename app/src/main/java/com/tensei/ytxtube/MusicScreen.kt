@@ -1471,7 +1471,7 @@ private fun MusicCollectionPage(
  * the page. It is also what the page's glass buttons bend and blur.
  */
 @Composable
-private fun MusicAmbient(art: String?, backdrop: Backdrop) {
+private fun MusicAmbient(art: String?, backdrop: com.kyant.backdrop.backdrops.LayerBackdrop) {
     val c = MaterialTheme.colorScheme
     Box(Modifier.fillMaxSize().layerBackdrop(backdrop).background(c.background)) {
         if (art != null) {
