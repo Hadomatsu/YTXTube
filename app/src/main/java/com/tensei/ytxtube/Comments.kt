@@ -394,6 +394,36 @@ fun CommentsPanel(
      * given, has all corners rounded and does not leave room for the status bar.
      */
     floating: Boolean = false,
+    /** The video (or Short) playing: the panel's accent ("12 replies", likes, times) takes its colour. */
+    accentVideoId: String? = null,
+    accentThumbnail: String? = null,
+) {
+    val c = MaterialTheme.colorScheme
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val dark = ThemeSettings.mode == "amoled" || isDarkTheme()
+    val raw by androidx.compose.runtime.produceState(accentVideoId?.let { ThumbTint.cached(it) }, accentVideoId, accentThumbnail) {
+        if (value == null && accentVideoId != null) value = ThumbTint.load(context, accentVideoId, accentThumbnail)
+    }
+    val target = raw?.let { ThumbTint.accentFor(it, dark) } ?: c.primary
+    val accent by androidx.compose.animation.animateColorAsState(target, tween(500), label = "commentsAccent")
+    val scheme = if (raw == null) c else c.copy(
+        primary = accent,
+        onPrimary = if (dark) Color.Black else Color.White,
+    )
+    MaterialTheme(colorScheme = scheme, typography = MaterialTheme.typography, shapes = MaterialTheme.shapes) {
+        CommentsPanelContent(state, partialTop, onClose, creatorAvatar, creatorName, backdrop, floating)
+    }
+}
+
+@Composable
+private fun CommentsPanelContent(
+    state: CommentsState,
+    partialTop: Dp,
+    onClose: () -> Unit,
+    creatorAvatar: String?,
+    creatorName: String,
+    backdrop: com.kyant.backdrop.Backdrop?,
+    floating: Boolean,
 ) {
     val c = MaterialTheme.colorScheme
     val density = LocalDensity.current

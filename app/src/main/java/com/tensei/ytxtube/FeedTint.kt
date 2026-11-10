@@ -104,6 +104,16 @@ object ThumbTint {
     }
 
     /** The thumbnail colour made calm enough to sit behind text on this theme's background. */
+    /** The thumbnail's colour as a text accent: vivid, light on dark panels, deep on light ones. */
+    fun accentFor(raw: Int, dark: Boolean): Color {
+        val hsl = FloatArray(3)
+        ColorUtils.colorToHSL(raw, hsl)
+        // Grey thumbnails would give a grey accent: keep at least some colour.
+        hsl[1] = (hsl[1] * 1.35f).coerceIn(0.45f, 0.95f)
+        hsl[2] = if (dark) 0.72f else 0.36f
+        return Color(ColorUtils.HSLToColor(hsl))
+    }
+
     fun forBackground(raw: Int, background: Color): Color {
         val hsl = FloatArray(3)
         ColorUtils.colorToHSL(raw, hsl)

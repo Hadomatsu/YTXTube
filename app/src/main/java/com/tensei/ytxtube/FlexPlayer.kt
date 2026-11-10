@@ -230,6 +230,8 @@ private fun FlexPanel(
                     creatorAvatar = details?.item?.avatar,
                     creatorName = details?.item?.channel.orEmpty(),
                     backdrop = backdrop,
+                    accentVideoId = item?.id,
+                    accentThumbnail = item?.thumbnail,
                 )
             }
         }

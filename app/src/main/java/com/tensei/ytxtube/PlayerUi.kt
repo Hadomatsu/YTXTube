@@ -524,6 +524,8 @@ fun PlayerScreen(
                     creatorAvatar = detailItem?.avatar,
                     creatorName = detailItem?.channel.orEmpty(),
                     backdrop = if (TvMode.isTv) null else commentsBackdrop,
+                    accentVideoId = item.id,
+                    accentThumbnail = item.thumbnail,
                 )
             }
         }

@@ -1244,6 +1244,8 @@ fun ShortsScreen(
                         creatorName = info?.uploaderName.orEmpty(),
                         backdrop = feedBackdrop,
                         floating = true,
+                        accentVideoId = current?.id,
+                        accentThumbnail = current?.thumbnail,
                     )
                 }
             }
@@ -1255,6 +1257,8 @@ fun ShortsScreen(
                 creatorAvatar = info?.uploaderAvatars?.maxByOrNull { it.width }?.url,
                 creatorName = info?.uploaderName.orEmpty(),
                 backdrop = feedBackdrop,
+                accentVideoId = current?.id,
+                accentThumbnail = current?.thumbnail,
             )
         }
 
