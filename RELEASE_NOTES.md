@@ -1,10 +1,5 @@
-YTXTube Custom 2.6.8: video page polish, Continue watching page
+YTXTube Custom 2.6.9: rewind lives to the start
 
-- Video page cards: no black block under the pictures. The text sits right on the blurred background, a glow in the thumbnail's colour comes from under the picture, and the text has a soft shadow so it stays readable
-- Folded, the video page cards have slightly rounded pictures with a little room at the sides
-- AMOLED: new switch "Colours in the video screen" under the theme choice. The app stays pure black, the video page gets the blurred picture colours
-- Comments take the playing video's colour: replies, likes, timestamps and the send button (Shorts, the player and flex mode)
-- The comments panel's bright edge fades out before the bottom, so the screen's rounded corners no longer cut it off
-- Shorts: with the comments open, tap anywhere on the Short to put them away
-- Home card glow: AMOLED is as bright as dark mode, and right under the picture the glow spreads almost to the corners
-- Continue watching: the title and arrow open a page with all your started videos
+- Lives can be rewound all the way to the start (YouTube keeps up to 12 hours), the way YouTube's own app does, instead of only the last hour
+- If a live does not allow it (rewind turned off by the streamer, or started more than 12 hours ago), it quietly plays as before
+- A live that falls too far behind jumps back to the live edge instead of showing an error
