@@ -180,13 +180,13 @@ fun BackScreenHeader(
     }
 }
 
-/** The same red play logo as the launcher icon, drawn from a sharp 501x348 source. */
+/** The same glass play logo as the launcher icon, drawn from a sharp 530x375 source. */
 @Composable
 fun BrandMark() {
     Image(
         painter = painterResource(R.drawable.ic_brand_logo),
         contentDescription = null,
-        modifier = Modifier.height(36.dp).aspectRatio(501f / 348f),
+        modifier = Modifier.height(36.dp).aspectRatio(530f / 375f),
     )
 }
 
