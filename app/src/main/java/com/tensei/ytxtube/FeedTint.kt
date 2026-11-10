@@ -11,6 +11,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
@@ -157,29 +159,30 @@ fun Modifier.thumbnailGlow(
         // colour (that was a black block). The thumbnail's colour glows out from under the
         // picture like light and fades to nothing, softly at the sides too.
         val glow = raw?.let { ThumbTint.forBackground(it, background) } ?: top
-        return graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
-            .drawBehind {
-                val end = size.height
-                drawRect(
-                    Brush.verticalGradient(
-                        0f to glow.copy(alpha = 0.55f),
-                        0.25f to glow.copy(alpha = 0.32f),
-                        0.6f to glow.copy(alpha = 0.10f),
+        // A soft oval of light from the middle of the picture's bottom edge, gone to nothing well
+        // before every edge of the text area, so there is no box to see.
+        return drawBehind {
+            val w = size.width
+            val h = size.height
+            if (w < 2f || h < 2f) return@drawBehind
+            val r = w / 2f
+            val centre = Offset(w / 2f, 0f)
+            // Only the lower half of the oval, inside the text area (never over the picture).
+            clipRect { scale(scaleX = 1f, scaleY = (h * 0.95f) / r, pivot = centre) {
+                drawCircle(
+                    Brush.radialGradient(
+                        0f to glow.copy(alpha = 0.5f),
+                        0.35f to glow.copy(alpha = 0.3f),
+                        0.7f to glow.copy(alpha = 0.08f),
                         1f to glow.copy(alpha = 0f),
-                        startY = 0f,
-                        endY = end,
+                        center = centre,
+                        radius = r,
                     ),
+                    radius = r,
+                    center = centre,
                 )
-                drawRect(
-                    Brush.horizontalGradient(
-                        0f to Color.Transparent,
-                        0.12f to Color.Black,
-                        0.88f to Color.Black,
-                        1f to Color.Transparent,
-                    ),
-                    blendMode = BlendMode.DstIn,
-                )
-            }
+            } }
+        }
     }
     return drawBehind {
         val end = fadeEndPx().takeIf { !it.isNaN() && it > 0f }?.coerceAtMost(size.height) ?: size.height

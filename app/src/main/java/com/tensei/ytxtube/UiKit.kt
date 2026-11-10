@@ -481,7 +481,14 @@ fun VideoCardGrid(video: VideoItem, onClick: () -> Unit, modifier: Modifier = Mo
             .clip(RoundedCornerShape(12.dp)),
     ) {
         var skimMs by remember(video.id) { androidx.compose.runtime.mutableStateOf<Long?>(null) }
-        Box(Modifier.fillMaxWidth().skimGesture(video) { skimMs = it }) {
+        // On the video page the picture is rounded on all four corners (like the folded cards).
+        val onVideoPage = LocalPlayerGlass.current != null
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .then(if (onVideoPage) Modifier.clip(RoundedCornerShape(12.dp)) else Modifier)
+                .skimGesture(video) { skimMs = it },
+        ) {
             val dim = watchedDim(video.id)
             Thumbnail(
                 video.thumbnail,
