@@ -154,7 +154,7 @@ fun Modifier.thumbnailGlow(
         raw?.let { lerp(glowBase, ThumbTint.forBackground(it, glowBase), strength) } ?: background
     }
     val top by animateColorAsState(target, tween(420), label = "thumb-glow")
-    if (LocalPlayerGlass.current != null) {
+    if (videoPageCardLook()) {
         // On the video page the cards sit on the blurred picture, so nothing fades to the page
         // colour (that was a black block). The thumbnail's colour glows out from under the
         // picture like light and fades to nothing, softly at the sides too.
@@ -225,13 +225,24 @@ fun Modifier.thumbnailGlow(
 
 
 /**
+ * Screens that show their video cards exactly like the video page's "More videos" list (rounded
+ * pictures, the soft oval glow, shadowed text). The video page itself always does; Home turns it
+ * on for its feed.
+ */
+val LocalVideoPageCards = androidx.compose.runtime.staticCompositionLocalOf { false }
+
+/** True where cards take the video page look: on the video page, or a screen that asks for it. */
+@Composable
+fun videoPageCardLook(): Boolean = LocalPlayerGlass.current != null || LocalVideoPageCards.current
+
+/**
  * Card text style. On the video page, where the cards sit on the blurred picture, the text gets
  * a soft shadow so it stays readable over any colour.
  */
 @Composable
 fun cardTextStyle(): TextStyle {
     val base = LocalTextStyle.current
-    if (LocalPlayerGlass.current == null) return base
+    if (!videoPageCardLook()) return base
     val dark = ThemeSettings.mode == "amoled" || isDarkTheme()
     val shadow = if (dark) Shadow(Color.Black.copy(alpha = 0.75f), Offset(0f, 1.5f), 8f)
     else Shadow(Color.White.copy(alpha = 0.9f), Offset(0f, 1f), 6f)

@@ -387,9 +387,9 @@ fun VideoCard(video: VideoItem, onClick: () -> Unit, modifier: Modifier = Modifi
             .pressable(pressedScale = 0.98f, onLongClick = { menu(video) }, onClick = onClick),
     ) {
         var skimMs by remember(video.id) { androidx.compose.runtime.mutableStateOf<Long?>(null) }
-        // On the video page the picture gets slightly rounded corners and a little room at the
-        // sides; in the feed it stays edge to edge.
-        val onVideoPage = LocalPlayerGlass.current != null
+        // On the video page (and Home, which uses the same look) the picture gets slightly
+        // rounded corners and a little room at the sides; other feeds stay edge to edge.
+        val onVideoPage = videoPageCardLook()
         Box(
             Modifier
                 .fillMaxWidth()
@@ -482,7 +482,7 @@ fun VideoCardGrid(video: VideoItem, onClick: () -> Unit, modifier: Modifier = Mo
     ) {
         var skimMs by remember(video.id) { androidx.compose.runtime.mutableStateOf<Long?>(null) }
         // On the video page the picture is rounded on all four corners (like the folded cards).
-        val onVideoPage = LocalPlayerGlass.current != null
+        val onVideoPage = videoPageCardLook()
         Box(
             Modifier
                 .fillMaxWidth()

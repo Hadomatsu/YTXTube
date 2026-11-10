@@ -247,6 +247,8 @@ fun HomeScreen(
         },
     ) { top ->
         val topicFeed = lib.topicFeed
+        // Home's cards look exactly like the video page's "More videos" cards.
+        androidx.compose.runtime.CompositionLocalProvider(LocalVideoPageCards provides true) {
         when {
             // A YouTube topic (one of your interests) is picked: only that topic's videos.
             lib.topic != null && topicFeed != null -> FeedList(
@@ -301,6 +303,7 @@ fun HomeScreen(
                     }
                 },
             )
+        }
         }
     }
 }
