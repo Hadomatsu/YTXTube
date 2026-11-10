@@ -523,6 +523,34 @@ private class StreamRecoverer(
     private var attempts = 0
 
     override fun onPlayerError(error: PlaybackException) {
+        val current = player.currentMediaItem
+        // Fell behind what a live still keeps: jump back to the live edge.
+        if (current != null && error.errorCode == PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW) {
+            main.post {
+                if (player.currentMediaItem?.mediaId != current.mediaId) return@post
+                player.seekToDefaultPosition()
+                player.prepare()
+            }
+            return
+        }
+        // A live played from its numbered pieces (rewind to the start) that fails for any other
+        // reason than an expired link: play it from the HLS playlist instead.
+        if (current != null && LiveDvr.active(current.mediaId) &&
+            (error.errorCode != PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS || attempts >= 1 && current.mediaId == lastId)
+        ) {
+            val id = current.mediaId
+            LiveDvr.markFailed(id)
+            StreamRecovery.markHandled(id)
+            main.post {
+                if (player.currentMediaItem?.mediaId != id) return@post
+                val index = player.currentMediaItemIndex
+                player.addMediaSource(index + 1, sources.createMediaSource(current))
+                player.removeMediaItem(index)
+                player.seekToDefaultPosition(index)
+                player.prepare()
+            }
+            return
+        }
         if (error.errorCode != PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS) return
         val item = player.currentMediaItem ?: return
 
@@ -830,6 +858,8 @@ private class YouTubeMediaSourceFactory(context: Context) : MediaSource.Factory 
         // HLS is a live fallback only. A VOD HLS manifest carries just YouTube's default audio
         // track, so using it for normal videos silently ignored both the picked language and the
         // picked quality. VOD goes through the generated DASH/progressive path below.
+        // A live with rewind to its start, from its numbered pieces (HLS below if that fails).
+        if (isLive) LiveDvr.source(mediaItem, dataSourceFactory)?.let { return it }
         if (isLive && !hlsUrl.isNullOrBlank()) {
             Log.i("YTXTube", "media source ${mediaItem.mediaId}: playing live HLS stream from $hlsUrl")
             return HlsMediaSource.Factory(dataSourceFactory).createMediaSource(

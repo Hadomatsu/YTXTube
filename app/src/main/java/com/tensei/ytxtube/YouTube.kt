@@ -510,6 +510,8 @@ object StreamCache {
                     entries[id] = Entry(it, System.currentTimeMillis())
                     Net.noteMediaHost(StreamSelection.pick(it).let { p -> (p.video ?: p.muxed)?.content })
                     CaptionTracks.put(id, CaptionTracks.fromStreamInfo(it))
+                    // A live: find out how far it has got, so it can be rewound to the start.
+                    LiveDvr.prepare(id, it)
                     // No captions in the extraction? PlayerState asks YouTube's player response later.
                 }
             } catch (t: Throwable) {
@@ -520,6 +522,7 @@ object StreamCache {
                         entries[id] = Entry(it, System.currentTimeMillis())
                         Net.noteMediaHost(StreamSelection.pick(it).let { p -> (p.video ?: p.muxed)?.content })
                         CaptionTracks.put(id, CaptionTracks.fromStreamInfo(it))
+                        LiveDvr.prepare(id, it)
                     }
                 } else throw t
             }

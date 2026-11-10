@@ -1627,6 +1627,12 @@ class PlayerState(private val scope: CoroutineScope) {
                 isBuffering = true
                 return
             }
+            // A live that just switched from rewind-to-start to the HLS playlist, or that fell
+            // behind and jumped to the live edge: recovered quietly, nothing to show.
+            if (LiveDvr.justFellBack(current?.id) || e.errorCode == PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW) {
+                isBuffering = true
+                return
+            }
             val client = StreamHealth.clientOf(
                 (e.cause as? androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException)?.dataSpec?.uri?.toString(),
             )
