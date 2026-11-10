@@ -1,5 +1,3 @@
-YTXTube Custom 2.6.5: new logo
+YTXTube Custom 2.6.6: home screen icon
 
-- New app icon: the pink and blue glass play logo on black, with its reflection underneath
-- Themed (monochrome) icon updated to the same shape
-- The logo inside the app uses the new design too
+- Home screen icon is now the original glass logo picture on its light background, with its soft reflection
