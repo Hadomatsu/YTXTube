@@ -387,7 +387,15 @@ fun VideoCard(video: VideoItem, onClick: () -> Unit, modifier: Modifier = Modifi
             .pressable(pressedScale = 0.98f, onLongClick = { menu(video) }, onClick = onClick),
     ) {
         var skimMs by remember(video.id) { androidx.compose.runtime.mutableStateOf<Long?>(null) }
-        Box(Modifier.fillMaxWidth().skimGesture(video) { skimMs = it }) {
+        // On the video page the picture gets slightly rounded corners and a little room at the
+        // sides; in the feed it stays edge to edge.
+        val onVideoPage = LocalPlayerGlass.current != null
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .then(if (onVideoPage) Modifier.padding(horizontal = 10.dp).clip(RoundedCornerShape(12.dp)) else Modifier)
+                .skimGesture(video) { skimMs = it },
+        ) {
             val dim = watchedDim(video.id)
             Thumbnail(
                 video.thumbnail,
