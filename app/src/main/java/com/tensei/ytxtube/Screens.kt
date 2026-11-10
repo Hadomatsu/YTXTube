@@ -37,6 +37,8 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.Download
@@ -188,10 +190,10 @@ fun HomeScreen(
     onSignIn: () -> Unit,
     onAccount: () -> Unit,
     scrollToTop: Int = 0,
+    onOpenContinueWatching: () -> Unit = {},
 ) {
     val signedIn = Account.signedIn
     var activeFilter by remember { mutableStateOf(HomeFilter.All) }
-    var continueExpanded by remember { mutableStateOf(false) }
     // Unfolded (a wide screen) shows two started videos, folded one.
     val wideScreen = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp >= 600
     LaunchedEffect(signedIn) {
@@ -287,8 +289,7 @@ fun HomeScreen(
                         ContinueWatching.started(),
                         columns,
                         wideScreen,
-                        continueExpanded,
-                        onToggle = { continueExpanded = !continueExpanded },
+                        onShowAll = onOpenContinueWatching,
                         onOpen = onOpen,
                     )
                 },
@@ -567,6 +568,58 @@ private fun SubscriptionsChannelStrip(
                     color = c.onSurface,
                     maxLines = 1,
                 )
+            }
+        }
+    }
+}
+
+/** Every video you started and did not finish, newest first, in the same cards as Home. */
+@Composable
+fun ContinueWatchingScreen(
+    contentPadding: PaddingValues,
+    onBack: () -> Unit,
+    onOpen: (VideoItem) -> Unit,
+) {
+    val c = MaterialTheme.colorScheme
+    val videos = ContinueWatching.started()
+    BoxWithConstraints(Modifier.fillMaxSize().background(c.surface)) {
+        val columns = if (HomeLayoutSettings.grid) HomeGrid.columns(maxWidth.value) else 1
+        Column(Modifier.fillMaxSize()) {
+            BackScreenHeader(onBack = onBack) {
+                Text(
+                    "Continue watching",
+                    modifier = Modifier.weight(1f),
+                    fontFamily = RoundedHeavy,
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 24.sp,
+                    letterSpacing = (-0.8).sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            if (videos.isEmpty()) {
+                EmptyState(Icons.Rounded.VideoLibrary, "Nothing to continue", "Videos you start and do not finish show up here.")
+            } else {
+                LazyColumn(contentPadding = contentPadding) {
+                    if (columns > 1) {
+                        items(videos.chunked(columns), key = { row -> "cwp-" + row.first().id }) { row ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(start = HomeGrid.EDGE_DP.dp, end = HomeGrid.EDGE_DP.dp, bottom = 16.dp),
+                                horizontalArrangement = Arrangement.spacedBy(HomeGrid.GAP_DP.dp),
+                                verticalAlignment = Alignment.Top,
+                            ) {
+                                row.forEach { video -> VideoCardGrid(video, onClick = { onOpen(video) }, modifier = Modifier.weight(1f)) }
+                                repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
+                            }
+                        }
+                    } else {
+                        items(videos, key = { "cwp-" + it.id }) { video ->
+                            VideoCard(video, onClick = { onOpen(video) })
+                        }
+                    }
+                }
             }
         }
     }
@@ -1418,24 +1471,22 @@ private fun SearchPlaylistRow(playlist: PlaylistRef) {
 
 /**
  * Continue watching at the top of Home: the videos you started, as the same cards as the rest
- * of the feed. Folded it shows one, unfolded two; the arrow next to the title opens the rest
- * right there (no sideways scrolling).
+ * of the feed. Folded it shows one, unfolded two; the title and its arrow open a page with all
+ * of them.
  */
 private fun androidx.compose.foundation.lazy.LazyListScope.continueWatchingSection(
     videos: List<VideoItem>,
     columns: Int,
     wide: Boolean,
-    expanded: Boolean,
-    onToggle: () -> Unit,
+    onShowAll: () -> Unit,
     onOpen: (VideoItem) -> Unit,
 ) {
     if (videos.isEmpty()) return
     val collapsedCount = if (wide || columns > 1) 2 else 1
     val canExpand = videos.size > collapsedCount
-    val perRow = if (expanded) columns.coerceAtLeast(1) else columns.coerceIn(1, 2)
-    val shown = if (expanded) videos else videos.take(collapsedCount)
+    val perRow = columns.coerceIn(1, 2)
+    val shown = videos.take(collapsedCount)
     item(key = "cw-title") {
-        val turn by androidx.compose.animation.core.animateFloatAsState(if (expanded) 180f else 0f, label = "cw-arrow")
         Row(
             Modifier.fillMaxWidth().padding(start = 16.dp, end = 12.dp, top = 6.dp, bottom = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -1443,7 +1494,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.continueWatchingSecti
             Row(
                 Modifier
                     .clip(RoundedCornerShape(10.dp))
-                    .then(if (canExpand) Modifier.pressable(pressedScale = 0.97f) { onToggle() } else Modifier)
+                    .then(if (canExpand) Modifier.pressable(pressedScale = 0.97f) { onShowAll() } else Modifier)
                     .padding(vertical = 2.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -1455,9 +1506,9 @@ private fun androidx.compose.foundation.lazy.LazyListScope.continueWatchingSecti
                 )
                 if (canExpand) {
                     Icon(
-                        Icons.Rounded.KeyboardArrowDown,
-                        contentDescription = if (expanded) "Show less" else "Show all",
-                        modifier = Modifier.padding(start = 4.dp).size(24.dp).graphicsLayer { rotationZ = turn },
+                        Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                        contentDescription = "Show all",
+                        modifier = Modifier.padding(start = 4.dp).size(24.dp),
                     )
                 }
             }

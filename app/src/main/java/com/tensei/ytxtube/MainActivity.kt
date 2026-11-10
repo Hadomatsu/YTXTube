@@ -324,6 +324,7 @@ fun YtxTubeApp() {
     var openChannel by remember { mutableStateOf<String?>(null) }
     var shortsEntry by remember { mutableStateOf<VideoItem?>(null) }
     var openAllSubscriptions by remember { mutableStateOf(false) }
+    var openContinueWatching by remember { mutableStateOf(false) }
     var openSearch by remember { mutableStateOf(false) }
     var tab by rememberSaveable { mutableStateOf(Tab.Home) }
     var isShortsCommentsOpen by remember { mutableStateOf(false) }
@@ -550,6 +551,7 @@ fun YtxTubeApp() {
     BackHandler(enabled = !showFullscreen && player.expanded) { player.expanded = false }
     BackHandler(enabled = !player.expanded && openSettings) { openSettings = false }
     BackHandler(enabled = !player.expanded && openAllSubscriptions && openChannel == null) { openAllSubscriptions = false }
+    BackHandler(enabled = !player.expanded && openContinueWatching && openChannel == null && !openSearch) { openContinueWatching = false }
     BackHandler(enabled = !player.expanded && tab != Tab.Home && openPlaylist == null && openChannel == null && !openAllSubscriptions) {
         if (tab == Tab.Shorts && isShortsPlaying && pip.supported) {
             val entered = pip.enter(9f / 16f)
@@ -570,7 +572,7 @@ fun YtxTubeApp() {
     }
     BackHandler(enabled = updateState.visible) { updateState.dismiss() }
 
-    val canHandleRootBack = !player.expanded && !openSettings && !openAllSubscriptions &&
+    val canHandleRootBack = !player.expanded && !openSettings && !openAllSubscriptions && !openContinueWatching &&
         tab == Tab.Home && openPlaylist == null && openChannel == null &&
         !openSearch && !signingIn && !showFullscreen && shortsEntry == null && !updateState.visible
     BackHandler(enabled = canHandleRootBack) {
@@ -707,6 +709,7 @@ fun YtxTubeApp() {
                     lib, contentPadding, onOpen = player::open, onSearch = { openSearch = true },
                     onSignIn = { signingIn = true }, onAccount = { openSettings = true },
                     scrollToTop = scrollToTop[Tab.Home] ?: 0,
+                    onOpenContinueWatching = { openContinueWatching = true },
                 )
                 Tab.Music -> MusicScreen(
                     lib, player, contentPadding,
@@ -785,6 +788,18 @@ fun YtxTubeApp() {
             }
         }
 
+
+        AnimatedVisibility(
+            visible = openContinueWatching,
+            enter = if (reduced) fadeIn(snap()) else slideInHorizontally(tween(340, easing = Motion.Emphasized)) { it } + fadeIn(tween(120)),
+            exit = if (reduced) fadeOut(snap()) else slideOutHorizontally(tween(300, easing = Motion.Emphasized)) { it } + fadeOut(tween(220)),
+        ) {
+            ContinueWatchingScreen(
+                contentPadding = contentPadding,
+                onBack = { openContinueWatching = false },
+                onOpen = player::open,
+            )
+        }
 
         AnimatedVisibility(
             visible = openAllSubscriptions,
@@ -980,11 +995,13 @@ fun YtxTubeApp() {
                 selected == tab && openChannel != null -> openChannel = null
                 selected == tab && openPlaylist != null -> openPlaylist = null
                 selected == tab && openAllSubscriptions -> openAllSubscriptions = false
+                selected == tab && openContinueWatching -> openContinueWatching = false
                 selected == tab -> scrollToTop[selected] = (scrollToTop[selected] ?: 0) + 1
                 else -> {
                     openPlaylist = null
                     openChannel = null
                     openAllSubscriptions = false
+                    openContinueWatching = false
                     openSearch = false
                     tab = selected
                 }
