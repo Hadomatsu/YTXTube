@@ -258,10 +258,7 @@ fun AccountAction(onClick: () -> Unit) {
 fun AccountSheet(onSignIn: () -> Unit, onSignedOut: () -> Unit, onDismiss: () -> Unit) {
     val c = MaterialTheme.colorScheme
     val profile = Account.profile
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        containerColor = c.surfaceContainerLow,
-    ) {
+    GlassSheet(onDismiss = onDismiss) {
         Column(
             Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).padding(bottom = 32.dp),
             horizontalAlignment = Alignment.CenterHorizontally,

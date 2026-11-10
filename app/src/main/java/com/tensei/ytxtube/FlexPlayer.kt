@@ -22,8 +22,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Comment
 import androidx.compose.material.icons.rounded.ClosedCaption
+import androidx.compose.material.icons.rounded.Comment
 import androidx.compose.material.icons.rounded.Forward10
 import androidx.compose.material.icons.rounded.Fullscreen
 import androidx.compose.material.icons.rounded.HighQuality
@@ -39,7 +39,6 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -47,8 +46,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -61,6 +62,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.kyant.backdrop.Backdrop
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 
 /**
  * The player in flex mode. Stood half open (tabletop), the video fills the upper half above the
@@ -68,6 +72,9 @@ import coil.compose.AsyncImage
  * controls, captions, speed, quality, comments and what plays next. Held like a book, the video is
  * on the left page and the rest on the right. The split follows the real fold position the phone
  * reports, so nothing sits on the crease.
+ *
+ * The lower half is the app's glass: the video's picture, blurred, is the backdrop, and the
+ * controls, chips and comments are liquid glass over it.
  */
 @Composable
 fun FlexPlayer(
@@ -79,12 +86,31 @@ fun FlexPlayer(
 ) {
     val density = LocalDensity.current
     var origin by remember { mutableStateOf(Offset.Zero) }
+    val backdrop = rememberLayerBackdrop()
+    val item = state.current
+    val dark = ThemeSettings.mode == "amoled" || isDarkTheme()
     BoxWithConstraints(
         Modifier
             .fillMaxSize()
             .background(Color.Black)
             .onGloballyPositioned { origin = it.positionInWindow() },
     ) {
+        // The glass's backdrop: the video's picture, blurred and darkened (or lightened).
+        Box(Modifier.fillMaxSize().layerBackdrop(backdrop).background(if (dark) Color.Black else Color(0xFFF2F2F4))) {
+            AsyncImage(
+                model = item?.thumbnail,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize().blur(70.dp),
+            )
+            Box(
+                Modifier.fillMaxSize().background(
+                    if (dark) Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.42f), Color.Black.copy(alpha = 0.58f)))
+                    else Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.5f), Color.White.copy(alpha = 0.66f))),
+                ),
+            )
+        }
+
         val tabletop = fold.mode == FoldMode.Tabletop
         val total = (if (tabletop) constraints.maxHeight else constraints.maxWidth).toFloat()
         val shift = if (tabletop) origin.y else origin.x
@@ -108,13 +134,13 @@ fun FlexPlayer(
             Column(Modifier.fillMaxSize()) {
                 video(Modifier.fillMaxWidth().height(firstPart))
                 if (crease > 0.dp) Spacer(Modifier.height(crease))
-                FlexPanel(state, onOpen, onFullVideo, wide = true, modifier = Modifier.fillMaxWidth().weight(1f))
+                FlexPanel(state, backdrop, onOpen, onFullVideo, wide = true, modifier = Modifier.fillMaxWidth().weight(1f))
             }
         } else {
             Row(Modifier.fillMaxSize()) {
                 video(Modifier.width(firstPart).fillMaxHeight())
                 if (crease > 0.dp) Spacer(Modifier.width(crease))
-                FlexPanel(state, onOpen, onFullVideo, wide = false, modifier = Modifier.weight(1f).fillMaxHeight())
+                FlexPanel(state, backdrop, onOpen, onFullVideo, wide = false, modifier = Modifier.weight(1f).fillMaxHeight())
             }
         }
     }
@@ -123,17 +149,16 @@ fun FlexPlayer(
 @Composable
 private fun FlexPanel(
     state: PlayerState,
+    backdrop: Backdrop,
     onOpen: (VideoItem) -> Unit,
     onFullVideo: () -> Unit,
     wide: Boolean,
     modifier: Modifier,
 ) {
     val c = MaterialTheme.colorScheme
-    val isAmoled = ThemeSettings.mode == "amoled"
-    val page = if (isAmoled) Color.Black else c.surface
     val item = state.current ?: return
     val details = state.details
-    Box(modifier.background(page)) {
+    Box(modifier) {
         LazyColumn(
             contentPadding = PaddingValues(horizontal = 18.dp, vertical = 12.dp),
             modifier = Modifier.fillMaxSize(),
@@ -142,8 +167,9 @@ private fun FlexPanel(
                 Column(Modifier.fillMaxWidth()) {
                     Text(
                         details?.item?.title ?: item.title,
-                        fontSize = 17.sp,
-                        fontWeight = FontWeight.Bold,
+                        fontFamily = RoundedHeavy,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.ExtraBold,
                         color = c.onSurface,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
@@ -151,38 +177,38 @@ private fun FlexPanel(
                     Text(
                         details?.item?.channel ?: item.channel,
                         fontSize = 13.sp,
-                        color = c.onSurfaceVariant,
+                        fontWeight = FontWeight.SemiBold,
+                        color = c.onSurface.copy(alpha = 0.72f),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.padding(top = 2.dp),
                     )
                     Spacer(Modifier.height(6.dp))
                     FlexSeekBar(state)
-                    FlexTransport(state, wide)
-                    Spacer(Modifier.height(4.dp))
+                    FlexTransport(state, backdrop, wide)
+                    Spacer(Modifier.height(6.dp))
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         item {
-                            FlexChip(Icons.Rounded.ClosedCaption, "Captions", selected = state.selectedSubtitleLanguage != null) {
+                            FlexChip(backdrop, Icons.Rounded.ClosedCaption, "Captions", selected = state.selectedSubtitleLanguage != null) {
                                 state.toggleCaptions()
                             }
                         }
                         item {
-                            FlexChip(Icons.Rounded.Speed, if (state.speed == 1f) "Speed" else "${state.speed}×") {
+                            FlexChip(backdrop, Icons.Rounded.Speed, if (state.speed == 1f) "Speed" else "${state.speed}×") {
                                 state.sheet = PlayerSheet.Speed
                             }
                         }
-                        item { FlexChip(Icons.Rounded.HighQuality, "Quality") { state.sheet = PlayerSheet.Quality } }
+                        item { FlexChip(backdrop, Icons.Rounded.HighQuality, "Quality") { state.sheet = PlayerSheet.Quality } }
                         item {
-                            FlexChip(Icons.Rounded.Comment, "Comments", selected = state.sheet == PlayerSheet.Comments) {
+                            FlexChip(backdrop, Icons.Rounded.Comment, "Comments", selected = state.sheet == PlayerSheet.Comments) {
                                 state.sheet = if (state.sheet == PlayerSheet.Comments) null else PlayerSheet.Comments
                             }
                         }
-                        item { FlexChip(Icons.Rounded.Fullscreen, "Full video", onClick = onFullVideo) }
+                        item { FlexChip(backdrop, Icons.Rounded.Fullscreen, "Full video", onClick = onFullVideo) }
                     }
-                    Spacer(Modifier.height(14.dp))
-                    val next = details?.related.orEmpty()
-                    if (next.isNotEmpty()) {
-                        Text("Up next", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = c.onSurface)
+                    Spacer(Modifier.height(16.dp))
+                    if (details?.related.orEmpty().isNotEmpty()) {
+                        Text("Up next", fontFamily = RoundedHeavy, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold, color = c.onSurface)
                         Spacer(Modifier.height(8.dp))
                     }
                 }
@@ -199,6 +225,7 @@ private fun FlexPanel(
                     onClose = { state.sheet = null },
                     creatorAvatar = details?.item?.avatar,
                     creatorName = details?.item?.channel.orEmpty(),
+                    backdrop = backdrop,
                 )
             }
         }
@@ -226,82 +253,85 @@ private fun FlexSeekBar(state: PlayerState) {
             colors = SliderDefaults.colors(
                 thumbColor = c.primary,
                 activeTrackColor = c.primary,
-                inactiveTrackColor = c.onSurface.copy(alpha = 0.18f),
+                inactiveTrackColor = c.onSurface.copy(alpha = 0.22f),
             ),
             modifier = Modifier.fillMaxWidth().height(32.dp),
         )
         Row(Modifier.fillMaxWidth()) {
-            Text(formatDuration(if (dragging) (dragValue * duration).toLong() else state.positionMs), fontSize = 12.sp, color = c.onSurfaceVariant)
+            Text(formatDuration(if (dragging) (dragValue * duration).toLong() else state.positionMs), fontSize = 12.sp, color = c.onSurface.copy(alpha = 0.72f))
             Spacer(Modifier.weight(1f))
-            Text(if (duration > 0) formatDuration(duration) else "", fontSize = 12.sp, color = c.onSurfaceVariant)
+            Text(if (duration > 0) formatDuration(duration) else "", fontSize = 12.sp, color = c.onSurface.copy(alpha = 0.72f))
         }
     }
 }
 
 @Composable
-private fun FlexTransport(state: PlayerState, wide: Boolean) {
+private fun FlexTransport(state: PlayerState, backdrop: Backdrop, wide: Boolean) {
     val gap = if (wide) 26.dp else 14.dp
     Row(
         Modifier.fillMaxWidth().padding(vertical = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(gap, Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        FlexRound(Icons.Rounded.Replay10, "Back 10 seconds") { state.seekBy(-10_000) }
-        FlexRound(Icons.Rounded.SkipPrevious, "Previous") { state.skipPrevious() }
-        FlexRound(if (state.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, if (state.isPlaying) "Pause" else "Play", big = true) {
+        FlexRound(backdrop, Icons.Rounded.Replay10, "Back 10 seconds") { state.seekBy(-10_000) }
+        FlexRound(backdrop, Icons.Rounded.SkipPrevious, "Previous") { state.skipPrevious() }
+        FlexRound(backdrop, if (state.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, if (state.isPlaying) "Pause" else "Play", big = true) {
             state.togglePlay()
         }
-        FlexRound(Icons.Rounded.SkipNext, "Next") { state.skipNext() }
-        FlexRound(Icons.Rounded.Forward10, "Forward 10 seconds") { state.seekBy(10_000) }
+        FlexRound(backdrop, Icons.Rounded.SkipNext, "Next") { state.skipNext() }
+        FlexRound(backdrop, Icons.Rounded.Forward10, "Forward 10 seconds") { state.seekBy(10_000) }
     }
 }
 
 @Composable
-private fun FlexRound(icon: ImageVector, label: String, big: Boolean = false, onClick: () -> Unit) {
+private fun FlexRound(backdrop: Backdrop, icon: ImageVector, label: String, big: Boolean = false, onClick: () -> Unit) {
     val c = MaterialTheme.colorScheme
     val view = LocalView.current
     Box(
         Modifier
-            .size(if (big) 66.dp else 50.dp)
-            .clip(CircleShape)
-            .background(if (big) c.onSurface else c.surfaceContainerHigh)
+            .size(if (big) 70.dp else 52.dp)
+            .glassControl(backdrop, CircleShape, strength = if (big) 1.8f else 1.1f)
             .pressable(pressedScale = 0.9f) {
                 Haptics.tap(view)
                 onClick()
             },
         contentAlignment = Alignment.Center,
     ) {
-        Icon(icon, label, tint = if (big) c.surface else c.onSurface, modifier = Modifier.size(if (big) 36.dp else 26.dp))
+        Icon(icon, label, tint = c.onSurface, modifier = Modifier.size(if (big) 38.dp else 26.dp))
     }
 }
 
 @Composable
-private fun FlexChip(icon: ImageVector, label: String, selected: Boolean = false, onClick: () -> Unit) {
+private fun FlexChip(backdrop: Backdrop, icon: ImageVector, label: String, selected: Boolean = false, onClick: () -> Unit) {
     val c = MaterialTheme.colorScheme
+    val shape = RoundedCornerShape(50)
     Row(
         Modifier
-            .clip(RoundedCornerShape(50))
-            .background(if (selected) c.primary else c.surfaceContainerHigh)
+            .then(if (selected) Modifier.clip(shape).background(c.primary) else Modifier.glassControl(backdrop, shape))
             .pressable(pressedScale = 0.95f, onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(icon, null, tint = if (selected) c.onPrimary else c.onSurface, modifier = Modifier.size(18.dp))
         Spacer(Modifier.width(6.dp))
-        Text(label, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = if (selected) c.onPrimary else c.onSurface)
+        Text(label, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = if (selected) c.onPrimary else c.onSurface)
     }
 }
 
+/** Up next rows sit on a light frosted card (no blur of their own, so a long list stays smooth). */
 @Composable
 private fun FlexRelatedRow(video: VideoItem, onClick: () -> Unit) {
     val c = MaterialTheme.colorScheme
+    val dark = ThemeSettings.mode == "amoled" || isDarkTheme()
     Row(
         Modifier
             .fillMaxWidth()
-            .padding(vertical = 6.dp)
-            .clip(RoundedCornerShape(10.dp))
+            .padding(vertical = 4.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(if (dark) Color.White.copy(alpha = 0.07f) else Color.White.copy(alpha = 0.45f))
             .pressable(pressedScale = 0.98f, onClick = onClick)
-            .prefetchOnPress(video.id),
+            .prefetchOnPress(video.id)
+            .padding(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         AsyncImage(
@@ -309,7 +339,7 @@ private fun FlexRelatedRow(video: VideoItem, onClick: () -> Unit) {
             contentDescription = null,
             contentScale = ContentScale.Crop,
             modifier = Modifier
-                .width(150.dp)
+                .width(144.dp)
                 .aspectRatio(16f / 9f)
                 .clip(RoundedCornerShape(10.dp))
                 .background(c.surfaceContainerHighest),
@@ -317,7 +347,7 @@ private fun FlexRelatedRow(video: VideoItem, onClick: () -> Unit) {
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(video.title, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = c.onSurface, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            Text(video.channel, fontSize = 12.sp, color = c.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp))
+            Text(video.channel, fontSize = 12.sp, color = c.onSurface.copy(alpha = 0.7f), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp))
         }
     }
 }

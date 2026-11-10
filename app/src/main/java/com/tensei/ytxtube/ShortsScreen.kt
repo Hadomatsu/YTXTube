@@ -527,6 +527,8 @@ fun ShortsScreen(
     }
 
     val glassTint = glassOverlayFill(0.5f)
+    // The whole feed, recorded so the comments slide up over it as frosted glass.
+    val feedBackdrop = rememberLayerBackdrop()
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         if (feed.videos.isEmpty()) {
@@ -548,7 +550,7 @@ fun ShortsScreen(
         } else {
             VerticalPager(
                 state = pager,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().layerBackdrop(feedBackdrop),
                 beyondViewportPageCount = 1,
                 pageSpacing = 0.dp,
             ) { index ->
@@ -1008,6 +1010,7 @@ fun ShortsScreen(
                 },
                 creatorAvatar = info?.uploaderAvatars?.maxByOrNull { it.width }?.url,
                 creatorName = info?.uploaderName.orEmpty(),
+                backdrop = feedBackdrop,
             )
         }
 

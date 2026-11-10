@@ -84,6 +84,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
@@ -103,6 +105,9 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.kyant.backdrop.Backdrop
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -645,17 +650,23 @@ fun MusicScreen(
 
     CompositionLocalProvider(LocalMusicPlayer provides player) {
     Box(Modifier.fillMaxSize().background(c.background)) {
-        Column(Modifier.fillMaxSize()) {
-            MusicTopBar(
-                tab = data.tab,
-                onTab = { data.tab = it },
-                onSearch = { data.searchOpen = true },
-                onAccount = onAccount,
-            )
+        // The same collapsing glass header as the other tabs.
+        CollapsingHeaderLayout(
+            resetKey = data.tab,
+            header = {
+                MusicTopBar(
+                    tab = data.tab,
+                    onTab = { data.tab = it },
+                    onSearch = { data.searchOpen = true },
+                    onAccount = onAccount,
+                )
+            },
+        ) { top ->
+            val padded = contentPadding.withTop(top)
             when (data.tab) {
-                MusicTab.Home -> MusicHome(data, actions, homeList, contentPadding, onMenu)
-                MusicTab.Explore -> MusicSectionsPage(data.explore, actions, exploreList, contentPadding, onMenu)
-                MusicTab.Library -> MusicLibrary(data, actions, libraryList, contentPadding, onMenu, onAccount)
+                MusicTab.Home -> MusicHome(data, actions, homeList, padded, onMenu)
+                MusicTab.Explore -> MusicSectionsPage(data.explore, actions, exploreList, padded, onMenu)
+                MusicTab.Library -> MusicLibrary(data, actions, libraryList, padded, onMenu, onAccount)
             }
         }
         if (data.searchOpen) {
@@ -704,22 +715,28 @@ private fun MusicTopBar(tab: MusicTab, onTab: (MusicTab) -> Unit, onSearch: () -
                 fontSize = 22.sp,
                 letterSpacing = (-0.5).sp,
             )
-            IconButton(onClick = onSearch) { Icon(Icons.Rounded.Search, "Search music", tint = c.onSurface) }
-            AccountAction(onClick = onAccount)
+            HeaderActions(onSearch = onSearch, onAccount = onAccount)
         }
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             MusicTab.entries.forEach { t ->
-                MusicPill(t.label, selected = t == tab) { onTab(t) }
+                MusicPill(t.label, selected = t == tab, backdrop = LocalGlassBackdrop.current) { onTab(t) }
             }
         }
     }
 }
 
 @Composable
-private fun MusicPill(text: String, selected: Boolean, icon: ImageVector? = null, onClick: () -> Unit) {
+private fun MusicPill(
+    text: String,
+    selected: Boolean,
+    icon: ImageVector? = null,
+    /** Over a backdrop the unselected pill is liquid glass. */
+    backdrop: Backdrop? = null,
+    onClick: () -> Unit,
+) {
     val c = MaterialTheme.colorScheme
     val dark = isDarkTheme()
     val bg = when {
@@ -731,8 +748,10 @@ private fun MusicPill(text: String, selected: Boolean, icon: ImageVector? = null
     val fg = if (selected) (if (dark) Color.Black else Color.White) else c.onSurface
     Row(
         Modifier
-            .clip(RoundedCornerShape(8.dp))
-            .background(bg)
+            .then(
+                if (!selected && backdrop != null) Modifier.glassControl(backdrop, RoundedCornerShape(8.dp))
+                else Modifier.clip(RoundedCornerShape(8.dp)).background(bg),
+            )
             .pressable(pressedScale = 0.95f, onClick = onClick)
             .padding(horizontal = 13.dp, vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -777,7 +796,7 @@ private fun MusicHome(
     val state = data.home
     LaunchedEffect(state) { state.ensureLoaded() }
     LoadMoreWhenNearEnd(list, state.sections.size) { state.loadMore() }
-    PullToRefresh(enabled = true, refreshing = state.loading && state.loaded, onRefresh = { state.refresh() }) {
+    PullToRefresh(enabled = true, refreshing = state.loading && state.loaded, onRefresh = { state.refresh() }, topPadding = contentPadding.calculateTopPadding()) {
         LazyColumn(state = list, contentPadding = contentPadding, modifier = Modifier.fillMaxSize()) {
             if (data.homeChips.isNotEmpty()) {
                 item(key = "chips") {
@@ -832,7 +851,7 @@ private fun MusicSectionsPage(
 ) {
     LaunchedEffect(state) { state.ensureLoaded() }
     LoadMoreWhenNearEnd(list, state.sections.size) { state.loadMore() }
-    PullToRefresh(enabled = true, refreshing = state.loading && state.loaded, onRefresh = { state.refresh() }) {
+    PullToRefresh(enabled = true, refreshing = state.loading && state.loaded, onRefresh = { state.refresh() }, topPadding = contentPadding.calculateTopPadding()) {
         LazyColumn(state = list, contentPadding = contentPadding, modifier = Modifier.fillMaxSize()) {
             header?.invoke(this)
             when {
@@ -1272,14 +1291,22 @@ private fun TopResultCard(item: MusicItem, actions: MusicActions, onMenu: (Music
 }
 
 @Composable
-private fun MusicActionButton(label: String, icon: ImageVector, primary: Boolean = false, onClick: () -> Unit) {
+private fun MusicActionButton(
+    label: String,
+    icon: ImageVector,
+    primary: Boolean = false,
+    backdrop: Backdrop? = null,
+    onClick: () -> Unit,
+) {
     val c = MaterialTheme.colorScheme
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.widthIn(min = 64.dp)) {
         Box(
             Modifier
                 .size(if (primary) 60.dp else 46.dp)
-                .clip(CircleShape)
-                .background(if (primary) c.onSurface else c.surfaceContainerHigh)
+                .then(
+                    if (primary || backdrop == null) Modifier.clip(CircleShape).background(if (primary) c.onSurface else c.surfaceContainerHigh)
+                    else Modifier.glassControl(backdrop, CircleShape, strength = 1.2f),
+                )
                 .pressable(onClick = onClick),
             contentAlignment = Alignment.Center,
         ) {
@@ -1304,6 +1331,9 @@ private fun MusicCollectionPage(
     LaunchedEffect(state) { state.ensureLoaded() }
     LoadMoreWhenNearEnd(list, state.tracks.size) { state.loadMore() }
     val d = state.data
+    val ambient = rememberLayerBackdrop()
+    Box(Modifier.fillMaxSize()) {
+    MusicAmbient(d?.thumbnail, ambient)
     Column(Modifier.fillMaxSize()) {
         BackScreenHeader(onBack = { actions.data.pop() }) {
             val showTitle by remember { derivedStateOf { list.firstVisibleItemIndex > 0 } }
@@ -1393,14 +1423,15 @@ private fun MusicCollectionPage(
                                 MusicActionButton(
                                     if (state.saved) "Saved" else "Save",
                                     if (state.saved) Icons.Rounded.LibraryAddCheck else Icons.Rounded.LibraryAdd,
+                                    backdrop = ambient,
                                 ) { actions.save(d.playlistId, !state.saved) { state.saved = it } }
                             }
-                            MusicActionButton("Shuffle", Icons.Rounded.Shuffle) { actions.playCollection(state, 0, shuffle = true) }
+                            MusicActionButton("Shuffle", Icons.Rounded.Shuffle, backdrop = ambient) { actions.playCollection(state, 0, shuffle = true) }
                             MusicActionButton("Play", Icons.Rounded.PlayArrow, primary = true) { actions.playCollection(state, 0) }
-                            MusicActionButton("Radio", Icons.Rounded.Radio) {
+                            MusicActionButton("Radio", Icons.Rounded.Radio, backdrop = ambient) {
                                 d.playlistId?.let { actions.playMix("RDAMPL$it", null, d.title) }
                             }
-                            MusicActionButton("Share", Icons.Rounded.Share) {
+                            MusicActionButton("Share", Icons.Rounded.Share, backdrop = ambient) {
                                 actions.share(MusicItem(MusicKind.Playlist, d.title, playlistId = d.playlistId, browseId = d.browseId))
                             }
                         }
@@ -1432,6 +1463,35 @@ private fun MusicCollectionPage(
             }
         }
     }
+    }
+}
+
+/**
+ * The cover, blurred, glowing behind the top of an album, playlist or artist page and fading into
+ * the page. It is also what the page's glass buttons bend and blur.
+ */
+@Composable
+private fun MusicAmbient(art: String?, backdrop: Backdrop) {
+    val c = MaterialTheme.colorScheme
+    Box(Modifier.fillMaxSize().layerBackdrop(backdrop).background(c.background)) {
+        if (art != null) {
+            AsyncImage(
+                model = musicArt(art, 300),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxWidth().height(520.dp).blur(60.dp).graphicsLayer { alpha = 0.9f },
+            )
+            Box(
+                Modifier.fillMaxWidth().height(520.dp).background(
+                    Brush.verticalGradient(
+                        0f to c.background.copy(alpha = 0.25f),
+                        0.55f to c.background.copy(alpha = 0.55f),
+                        1f to c.background,
+                    ),
+                ),
+            )
+        }
+    }
 }
 
 // ----------------------------------------------------------------------------------- artist
@@ -1447,7 +1507,9 @@ private fun MusicArtistPage(
     val scope = rememberCoroutineScope()
     LaunchedEffect(state) { state.ensureLoaded() }
     val d = state.data
+    val ambient = rememberLayerBackdrop()
     Box(Modifier.fillMaxSize()) {
+        MusicAmbient(d?.thumbnail, ambient)
         when {
             d == null && state.loading -> Column { Spacer(Modifier.statusBarsPadding().height(56.dp)); CenterSpinner() }
             d == null && state.error != null -> Column {
@@ -1497,7 +1559,7 @@ private fun MusicArtistPage(
                         Spacer(Modifier.height(12.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                             if (Account.signedIn && d.channelId != null) {
-                                MusicPill(if (state.subscribed) "Subscribed" else "Subscribe", selected = !state.subscribed) {
+                                MusicPill(if (state.subscribed) "Subscribed" else "Subscribe", selected = !state.subscribed, backdrop = ambient) {
                                     val next = !state.subscribed
                                     state.subscribed = next
                                     scope.launch {
@@ -1507,10 +1569,10 @@ private fun MusicArtistPage(
                                 }
                             }
                             d.shuffle?.let { s ->
-                                MusicPill("Shuffle", selected = false, icon = Icons.Rounded.Shuffle) { actions.playMix(s.playlistId ?: return@MusicPill, s.watchParams, d.name) }
+                                MusicPill("Shuffle", selected = false, icon = Icons.Rounded.Shuffle, backdrop = ambient) { actions.playMix(s.playlistId ?: return@MusicPill, s.watchParams, d.name) }
                             }
                             d.radio?.let { r ->
-                                MusicPill("Radio", selected = false, icon = Icons.Rounded.Radio) { actions.playMix(r.playlistId ?: return@MusicPill, r.watchParams, d.name) }
+                                MusicPill("Radio", selected = false, icon = Icons.Rounded.Radio, backdrop = ambient) { actions.playMix(r.playlistId ?: return@MusicPill, r.watchParams, d.name) }
                             }
                         }
                         d.description?.let { text ->
@@ -1549,12 +1611,11 @@ private fun MusicArtistPage(
                 .statusBarsPadding()
                 .padding(8.dp)
                 .size(42.dp)
-                .clip(CircleShape)
-                .background(Color.Black.copy(alpha = 0.35f))
+                .glassControl(ambient, CircleShape)
                 .pressable { actions.data.pop() },
             contentAlignment = Alignment.Center,
         ) {
-            Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back", tint = Color.White)
+            Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back", tint = MaterialTheme.colorScheme.onSurface)
         }
     }
 }
@@ -1824,11 +1885,7 @@ private fun MusicItemSheet(item: MusicItem, actions: MusicActions, onDismiss: ()
         return
     }
     val c = MaterialTheme.colorScheme
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        containerColor = c.surfaceContainerLow,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-    ) {
+    GlassSheet(onDismiss = onDismiss) {
         Column(Modifier.fillMaxWidth().padding(bottom = 28.dp)) {
             SheetHeader(item.title, item.subtitle, item.thumbnail, round = item.kind == MusicKind.Artist)
             if (item.kind == MusicKind.Album || item.kind == MusicKind.Playlist) {
@@ -1897,11 +1954,7 @@ fun MusicTrackOptionsSheet(
     onMore: (() -> Unit)? = null,
 ) {
     val c = MaterialTheme.colorScheme
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        containerColor = c.surfaceContainerLow,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-    ) {
+    GlassSheet(onDismiss = onDismiss) {
         Column(Modifier.fillMaxWidth().heightIn(max = 640.dp).padding(bottom = 28.dp)) {
             SheetHeader(track.title, track.channel, track.thumbnail)
             val close: (() -> Unit) -> () -> Unit = { action -> { onDismiss(); action() } }

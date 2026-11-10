@@ -384,6 +384,8 @@ fun CommentsPanel(
     onClose: () -> Unit,
     creatorAvatar: String? = null,
     creatorName: String = "",
+    /** What is behind the panel, for frosted glass; null draws it solid. */
+    backdrop: com.kyant.backdrop.Backdrop? = null,
 ) {
     val c = MaterialTheme.colorScheme
     val density = LocalDensity.current
@@ -467,9 +469,13 @@ fun CommentsPanel(
                 .fillMaxWidth()
                 .height(with(density) { height.value.toDp() })
                 .graphicsLayer { translationY = slide.value * size.height }
-                .shadow(16.dp, shape, ambientColor = Color.Black.copy(alpha = 0.18f), spotColor = Color.Black.copy(alpha = 0.22f))
-                .clip(shape)
-                .background(c.surfaceContainerLow)
+                .then(
+                    if (backdrop != null && GlassQuality.effectsSupported) Modifier.frostedPanel(backdrop, shape, blur = 34.dp, strength = 1.12f)
+                    else Modifier
+                        .shadow(16.dp, shape, ambientColor = Color.Black.copy(alpha = 0.18f), spotColor = Color.Black.copy(alpha = 0.22f))
+                        .clip(shape)
+                        .background(c.surfaceContainerLow),
+                )
 
                 .pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent() } }
                 .imePadding(),

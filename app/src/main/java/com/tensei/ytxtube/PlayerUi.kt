@@ -14,6 +14,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.ui.draw.blur
 import com.kyant.backdrop.Backdrop
+import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.lens
@@ -212,6 +213,7 @@ fun PlayerScreen(
     val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     var descriptionOpen by remember(item.id) { mutableStateOf(false) }
+    val commentsBackdrop = com.kyant.backdrop.backdrops.rememberLayerBackdrop()
 
     val context = LocalContext.current
     var dominantColor by remember(item.id) { mutableStateOf(c.primaryContainer) }
@@ -399,6 +401,8 @@ fun PlayerScreen(
         } else {
         // The video starts at the very top of the screen, under the status bar, like the feed.
         StatusIconsOverVideo(state)
+        // The page is recorded so the comments, which slide up over it, are frosted glass.
+        Box(Modifier.fillMaxSize().layerBackdrop(commentsBackdrop)) {
         Column(Modifier.fillMaxSize()) {
             Box(Modifier.zIndex(2f)) {
                 VideoStage(state, morph, onCollapse, onFullscreen, interactive)
@@ -464,6 +468,7 @@ fun PlayerScreen(
                 }
             }
         }
+        }
 
 
         }
@@ -502,6 +507,7 @@ fun PlayerScreen(
                     onClose = { state.sheet = null },
                     creatorAvatar = detailItem?.avatar,
                     creatorName = detailItem?.channel.orEmpty(),
+                    backdrop = if (TvMode.isTv) null else commentsBackdrop,
                 )
             }
         }

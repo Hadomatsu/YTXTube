@@ -193,12 +193,13 @@ fun BrandMark() {
 @Composable
 fun CircleAction(icon: ImageVector, contentDescription: String, onClick: () -> Unit) {
     val c = MaterialTheme.colorScheme
+    // Liquid glass in the headers (which give it what is behind them), a solid circle elsewhere.
+    val backdrop = LocalGlassBackdrop.current
     Box(
         modifier = Modifier
             .size(38.dp)
             .pressable(onClick = onClick)
-            .clip(CircleShape)
-            .background(c.surfaceContainerHigh),
+            .then(if (backdrop != null) Modifier.glassControl(backdrop, CircleShape) else Modifier.clip(CircleShape).background(c.surfaceContainerHigh)),
         contentAlignment = Alignment.Center,
     ) {
         Icon(icon, contentDescription, tint = c.onSurface, modifier = Modifier.size(20.dp))

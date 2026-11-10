@@ -1252,11 +1252,7 @@ fun QualitySheet(state: PlayerState, onDismiss: () -> Unit) {
     val details = state.details ?: return
     val chosen = QualityPreference.height
     val chosenHdr = QualityPreference.hdr
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = c.surfaceContainerLow,
-    ) {
+    GlassSheet(onDismiss = onDismiss) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -2227,11 +2223,7 @@ fun ChaptersSheet(state: PlayerState, onDismiss: () -> Unit) {
     val c = MaterialTheme.colorScheme
     val chapters = state.details?.chapters.orEmpty()
     val now = Chapters.indexAt(chapters, state.positionMs)
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = c.surfaceContainerLow,
-    ) {
+    GlassSheet(onDismiss = onDismiss) {
         Text(
             "Chapters",
             fontFamily = RoundedHeavy,

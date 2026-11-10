@@ -122,11 +122,7 @@ internal fun MusicQueueSheet(
     onRemove: (Int) -> Unit = {},
 ) {
     val c = MaterialTheme.colorScheme
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        containerColor = c.surfaceContainerLow,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-    ) {
+    GlassSheet(onDismiss = onDismiss) {
         Column(Modifier.fillMaxWidth().padding(bottom = 24.dp)) {
             Text(
                 "Up next",

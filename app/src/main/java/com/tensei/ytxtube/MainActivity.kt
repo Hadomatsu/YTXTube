@@ -1253,6 +1253,9 @@ fun YtxTubeApp() {
             }
         }
 
+        // Every glass sheet in the app is drawn here, over everything, so it blurs what is behind.
+        if (!pip.active) GlassSheetLayer(glassBackdrop)
+
         UpdateOverlay(updateState, pageBackdrop)
         }
     }
