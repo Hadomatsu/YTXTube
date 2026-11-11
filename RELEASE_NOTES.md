@@ -1,6 +1,4 @@
-YTXTube Custom 2.6.12: full mouse support
+YTXTube Custom 2.6.13: Shorts stay on your feed
 
-- Drag with a mouse like a finger: scroll and fling feeds, swipe Shorts, move the seek bar, the mini player and the comments; holding the button is a long press
-- Right click opens a video's menu
-- The mouse wheel moves Shorts one at a time
-- Moving the mouse over the video shows the controls, and the pointer becomes a hand over anything you can click
+- Signed in, Shorts keep coming from your own feed however long you scroll, instead of switching to the default topic Shorts after a while
+- Shorts load faster again later in a long scroll
