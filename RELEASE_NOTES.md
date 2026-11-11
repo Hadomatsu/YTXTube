@@ -1,4 +1,4 @@
-YTXTube Custom 2.6.13: Shorts stay on your feed
+YTXTube Custom 2.6.14: endless Shorts for you
 
-- Signed in, Shorts keep coming from your own feed however long you scroll, instead of switching to the default topic Shorts after a while
-- Shorts load faster again later in a long scroll
+- When your Shorts page runs out, Shorts go on in YouTube's endless Shorts feed picked for you, instead of random popular Shorts
+- Live streams are kept out of Shorts, so the feed no longer gets stuck on one
