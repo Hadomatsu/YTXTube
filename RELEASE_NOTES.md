@@ -1,3 +1,6 @@
-YTXTube Custom 2.6.11: Home cards like the video page
+YTXTube Custom 2.6.12: full mouse support
 
-- The video cards on Home now look exactly like the ones under a video: rounded pictures, the soft colour glow under the picture and shadowed text, folded and unfolded
+- Drag with a mouse like a finger: scroll and fling feeds, swipe Shorts, move the seek bar, the mini player and the comments; holding the button is a long press
+- Right click opens a video's menu
+- The mouse wheel moves Shorts one at a time
+- Moving the mouse over the video shows the controls, and the pointer becomes a hand over anything you can click
