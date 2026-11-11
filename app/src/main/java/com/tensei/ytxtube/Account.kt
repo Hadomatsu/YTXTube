@@ -1093,114 +1093,53 @@ object InnerTube {
         return FeedPage(randomFallback, "anon_shorts:${(idx + 1) % SHORTS_TOPICS.size}:start")
     }
 
+    /** Shelves your Shorts come from when signed in: your Shorts feed first, then Home and subscriptions. */
+    private val SHORTS_SHELVES = listOf("FEshorts", "FEwhat_to_watch", "FEsubscriptions")
+
     suspend fun shorts(next: String? = null, sessionSeen: Set<String> = emptySet()): FeedPage = withContext(Dispatchers.IO) {
         val allSeen = SeenShorts.allSeen() + sessionSeen
         val result = LinkedHashMap<String, VideoItem>()
-        var continuationToken: String? = null
 
         if (Account.signedIn) {
             // Not the watch history: that is Shorts already watched, newest first, which came back
             // as the same Shorts in the same order.
-            val shelves = listOf("FEshorts", "FEwhat_to_watch", "FEsubscriptions")
-            if (next != null) {
-                if (next.startsWith("shelf:")) {
-                    val parts = next.removePrefix("shelf:").split(":", limit = 2)
-                    var idx = parts.getOrNull(0)?.toIntOrNull() ?: 0
-                    var token = parts.getOrNull(1)
-
-                    var attempts = 0
-                    while (result.size < 15 && attempts < 8) {
-                        attempts++
-                        if (!token.isNullOrBlank() && token != "start") {
-                            val page = runCatching {
-                                parseShorts(post("browse", JSONObject().put("continuation", token)))
-                            }.getOrNull()
-                            if (page != null) {
-                                val fresh = page.videos.filter { it.id !in allSeen }
-                                fresh.forEach { result.putIfAbsent(it.id, it) }
-                                token = page.next
-                            } else {
-                                token = null
-                            }
-                        } else {
-                            idx = (idx + 1) % shelves.size
-                            val shelf = shelves[idx]
-                            val page = runCatching {
-                                parseShorts(post("browse", JSONObject().put("browseId", shelf)))
-                            }.getOrNull()
-                            if (page != null) {
-                                val fresh = page.videos.filter { it.id !in allSeen }
-                                fresh.forEach { result.putIfAbsent(it.id, it) }
-                                token = page.next
-                            }
-                        }
-                    }
-                    continuationToken = if (!token.isNullOrBlank()) "shelf:$idx:$token" else "shelf:${(idx + 1) % shelves.size}:start"
-                } else if (!next.startsWith("anon_shorts:")) {
-                    val page = runCatching {
-                        parseShorts(post("browse", JSONObject().put("continuation", next)))
-                    }.getOrNull()
-                    if (page != null) {
-                        val fresh = page.videos.filter { it.id !in allSeen }
-                        fresh.forEach { result.putIfAbsent(it.id, it) }
-                        continuationToken = page.next
-                    }
-                }
-            } else {
-                val pages = shelves.map { browseId ->
-                    async(Dispatchers.IO) {
-                        runCatching {
-                            parseShorts(post("browse", JSONObject().put("browseId", browseId)))
-                        }.getOrNull()
-                    }
-                }.awaitAll().filterNotNull()
-
-                pages.forEachIndexed { idx, p ->
-                    val fresh = p.videos.filter { it.id !in allSeen }
-                    fresh.forEach { result.putIfAbsent(it.id, it) }
-                    if (continuationToken == null && !p.next.isNullOrBlank()) {
-                        continuationToken = "shelf:$idx:${p.next}"
-                    }
-                }
-
-                var currentToken = continuationToken
-                var walkAttempts = 0
-                while (result.size < 15 && walkAttempts < 6) {
-                    walkAttempts++
-                    if (currentToken != null && currentToken.startsWith("shelf:")) {
-                        val parts = currentToken.removePrefix("shelf:").split(":", limit = 2)
-                        val sIdx = parts.getOrNull(0)?.toIntOrNull() ?: 0
-                        val sTok = parts.getOrNull(1)
-                        if (!sTok.isNullOrBlank() && sTok != "start") {
-                            val morePage = runCatching {
-                                parseShorts(post("browse", JSONObject().put("continuation", sTok)))
-                            }.getOrNull()
-                            if (morePage != null) {
-                                val fresh = morePage.videos.filter { it.id !in allSeen }
-                                fresh.forEach { result.putIfAbsent(it.id, it) }
-                                currentToken = if (!morePage.next.isNullOrBlank()) "shelf:$sIdx:${morePage.next}" else "shelf:${(sIdx + 1) % shelves.size}:start"
-                            } else {
-                                currentToken = "shelf:${(sIdx + 1) % shelves.size}:start"
-                            }
-                        } else {
-                            val shelf = shelves[(sIdx + 1) % shelves.size]
-                            val morePage = runCatching {
-                                parseShorts(post("browse", JSONObject().put("browseId", shelf)))
-                            }.getOrNull()
-                            if (morePage != null) {
-                                val fresh = morePage.videos.filter { it.id !in allSeen }
-                                fresh.forEach { result.putIfAbsent(it.id, it) }
-                                currentToken = if (!morePage.next.isNullOrBlank()) "shelf:${(sIdx + 1) % shelves.size}:${morePage.next}" else "shelf:${(sIdx + 2) % shelves.size}:start"
-                            }
-                        }
-                    } else break
-                }
-                continuationToken = currentToken
+            val shelves = SHORTS_SHELVES
+            // Where to go on: "shelf:<shelf>:<page token or start>". A topic token (from the
+            // signed-out feed) starts your own feed again: once the feed fell back to topics it
+            // used to stay there for good.
+            var idx = 0
+            var token: String? = null
+            if (next != null && next.startsWith("shelf:")) {
+                val parts = next.removePrefix("shelf:").split(":", limit = 2)
+                idx = (parts.getOrNull(0)?.toIntOrNull() ?: 0).mod(shelves.size)
+                token = parts.getOrNull(1)?.takeIf { it.isNotBlank() && it != "start" }
+            } else if (next != null && !next.startsWith("anon_shorts:")) {
+                token = next
             }
-
-            if (result.isNotEmpty()) {
-                return@withContext FeedPage(result.values.toList(), continuationToken ?: "shelf:0:start")
+            var attempts = 0
+            while (result.size < 12 && attempts < 6) {
+                attempts++
+                val fromTop = token == null
+                val page = runCatching {
+                    val body = if (fromTop) JSONObject().put("browseId", shelves[idx]) else JSONObject().put("continuation", token)
+                    parseShorts(post("browse", body))
+                }.getOrNull()
+                val fresh = page?.videos?.filter { it.id !in allSeen && it.id !in result }.orEmpty()
+                fresh.forEach { result.putIfAbsent(it.id, it) }
+                token = page?.next?.takeIf { it.isNotBlank() }
+                if (token == null) {
+                    // This shelf ran out. Your Shorts feed is asked again from the top, which gives
+                    // a new batch picked for you; only when that brings nothing new do Home and
+                    // subscriptions help out for a page, then it is back to your feed.
+                    idx = if (idx == 0 && !(fromTop && fresh.isEmpty())) 0 else (idx + 1) % shelves.size
+                }
             }
+            val accountNext = "shelf:$idx:${token ?: "start"}"
+            if (result.isNotEmpty()) return@withContext FeedPage(result.values.toList(), accountNext)
+            // Nothing new from the account this time (or no connection): show topic Shorts so the
+            // feed goes on, but the next page asks your own feed again.
+            val filler = loadInfiniteShortsFallback(null, allSeen)
+            return@withContext FeedPage(filler.videos, accountNext)
         }
 
         val fallback = loadInfiniteShortsFallback(next, allSeen)
@@ -1214,25 +1153,27 @@ object InnerTube {
         var continuationToken: String? = null
 
         if (Account.signedIn) {
-            val shelves = listOf("FEshorts", "FEwhat_to_watch", "FEsubscriptions").shuffled()
-            for (browseId in shelves) {
-                if (result.size >= 15) break
+            // Your Shorts feed first (a fresh batch), Home and subscriptions only to fill up.
+            SHORTS_SHELVES.forEachIndexed { idx, browseId ->
+                if (result.size >= 15) return@forEachIndexed
                 val page = runCatching {
                     parseShorts(post("browse", JSONObject().put("browseId", browseId)))
                 }.getOrNull()
                 if (page != null) {
                     val fresh = page.videos.filter { it.id !in allSeen }
                     fresh.forEach { result.putIfAbsent(it.id, it) }
-                    if (continuationToken == null) continuationToken = page.next
+                    if (continuationToken == null && !page.next.isNullOrBlank()) continuationToken = "shelf:$idx:${page.next}"
                 }
             }
+            if (result.isEmpty()) {
+                val filler = loadInfiniteShortsFallback(null, allSeen)
+                filler.videos.forEach { result.putIfAbsent(it.id, it) }
+            }
+            return@withContext FeedPage(result.values.toList(), continuationToken ?: "shelf:0:start")
         }
-        if (result.size < 15) {
-            val fallback = loadInfiniteShortsFallback(token, allSeen)
-            fallback.videos.forEach { result.putIfAbsent(it.id, it) }
-            if (continuationToken == null) continuationToken = fallback.next
-        }
-        FeedPage(result.values.toList(), continuationToken ?: "shelf:0:start")
+        val fallback = loadInfiniteShortsFallback(token?.takeIf { it.startsWith("anon_shorts:") }, allSeen)
+        fallback.videos.forEach { result.putIfAbsent(it.id, it) }
+        FeedPage(result.values.toList(), fallback.next)
     }
 
     internal fun parseShorts(root: JSONObject): FeedPage {

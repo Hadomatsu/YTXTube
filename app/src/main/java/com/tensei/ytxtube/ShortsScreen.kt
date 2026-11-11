@@ -238,7 +238,8 @@ private class ShortsFeedState(
                         videos = videos + newItems
                         seen += newItems.map { it.id }
                     }
-                    next = page.next ?: "anon_shorts:${(videos.size / 10) % 9}:start"
+                    // Signed in, the next page always comes from your own feed again.
+                    next = page.next ?: if (Account.signedIn) "shelf:0:start" else "anon_shorts:${(videos.size / 10) % 9}:start"
                 }
             loading = false
         }
