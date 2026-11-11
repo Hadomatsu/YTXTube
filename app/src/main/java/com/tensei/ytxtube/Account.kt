@@ -1096,6 +1096,43 @@ object InnerTube {
     /** Shelves your Shorts come from when signed in: your Shorts feed first, then Home and subscriptions. */
     private val SHORTS_SHELVES = listOf("FEshorts", "FEwhat_to_watch", "FEsubscriptions")
 
+    /**
+     * The params that start YouTube's endless Shorts feed after [seedId]: what the Shorts tab
+     * plays, picked for the signed-in account (the same request YouTube.js makes).
+     */
+    private fun reelSequenceParams(seedId: String): String {
+        val id = seedId.toByteArray()
+        val bytes = java.io.ByteArrayOutputStream().apply {
+            write(0x0A); write(id.size); write(id)      // 1: the Short to start from
+            write(0x2A); write(2); write(0x18); write(5) // 5: { 3: 5 }
+            write(0x50); write(25)                       // 10: 25
+        }.toByteArray()
+        val b64 = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+        return java.net.URLEncoder.encode(b64, "UTF-8")
+    }
+
+    /** One page of the endless Shorts feed; its next page is a "seq:" token. */
+    private fun reelSequence(params: String): FeedPage {
+        val page = shortsPageOf(post("reel/reel_watch_sequence", JSONObject().put("sequenceParams", params)))
+        return page.copy(next = page.next?.let { if (it.startsWith("seq:")) it else "seq:$it" })
+    }
+
+    /** [parseShorts], with a next page that belongs to the endless Shorts feed marked "seq:". */
+    private fun shortsPageOf(root: JSONObject): FeedPage {
+        val page = parseShorts(root)
+        val ce = root.optJSONObject("continuationEndpoint")
+        val seqParams = ce?.optJSONObject("reelWatchSequenceEndpoint")?.optString("sequenceParams")?.ifBlank { null }
+        val seqToken = ce?.optJSONObject("continuationCommand")
+            ?.takeIf { it.optString("request") == "CONTINUATION_REQUEST_TYPE_REEL_WATCH_SEQUENCE" }
+            ?.optString("token")?.ifBlank { null }
+        val next = when {
+            seqToken != null -> "seq:$seqToken"
+            seqParams != null && page.next == seqParams -> "seq:$seqParams"
+            else -> page.next
+        }
+        return page.copy(next = next)
+    }
+
     suspend fun shorts(next: String? = null, sessionSeen: Set<String> = emptySet()): FeedPage = withContext(Dispatchers.IO) {
         val allSeen = SeenShorts.allSeen() + sessionSeen
         val result = LinkedHashMap<String, VideoItem>()
@@ -1104,42 +1141,65 @@ object InnerTube {
             // Not the watch history: that is Shorts already watched, newest first, which came back
             // as the same Shorts in the same order.
             val shelves = SHORTS_SHELVES
-            // Where to go on: "shelf:<shelf>:<page token or start>". A topic token (from the
-            // signed-out feed) starts your own feed again: once the feed fell back to topics it
-            // used to stay there for good.
-            var idx = 0
-            var token: String? = null
-            if (next != null && next.startsWith("shelf:")) {
-                val parts = next.removePrefix("shelf:").split(":", limit = 2)
-                idx = (parts.getOrNull(0)?.toIntOrNull() ?: 0).mod(shelves.size)
-                token = parts.getOrNull(1)?.takeIf { it.isNotBlank() && it != "start" }
-            } else if (next != null && !next.startsWith("anon_shorts:")) {
-                token = next
+            // Where to go on: "seq:<token>" (YouTube's endless Shorts feed for you) or
+            // "shelf:<shelf>:<page token or start>". A topic token (from the signed-out feed)
+            // starts your own feed again: once the feed fell back to topics it used to stay there.
+            var cursor = when {
+                next == null || next.startsWith("anon_shorts:") -> "shelf:0:start"
+                next.startsWith("seq:") || next.startsWith("shelf:") -> next
+                else -> "shelf:0:$next"
             }
+            var sequenceFailed = false
             var attempts = 0
             while (result.size < 12 && attempts < 6) {
                 attempts++
+                if (cursor.startsWith("seq:")) {
+                    val page = runCatching { reelSequence(cursor.removePrefix("seq:")) }.getOrNull()
+                    val fresh = page?.videos?.filter { it.id !in allSeen && it.id !in result }.orEmpty()
+                    fresh.forEach { result.putIfAbsent(it.id, it) }
+                    cursor = if (page == null || page.videos.isEmpty()) {
+                        // The endless feed did not answer: your Shorts page again.
+                        sequenceFailed = true
+                        "shelf:0:start"
+                    } else {
+                        page.next ?: (fresh.lastOrNull() ?: page.videos.last()).let { "seq:" + reelSequenceParams(it.id) }
+                    }
+                    continue
+                }
+                val parts = cursor.removePrefix("shelf:").split(":", limit = 2)
+                var idx = (parts.getOrNull(0)?.toIntOrNull() ?: 0).mod(shelves.size)
+                val token = parts.getOrNull(1)?.takeIf { it.isNotBlank() && it != "start" }
                 val fromTop = token == null
                 val page = runCatching {
                     val body = if (fromTop) JSONObject().put("browseId", shelves[idx]) else JSONObject().put("continuation", token)
-                    parseShorts(post("browse", body))
+                    shortsPageOf(post("browse", body))
                 }.getOrNull()
                 val fresh = page?.videos?.filter { it.id !in allSeen && it.id !in result }.orEmpty()
                 fresh.forEach { result.putIfAbsent(it.id, it) }
-                token = page?.next?.takeIf { it.isNotBlank() }
-                if (token == null) {
-                    // This shelf ran out. Your Shorts feed is asked again from the top, which gives
-                    // a new batch picked for you; only when that brings nothing new do Home and
-                    // subscriptions help out for a page, then it is back to your feed.
-                    idx = if (idx == 0 && !(fromTop && fresh.isEmpty())) 0 else (idx + 1) % shelves.size
+                val pageNext = page?.next?.takeIf { it.isNotBlank() }
+                cursor = when {
+                    pageNext != null && pageNext.startsWith("seq:") -> pageNext
+                    pageNext != null -> "shelf:$idx:$pageNext"
+                    else -> {
+                        // This shelf ran out. Your Shorts go on in YouTube's endless Shorts feed,
+                        // started from one of yours. If that does not work, your Shorts page is
+                        // asked again from the top (a new batch), and only when that brings nothing
+                        // new do Home and subscriptions help out for a page.
+                        val seed = (fresh.lastOrNull() ?: result.values.lastOrNull() ?: page?.videos?.lastOrNull())?.id
+                        if (idx == 0 && !sequenceFailed && seed != null) {
+                            "seq:" + reelSequenceParams(seed)
+                        } else {
+                            idx = if (idx == 0 && !(fromTop && fresh.isEmpty())) 0 else (idx + 1) % shelves.size
+                            "shelf:$idx:start"
+                        }
+                    }
                 }
             }
-            val accountNext = "shelf:$idx:${token ?: "start"}"
-            if (result.isNotEmpty()) return@withContext FeedPage(result.values.toList(), accountNext)
+            if (result.isNotEmpty()) return@withContext FeedPage(result.values.toList(), cursor)
             // Nothing new from the account this time (or no connection): show topic Shorts so the
             // feed goes on, but the next page asks your own feed again.
             val filler = loadInfiniteShortsFallback(null, allSeen)
-            return@withContext FeedPage(filler.videos, accountNext)
+            return@withContext FeedPage(filler.videos, cursor)
         }
 
         val fallback = loadInfiniteShortsFallback(next, allSeen)
@@ -1157,12 +1217,15 @@ object InnerTube {
             SHORTS_SHELVES.forEachIndexed { idx, browseId ->
                 if (result.size >= 15) return@forEachIndexed
                 val page = runCatching {
-                    parseShorts(post("browse", JSONObject().put("browseId", browseId)))
+                    shortsPageOf(post("browse", JSONObject().put("browseId", browseId)))
                 }.getOrNull()
                 if (page != null) {
                     val fresh = page.videos.filter { it.id !in allSeen }
                     fresh.forEach { result.putIfAbsent(it.id, it) }
-                    if (continuationToken == null && !page.next.isNullOrBlank()) continuationToken = "shelf:$idx:${page.next}"
+                    val pageNext = page.next
+                    if (continuationToken == null && !pageNext.isNullOrBlank()) {
+                        continuationToken = if (pageNext.startsWith("seq:")) pageNext else "shelf:$idx:$pageNext"
+                    }
                 }
             }
             if (result.isEmpty()) {
@@ -1247,6 +1310,8 @@ object InnerTube {
                     val isShort = reel != null || contentType.contains("SHORT", ignoreCase = true) ||
                         url.contains("/shorts/") || portrait
                     if (!isShort) return@walk
+                    // A vertical live stream looks like a Short here, but it can't play as one.
+                    if (reel == null && obj.toString().let { "BADGE_STYLE_LIVE" in it || "LIVE_NOW" in it }) return@walk
                     val id = reel?.optString("videoId")?.ifBlank { null }
                         ?: command?.optJSONObject("watchEndpoint")?.optString("videoId")?.ifBlank { null }
                         ?: obj.optString("contentId").takeIf { it.length == 11 }

@@ -652,6 +652,12 @@ fun ShortsScreen(
             val loaded = withContext(Dispatchers.IO) {
                 runCatching { StreamCache.getOrLoad(item.id) }.getOrNull()
             } ?: return@forEachIndexed
+            // A live stream that slipped in can't play as a Short (the feed got stuck on it): it is
+            // taken out before you reach it.
+            if (loaded.streamType == org.schabi.newpipe.extractor.stream.StreamType.LIVE_STREAM) {
+                feed.videos = feed.videos.filterNot { it.id == item.id }
+                return@forEachIndexed
+            }
             val source = shortsSource(context, loaded, item.id) ?: return@forEachIndexed
             preload.prepare(item.id, source, page + 1 + index)
         }

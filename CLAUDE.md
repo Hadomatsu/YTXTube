@@ -86,7 +86,10 @@ uploads `YTXTube.apk`.
   served from `ytxlive://dvr/<id>`. Falls back to HLS if that fails. A live that ends while
   watched turns into a static recording without re-extracting.
 - `YouTube.kt`: extraction and `StreamCache`, `SeenShorts` (so Shorts don't repeat).
-  `Account.kt`: sign-in, feeds, Shorts shelves.
+  `Account.kt`: sign-in, feeds, Shorts (`InnerTube.shorts`). Signed in, Shorts come from the
+  `FEshorts` page, then YouTube's endless personal feed (`reel/reel_watch_sequence`, "seq:"
+  tokens, started from one of her Shorts). Signed-out topic Shorts are only a one-page filler and
+  must never take over a signed-in feed. Live streams are kept out of Shorts.
 - `ShortsScreen.kt`: Shorts (one player plus preload manager, hidden frame grabber for smooth
   scrolling, side panel, hold for 2x). `ShortsWarmup.kt`: preloads the first Short.
 - `Comments.kt`: comment panel (drag to resize, the height is remembered). While dragged it
