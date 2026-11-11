@@ -173,6 +173,11 @@ private class ShortsFeedState(
     val nextToken: String? get() = next
     val seenIds: Set<String> get() = seen
 
+    /** Takes a Short out of the feed (a live stream that can't play as a Short). */
+    fun drop(id: String) {
+        videos = videos.filterNot { it.id == id }
+    }
+
     fun load(ctx: Context? = null) {
         if (loading || loaded) return
         loading = true
@@ -655,7 +660,7 @@ fun ShortsScreen(
             // A live stream that slipped in can't play as a Short (the feed got stuck on it): it is
             // taken out before you reach it.
             if (loaded.streamType == org.schabi.newpipe.extractor.stream.StreamType.LIVE_STREAM) {
-                feed.videos = feed.videos.filterNot { it.id == item.id }
+                feed.drop(item.id)
                 return@forEachIndexed
             }
             val source = shortsSource(context, loaded, item.id) ?: return@forEachIndexed
