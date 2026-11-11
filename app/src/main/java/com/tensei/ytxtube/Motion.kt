@@ -1,5 +1,7 @@
 package com.tensei.ytxtube
 
+import androidx.compose.ui.input.pointer.pointerHoverIcon
+import androidx.compose.ui.input.pointer.PointerIcon
 import android.provider.Settings
 import android.view.HapticFeedbackConstants
 import androidx.compose.animation.core.CubicBezierEasing
@@ -115,6 +117,8 @@ fun Modifier.pressable(
     if (!enabled) return@composed layer
     layer
         .then(if (tv) Modifier.tvFocusRing() else Modifier)
+        // A mouse shows the hand pointer over anything that can be clicked.
+        .pointerHoverIcon(PointerIcon.Hand)
         .combinedClickable(
             interactionSource = interaction,
             indication = null,
@@ -122,4 +126,7 @@ fun Modifier.pressable(
             onLongClick = onLongClick?.let { long -> { Haptics.long(view); long() } },
             onClick = { Haptics.tap(view); onClick() },
         )
+        // A right click does what a long press does (opens the menu), without a vibration.
+        // Placed inside the click handler, so it sees the press first and it is not also a click.
+        .then(if (onLongClick != null) Modifier.onMouseRightClick(onLongClick) else Modifier)
 }

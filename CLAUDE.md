@@ -92,6 +92,11 @@ uploads `YTXTube.apk`.
 - `Comments.kt`: comment panel (drag to resize, the height is remembered). While dragged it
   is laid out at full height and only slid, never resized per frame (resizing dropped it to
   about 20 fps).
+- `MouseInput.kt`: mouse support. Compose ignores mouse drags in lists, rows and pagers, so
+  `MainActivity.dispatchTouchEvent` hands every left-button press to the app as a finger touch
+  (drag, fling, long press all work). Right click runs an item's long-press action
+  (`onMouseRightClick`, wired into `pressable`), the wheel turns Shorts one per notch
+  (`wheelTurnsPages`), moving the mouse over the video shows the controls (`VideoView.kt`).
 - `GlassSheet.kt` (`frostedGlass`, `glassControl`, glass sheets), `Glass.kt`, `GlassNavBar.kt`.
 - `Theme.kt`: `ThemeSettings` (dark, AMOLED, "Colours in the video screen" for AMOLED).
   `SettingsScreen.kt`: settings.

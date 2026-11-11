@@ -137,6 +137,9 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.input.pointer.util.VelocityTracker
@@ -313,7 +316,42 @@ fun VideoContent(
             }
         }
     }
-    Box(modifier.background(Color.Black).then(tvKeys).onSizeChanged { rootSize = it }.onGloballyPositioned { coordsHolder[0] = it; pip?.videoBounds = it.boundsInWindow() }.pointerInput(state, portraitEdgeScrub, fullscreen) {
+    // Moving a mouse over the video brings the controls up (and keeps them up while it moves),
+    // like on a computer. A click without moving still toggles them as a tap does.
+    val mouseHover = remember(state) { Modifier.pointerInput(Unit) {
+        val moveSlop = 6.dp.toPx()
+        var from: Offset? = null
+        var shownAt = 0L
+        awaitPointerEventScope {
+            while (true) {
+                val event = awaitPointerEvent(PointerEventPass.Initial)
+                val change = event.changes.firstOrNull() ?: continue
+                if (change.type != PointerType.Mouse || change.pressed) {
+                    from = null
+                    continue
+                }
+                when (event.type) {
+                    PointerEventType.Enter -> from = change.position
+                    PointerEventType.Exit -> from = null
+                    PointerEventType.Move -> {
+                        val start = from
+                        if (start == null) {
+                            from = change.position
+                        } else if ((change.position - start).getDistance() > moveSlop) {
+                            from = change.position
+                            val now = android.os.SystemClock.uptimeMillis()
+                            if (currentInteractive && state.error == null && (!controlsVisible || now - shownAt > 400)) {
+                                controlsVisible = true
+                                touched()
+                                shownAt = now
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    } }
+    Box(modifier.background(Color.Black).then(tvKeys).onSizeChanged { rootSize = it }.onGloballyPositioned { coordsHolder[0] = it; pip?.videoBounds = it.boundsInWindow() }.then(mouseHover).pointerInput(state, portraitEdgeScrub, fullscreen) {
         val doubleTapMs = viewConfiguration.doubleTapTimeoutMillis
         val holdSpeedMs = Motion.HoldSpeedMs
         coroutineScope {

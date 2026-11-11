@@ -735,7 +735,7 @@ fun ShortsScreen(
         } else {
             VerticalPager(
                 state = pager,
-                modifier = Modifier.fillMaxSize().layerBackdrop(feedBackdrop),
+                modifier = Modifier.fillMaxSize().layerBackdrop(feedBackdrop).wheelTurnsPages(pager, scope),
                 beyondViewportPageCount = 1,
                 pageSpacing = 0.dp,
             ) { index ->

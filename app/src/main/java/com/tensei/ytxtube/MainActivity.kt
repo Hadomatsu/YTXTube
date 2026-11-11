@@ -132,6 +132,19 @@ class MainActivity : ComponentActivity() {
     internal var pipController: PipController? = null
     internal var intentHandler: ((Intent) -> Unit)? = null
 
+    // A mouse's left button acts as a finger (see MouseInput), so it can drag and scroll.
+    override fun dispatchTouchEvent(ev: android.view.MotionEvent): Boolean {
+        val touch = MouseInput.asTouch(ev) ?: return super.dispatchTouchEvent(ev)
+        return try {
+            super.dispatchTouchEvent(touch)
+        } finally {
+            touch.recycle()
+        }
+    }
+
+    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean =
+        MouseInput.swallowsBack(event) || super.dispatchKeyEvent(event)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
