@@ -230,26 +230,38 @@ private class ShortsFeedState(
         return merged.values.toList()
     }
 
-    fun loadMore(ctx: Context? = null) {
-        if (loading) return
+    /** Loads the next batch; true when it brought new Shorts. */
+    suspend fun loadMoreNow(): Boolean {
+        if (loading || refreshing) return false
         loading = true
-        scope.launch {
+        try {
             val token = next
-            runCatching { InnerTube.shorts(token, seen) }
-                .onSuccess { page ->
-                    val known = videos.mapTo(HashSet()) { it.id }
-                    val newItems = page.videos.filter { known.add(it.id) }
-                    if (newItems.isNotEmpty()) {
-                        videos = videos + newItems
-                        seen += newItems.map { it.id }
-                    }
-                    // Signed in, the next page always comes from your own feed again.
-                    next = page.next ?: if (Account.signedIn) "shelf:0:start" else "anon_shorts:${(videos.size / 10) % 9}:start"
-                }
+            val page = runCatching { InnerTube.shorts(token, seen) }.getOrNull() ?: return false
+            val known = videos.mapTo(HashSet()) { it.id }
+            val newItems = page.videos.filter { known.add(it.id) }
+            if (newItems.isNotEmpty()) {
+                videos = videos + newItems
+                seen += newItems.map { it.id }
+            }
+            // Signed in, the next batch always comes from your own feed again.
+            next = page.next ?: if (Account.signedIn) "start" else "anon_shorts:${(videos.size / 10) % 9}:start"
+            return newItems.isNotEmpty()
+        } finally {
             loading = false
         }
     }
+
+    /**
+     * Lets go of the oldest [count] Shorts (far behind the one on screen), like TikTok, so a
+     * long scroll never piles up. They stay "seen", so they don't come back.
+     */
+    fun dropFirst(count: Int) {
+        if (count > 0) videos = videos.drop(count)
+    }
 }
+
+/** How many Shorts behind the one on screen you can scroll back to; older ones are let go. */
+private const val SHORTS_KEEP_BEHIND = 20
 
 @Composable
 fun ShortsScreen(
@@ -261,6 +273,8 @@ fun ShortsScreen(
     active: Boolean = true,
     onOpenChannel: (String) -> Unit = {},
     onCommentsOpenChange: (Boolean) -> Unit = {},
+    /** Goes up each time the Shorts tab is tapped while already on Shorts: refresh. */
+    refreshKey: Int = 0,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -325,10 +339,47 @@ fun ShortsScreen(
     val page = if (feed.videos.isEmpty()) 0 else activePage.coerceIn(0, feed.videos.lastIndex)
     val current = feed.videos.getOrNull(page)
 
-    LaunchedEffect(page, feed.videos.size) {
-        if (feed.videos.isNotEmpty() && page >= feed.videos.lastIndex - 3) {
-            feed.loadMore(context)
+    // Endless, like TikTok and YouTube: the next batch is fetched while there are still several
+    // Shorts to go. If a batch brings nothing new it is asked again (a bit later each time)
+    // instead of the feed just ending there.
+    LaunchedEffect(feed) {
+        var wait = 0L
+        while (true) {
+            snapshotFlow {
+                feed.videos.isNotEmpty() && activePage >= feed.videos.size - 6 && !feed.loading && !feed.refreshing
+            }.first { it }
+            if (wait > 0L) delay(wait)
+            val added = feed.loadMoreNow()
+            wait = when {
+                added -> 0L
+                wait == 0L -> 1_000L
+                else -> (wait * 2).coerceAtMost(15_000L)
+            }
         }
+    }
+
+    // Like TikTok: the 20 Shorts behind the one you are on stay, so you can scroll back to them;
+    // older ones are let go. Done while the feed is still and in one step, so the Short on
+    // screen does not move or restart.
+    LaunchedEffect(pager, feed) {
+        snapshotFlow { pager.isScrollInProgress to activePage }.collect { (scrolling, at) ->
+            if (scrolling || at < SHORTS_KEEP_BEHIND + 10 || at > feed.videos.lastIndex) return@collect
+            val drop = at - SHORTS_KEEP_BEHIND
+            androidx.compose.runtime.snapshots.Snapshot.withMutableSnapshot {
+                feed.dropFirst(drop)
+                activePage = at - drop
+                pager.requestScrollToPage(at - drop)
+            }
+        }
+    }
+
+    // Tapping the Shorts tab again while on Shorts: a fresh batch, from the top.
+    var handledRefreshKey by remember { mutableIntStateOf(refreshKey) }
+    LaunchedEffect(refreshKey) {
+        if (refreshKey == handledRefreshKey) return@LaunchedEffect
+        handledRefreshKey = refreshKey
+        feed.refresh(context)
+        if (feed.videos.isNotEmpty()) pager.scrollToPage(0)
     }
 
     // One shared preload manager and player: the next Short is prepared inside the
@@ -750,6 +801,8 @@ fun ShortsScreen(
                 modifier = Modifier.fillMaxSize().layerBackdrop(feedBackdrop).wheelTurnsPages(pager, scope),
                 beyondViewportPageCount = 1,
                 pageSpacing = 0.dp,
+                // Each Short keeps its page when older ones are let go (see SHORTS_KEEP_BEHIND).
+                key = { i -> feed.videos.getOrNull(i)?.id ?: "page-$i" },
             ) { index ->
                 val item = feed.videos.getOrNull(index) ?: return@VerticalPager
                 val pageFocus = remember { FocusRequester() }

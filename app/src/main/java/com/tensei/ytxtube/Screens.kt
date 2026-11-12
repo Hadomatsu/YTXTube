@@ -1,5 +1,6 @@
 package com.tensei.ytxtube
 
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material3.HorizontalDivider
@@ -204,6 +205,14 @@ fun HomeScreen(
         if (activeFilter == HomeFilter.Subscribed && lib.channels.isEmpty()) {
             lib.loadChannels()
         }
+    }
+    // Tapping Home again while on Home: back to the top (see the list) and a fresh feed.
+    var handledHomeTap by remember { mutableIntStateOf(scrollToTop) }
+    LaunchedEffect(scrollToTop) {
+        if (scrollToTop == handledHomeTap) return@LaunchedEffect
+        handledHomeTap = scrollToTop
+        val topicFeed = lib.topicFeed
+        if (lib.topic != null && topicFeed != null) topicFeed.refresh() else lib.home.refresh()
     }
     val filteredVideos = remember(lib.home.videos, activeFilter, lib.channels) {
         when (activeFilter) {

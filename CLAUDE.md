@@ -86,12 +86,15 @@ uploads `YTXTube.apk`.
   served from `ytxlive://dvr/<id>`. Falls back to HLS if that fails. A live that ends while
   watched turns into a static recording without re-extracting.
 - `YouTube.kt`: extraction and `StreamCache`, `SeenShorts` (so Shorts don't repeat).
-  `Account.kt`: sign-in, feeds, Shorts (`InnerTube.shorts`). Signed in, Shorts come from the
-  `FEshorts` page, then YouTube's endless personal feed (`reel/reel_watch_sequence`, "seq:"
-  tokens, started from one of her Shorts). Signed-out topic Shorts are only a one-page filler and
-  must never take over a signed-in feed. Live streams are kept out of Shorts.
+  `Account.kt`: sign-in, feeds, Shorts (`InnerTube.shorts`). Signed in, Shorts are YouTube's
+  endless personal sequence (`reel/reel_watch_sequence`, plain base64 ReelSequence params, seeded
+  from a Short on `FEshorts` or Home), like the YouTube app's Shorts tab: "seq:" tokens for the
+  next batch, "seed:<id>" to restart after a Short. No subscriptions, no topic filler. Live
+  streams are kept out of Shorts.
 - `ShortsScreen.kt`: Shorts (one player plus preload manager, hidden frame grabber for smooth
-  scrolling, side panel, hold for 2x). `ShortsWarmup.kt`: preloads the first Short.
+  scrolling, side panel, hold for 2x). Endless: the next batch loads 6 Shorts before the end and
+  is retried with backoff if empty; only 20 Shorts behind the current one are kept (pager keyed by
+  id, `requestScrollToPage` keeps the Short on screen). Tapping the Shorts tab again refreshes. `ShortsWarmup.kt`: preloads the first Short.
 - `Comments.kt`: comment panel (drag to resize, the height is remembered). While dragged it
   is laid out at full height and only slid, never resized per frame (resizing dropped it to
   about 20 fps).

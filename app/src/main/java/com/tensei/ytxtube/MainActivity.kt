@@ -741,6 +741,7 @@ fun YtxTubeApp() {
                         openChannel = url
                     },
                     onCommentsOpenChange = { isShortsCommentsOpen = it },
+                    refreshKey = scrollToTop[Tab.Shorts] ?: 0,
                 )
                 Tab.Library -> LibraryScreen(
                     lib, contentPadding, onOpen = player::open, onOpenPlaylist = { ref -> if (ref.id == "DL") tab = Tab.Downloads else openPlaylist = ref },
