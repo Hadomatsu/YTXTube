@@ -607,7 +607,7 @@ class PlayerState(private val scope: CoroutineScope) {
     private fun show(item: VideoItem, startPlayback: Boolean) {
         endHoldSpeed()
         openedAt = android.os.SystemClock.elapsedRealtime()
-        Log.i("YTXTubeTime", "open ${item.id}")
+        Log.w("YTXTubeTime", "open ${item.id}")
         if (startPlayback) Net.prewarmMediaConnection()
         current = item
         if (isMusicMode) {
@@ -688,7 +688,7 @@ class PlayerState(private val scope: CoroutineScope) {
         loadJob = scope.launch {
             runCatching { YouTube.details(item.id) }
                 .onSuccess { d ->
-                    Log.i("YTXTubeTime", "details +${android.os.SystemClock.elapsedRealtime() - openedAt}ms")
+                    Log.w("YTXTubeTime", "details +${android.os.SystemClock.elapsedRealtime() - openedAt}ms")
                     details = d
                     if (isMusicMode) LyricsStore.prefetch(item, d.item.durationSec)
                     refreshTracks()
@@ -1612,7 +1612,7 @@ class PlayerState(private val scope: CoroutineScope) {
         }
 
         override fun onRenderedFirstFrame() {
-            Log.i("YTXTubeTime", "first frame +${android.os.SystemClock.elapsedRealtime() - openedAt}ms")
+            Log.w("YTXTubeTime", "first frame +${android.os.SystemClock.elapsedRealtime() - openedAt}ms")
             firstFrameRendered = true
         }
 
@@ -1729,7 +1729,7 @@ class PlayerState(private val scope: CoroutineScope) {
     private fun describeFormat(width: Int, height: Int) {
         val tier = qualityTier(width, height)
         if (decodedHeight != tier) {
-            Log.i("YTXTubeTime", "now ${tier}p (${width}×${height}) at +${android.os.SystemClock.elapsedRealtime() - openedAt}ms")
+            Log.w("YTXTubeTime", "now ${tier}p (${width}×${height}) at +${android.os.SystemClock.elapsedRealtime() - openedAt}ms")
         }
         decodedHeight = tier
         val formats = controller?.currentTracks?.groups.orEmpty()

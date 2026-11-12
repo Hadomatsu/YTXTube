@@ -197,6 +197,19 @@ fun HomeScreen(
     var activeFilter by remember { mutableStateOf(HomeFilter.All) }
     // Unfolded (a wide screen) shows two started videos, folded one.
     val wideScreen = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp >= 600
+    // Measurement only: tells the system when the first feed is on screen ("Fully drawn" in
+    // logcat). The system counts only the first call, so later refreshes are ignored.
+    val homeContext = LocalContext.current
+    LaunchedEffect(lib.home.videos.isNotEmpty()) {
+        if (lib.home.videos.isEmpty()) return@LaunchedEffect
+        androidx.compose.runtime.withFrameNanos { }
+        androidx.compose.runtime.withFrameNanos { }
+        var c: android.content.Context = homeContext
+        while (c is android.content.ContextWrapper) {
+            if (c is android.app.Activity) { runCatching { c.reportFullyDrawn() }; break }
+            c = c.baseContext
+        }
+    }
     LaunchedEffect(signedIn) {
         if (lib.home.videos.isEmpty()) lib.home.ensureLoaded()
         if (signedIn && lib.channels.isEmpty()) lib.loadChannels()

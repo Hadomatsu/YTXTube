@@ -543,6 +543,7 @@ fun ShortsScreen(
             }
 
             override fun onRenderedFirstFrame() {
+                android.util.Log.w("YTXTubeTime", "short frame +${android.os.SystemClock.elapsedRealtime() - ShortTiming.openedAt}ms")
                 if (!mainView.acceptFrames) return
                 val id = exo.currentMediaItem?.mediaId
                 // Two frames later the video view is showing it, so the still can go without a
@@ -600,6 +601,8 @@ fun ShortsScreen(
                 }
                 if (next != activePage) {
                     captureLeaving(feed.videos.getOrNull(activePage)?.id)
+                    ShortTiming.openedAt = android.os.SystemClock.elapsedRealtime()
+                    android.util.Log.w("YTXTubeTime", "short ${feed.videos.getOrNull(next)?.id}")
                     startShort(feed.videos.getOrNull(next)?.id)
                     activePage = next
                 }
@@ -2017,3 +2020,7 @@ private fun shortsSource(context: Context, info: StreamInfo, mediaId: String): M
     return fallback?.let { createStreamSource(context, it, mediaId) }
 }
 
+/** Measurement only: when the last swipe landed, so the swipe-to-first-frame time can be logged. */
+internal object ShortTiming {
+    @Volatile var openedAt = 0L
+}
