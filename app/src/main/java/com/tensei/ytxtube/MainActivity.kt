@@ -613,6 +613,9 @@ fun YtxTubeApp() {
 
         derivedStateOf { player.current != null && (player.expanded || morph.dragging || morph.progress.isRunning || morph.progress.value > 0f) }
     }
+    val playerSettledOpen by remember {
+        derivedStateOf { player.expanded && morph.progress.value >= 1f && !morph.dragging && !morph.progress.isRunning }
+    }
 
     BoxWithConstraints(Modifier.fillMaxSize().background(c.surface)) {
 
@@ -894,7 +897,10 @@ fun YtxTubeApp() {
 
         }
 
-        if (hasMini && !openSettings && tab != Tab.Shorts && shortsEntry == null) {
+        // While the full player is up the mini player is not drawn (alpha 0), so once the player is
+        // fully open and still it leaves the tree: its glass would otherwise keep re-rendering under
+        // the player every frame. It stays during the morph, since a swipe up on it drives the morph.
+        if (hasMini && !openSettings && tab != Tab.Shorts && shortsEntry == null && !playerSettledOpen) {
             val dismiss = remember { androidx.compose.animation.core.Animatable(0f) }
             LaunchedEffect(player.current?.id) { dismiss.snapTo(0f) }
             // Swiping the mini player sideways closes it, like YouTube's.

@@ -73,6 +73,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -1044,7 +1045,15 @@ fun ShortsScreen(
                         }
                     }
 
-                    if (!inPip) {
+                    // The top bar exists only on pages that can be seen: the current one, and
+                    // its neighbours while a swipe is in flight. Pages kept ready off screen
+                    // would otherwise re-render four glass buttons each on every frame.
+                    val topBarShown by remember(index, page) {
+                        derivedStateOf {
+                            index == page || (pager.isScrollInProgress && (index - pager.currentPage).absoluteValue <= 1)
+                        }
+                    }
+                    if (!inPip && topBarShown) {
                         ShortsTopBar(
                             onBack = onBack,
                             muted = muted,

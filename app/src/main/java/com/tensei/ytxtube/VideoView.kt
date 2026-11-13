@@ -117,6 +117,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
@@ -211,11 +212,12 @@ fun VideoContent(
         }
     }
     val reduced = rememberReducedMotion()
-    val visibleAlpha by animateFloatAsState(
+    val visibleAlphaState = animateFloatAsState(
         targetValue = if (controlsVisible) 1f else 0f,
         animationSpec = if (reduced) tween(0) else tween(160, easing = Motion.Emphasized),
         label = "controlsAlpha",
     )
+    val visibleAlpha by visibleAlphaState
 
 
 
@@ -717,18 +719,20 @@ fun VideoContent(
                 }
             }
         }
-        val chromeAlpha = if (scrubbing) 0f else visibleAlpha * controlsAlpha()
-        Box(Modifier.fillMaxSize().graphicsLayer { alpha = chromeAlpha }) {
-            Box(
-                Modifier.fillMaxSize().background(
-                    Brush.verticalGradient(
-                        0f to Color.Black.copy(alpha = 0.5f),
-                        0.32f to Color.Black.copy(alpha = 0.08f),
-                        0.58f to Color.Black.copy(alpha = 0.08f),
-                        1f to Color.Black.copy(alpha = 0.62f),
-                    ),
-                ),
+        // The controls leave the tree while they are hidden. Kept at alpha 0 they are not seen,
+        // but each glass button still re-renders every video frame. The fade reads its values
+        // while drawing, so the player is not recomposed on every frame of it.
+        val chromeShown by remember { derivedStateOf { !state.scrubDragging && visibleAlphaState.value > 0f && controlsAlpha() > 0f } }
+        val chromeScrim = remember {
+            Brush.verticalGradient(
+                0f to Color.Black.copy(alpha = 0.5f),
+                0.32f to Color.Black.copy(alpha = 0.08f),
+                0.58f to Color.Black.copy(alpha = 0.08f),
+                1f to Color.Black.copy(alpha = 0.62f),
             )
+        }
+        if (chromeShown) Box(Modifier.fillMaxSize().graphicsLayer { alpha = if (state.scrubDragging) 0f else visibleAlphaState.value * controlsAlpha() }) {
+            Box(Modifier.fillMaxSize().background(chromeScrim))
             val edge = if (fullscreen) {
                 Modifier.fullscreenControlsHorizontalInsets().padding(vertical = FullscreenControlsVerticalPad)
             } else {
