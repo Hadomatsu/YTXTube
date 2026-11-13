@@ -413,6 +413,63 @@ object VideoAccent {
     }
 }
 
+fun VideoItem.toJson(): JSONObject = JSONObject()
+    .put("id", id).put("title", title).put("channel", channel)
+    .put("channelUrl", channelUrl ?: "").put("thumb", thumbnail ?: "")
+    .put("avatar", avatar ?: "").put("duration", durationSec)
+    .put("views", views).put("uploaded", uploaded ?: "")
+
+fun videoItemFromJson(o: JSONObject): VideoItem? {
+    val id = o.optString("id").ifBlank { return null }
+    return VideoItem(
+        id = id,
+        title = o.optString("title"),
+        channel = o.optString("channel"),
+        channelUrl = o.optString("channelUrl").ifBlank { null },
+        thumbnail = o.optString("thumb").ifBlank { null },
+        avatar = o.optString("avatar").ifBlank { null },
+        durationSec = o.optLong("duration"),
+        views = o.optLong("views", -1L),
+        uploaded = o.optString("uploaded").ifBlank { null },
+    )
+}
+
+/**
+ * The last Home feed on disk, so a cold start shows videos at once while the fresh feed loads.
+ * One file, tagged with the account it belongs to, so another account or signed out never sees it.
+ */
+object FeedCache {
+    private const val MAX = 40
+    private val file get() = java.io.File(YTXTubeApplication.appContext.cacheDir, "feed-home.json")
+
+    suspend fun read(key: String): List<VideoItem> = withContext(Dispatchers.IO) {
+        runCatching {
+            val o = JSONObject(file.readText())
+            if (o.optString("key") != key) return@runCatching emptyList()
+            val arr = o.getJSONArray("items")
+            (0 until arr.length()).mapNotNull { i ->
+                val v = arr.optJSONObject(i) ?: return@mapNotNull null
+                videoItemFromJson(v)?.copy(
+                    isLive = v.optBoolean("live"),
+                    isShort = v.optBoolean("short"),
+                    feedbackToken = v.optString("fb").ifBlank { null },
+                )
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    // shortcut: no temp file + rename, a torn file only reads back as empty; fine for a cache.
+    suspend fun write(key: String, videos: List<VideoItem>) = withContext(Dispatchers.IO) {
+        runCatching {
+            val arr = JSONArray()
+            videos.take(MAX).forEach { v ->
+                arr.put(v.toJson().put("live", v.isLive).put("short", v.isShort).put("fb", v.feedbackToken ?: ""))
+            }
+            file.writeText(JSONObject().put("key", key).put("items", arr).toString())
+        }
+    }
+}
+
 /** Videos you started and did not finish, newest first, for Continue watching on Home. */
 object ContinueWatching {
     private const val MAX = 60
@@ -429,21 +486,7 @@ object ContinueWatching {
         loaded = true
         runCatching {
             val arr = JSONArray(prefs.getString("items", "[]"))
-            items = (0 until arr.length()).mapNotNull { i ->
-                val o = arr.optJSONObject(i) ?: return@mapNotNull null
-                val id = o.optString("id").ifBlank { return@mapNotNull null }
-                VideoItem(
-                    id = id,
-                    title = o.optString("title"),
-                    channel = o.optString("channel"),
-                    channelUrl = o.optString("channelUrl").ifBlank { null },
-                    thumbnail = o.optString("thumb").ifBlank { null },
-                    avatar = o.optString("avatar").ifBlank { null },
-                    durationSec = o.optLong("duration"),
-                    views = o.optLong("views", -1L),
-                    uploaded = o.optString("uploaded").ifBlank { null },
-                )
-            }
+            items = (0 until arr.length()).mapNotNull { arr.optJSONObject(it)?.let(::videoItemFromJson) }
         }
     }
 
@@ -453,15 +496,7 @@ object ContinueWatching {
         items = (listOf(video) + items.filter { it.id != video.id }).take(MAX)
         runCatching {
             val arr = JSONArray()
-            items.forEach { v ->
-                arr.put(
-                    JSONObject()
-                        .put("id", v.id).put("title", v.title).put("channel", v.channel)
-                        .put("channelUrl", v.channelUrl ?: "").put("thumb", v.thumbnail ?: "")
-                        .put("avatar", v.avatar ?: "").put("duration", v.durationSec)
-                        .put("views", v.views).put("uploaded", v.uploaded ?: ""),
-                )
-            }
+            items.forEach { arr.put(it.toJson()) }
             prefs.edit().putString("items", arr.toString()).apply()
         }
     }

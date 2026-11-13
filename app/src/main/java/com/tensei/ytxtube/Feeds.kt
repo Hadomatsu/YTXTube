@@ -63,6 +63,8 @@ class FeedState(
 
 
     private val freshOnRefresh: Boolean = false,
+    /** Set for Home: the account the disk copy of the first page belongs to (see FeedCache). */
+    private val cacheKey: (() -> String)? = null,
     private val loader: suspend (next: String?) -> FeedPage,
 ) {
     var videos by mutableStateOf<List<VideoItem>>(emptyList())
@@ -92,13 +94,21 @@ class FeedState(
         refreshing = videos.isNotEmpty()
         error = null
         job?.cancel()
+        val key = cacheKey?.invoke()
         job = scope.launch {
+            // Show the last saved feed while the fresh one loads. Its ids stay out of `shown`, or
+            // the fresh load would skip them all and fetch extra pages.
+            if (key != null && videos.isEmpty()) {
+                val saved = FeedCache.read(key)
+                if (videos.isEmpty()) videos = saved
+            }
             runCatching { if (freshOnRefresh && shown.isNotEmpty()) loadFresh() else loader(null) }
                 .onSuccess {
                     videos = it.videos
                     next = it.next
                     generation++
                     if (freshOnRefresh) it.videos.forEach { v -> shown += v.id }
+                    if (key != null) FeedCache.write(key, it.videos)
                 }
                 .onFailure { error = friendly(it) }
             loading = false
@@ -165,7 +175,7 @@ class FeedState(
 @Stable
 class LibraryData(scope: CoroutineScope) {
 
-    val home = FeedState(scope, freshOnRefresh = true) { InnerTube.homeFeed(it) }
+    val home = FeedState(scope, freshOnRefresh = true, cacheKey = { Account.activeAccountId ?: "" }) { InnerTube.homeFeed(it) }
 
     /** The Music tab (YouTube Music), kept while you move around the app. */
     val music = MusicData(scope)
