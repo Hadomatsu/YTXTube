@@ -1,5 +1,7 @@
 # YTXTube Custom: notes for Claude
 
+Read BRAIN.md first. It links the project log, roadmap and briefs.
+
 A personal Android YouTube client. Forked from Koustubh12345/YTXTube (its Liquid Glass UI) and
 extended with ReVanced Extended style features. The owner uses it daily on a Honor Magic V5
 foldable (Android 16, 120 Hz, folded and unfolded layouts both matter) and shares the APK with
