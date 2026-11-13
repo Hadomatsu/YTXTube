@@ -56,3 +56,9 @@ Each entry records what was asked, what was decided and why, and what shipped.
 - **Decided:** Caveman replies were added to the global ~/.claude/CLAUDE.md as well, so they apply outside this repo too.
 - **Shipped:** Verified: plugins ecc, mattpocock-skills, humanizer, lemo-opuscar and ponytail are enabled; marketing skills are gone; personal skills apple-design, graphify and project-memory are present; the RTK hook is in settings.json and RTK has compressed 15 commands; Graphify 0.9.108 and OmniRoute 3.8.53 run; settings.json is valid JSON; the OmniRoute server answers. Earlier, Gemini 3.8 Flash returned a real tool call through OmniRoute.
 - **Open:** Both Gemini Flash models were in OmniRoute's 30 minute cooldown (until about 17:27 UTC), so `claude-free` is not yet proven end to end. The OmniRoute server dies when this session ends; `claude-free` restarts it on demand. A Claude restart is needed to load the plugin and hook changes.
+
+## 2026-11-13 - Setup steps made automatic
+- **Asked:** Automate the remaining manual steps so they happen in every project, new or old: the Matt Pocock skills setup, OmniRoute starting with Windows, and the switch to free Gemini when the Claude limit runs out.
+- **Decided:** Matt Pocock setup is now a global always-on rule in ~/.claude/CLAUDE.md with fixed answers (local markdown tracker in `.scratch/`, default triage labels, single-context docs), so no questions are asked. YTXTube got it now. OmniRoute auto-start was blocked twice by Claude Code's auto mode, so it stays manual; `claude-free` starts OmniRoute on demand, so nothing breaks. **Why no automatic limit switch:** Claude Code has no hook that fires on a usage limit and moves a running session to another model, so the fallback stays one command.
+- **Shipped:** docs/agents/issue-tracker.md, domain.md and triage-labels.md; an Agent skills block in CLAUDE.md; the global setup rule.
+- **Open:** None for these steps.

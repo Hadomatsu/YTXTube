@@ -2,6 +2,20 @@
 
 Read BRAIN.md first. It links the project log, roadmap and briefs.
 
+## Agent skills
+
+### Issue tracker
+
+Issues and specs live as local markdown files under `.scratch/`. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five default labels, each named after its role. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one `GLOSSARY.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+
 A personal Android YouTube client. Forked from Koustubh12345/YTXTube (its Liquid Glass UI) and
 extended with ReVanced Extended style features. The owner uses it daily on a Honor Magic V5
 foldable (Android 16, 120 Hz, folded and unfolded layouts both matter) and shares the APK with
