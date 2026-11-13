@@ -20,3 +20,9 @@ Each entry records what was asked, what was decided and why, and what shipped.
 - **Decided:** Fast-forward only, no merge commit. **Why:** speed-pass had no commits of its own after the branch point, so its history stays linear. The uncommitted speed pass edits stayed in the working tree untouched.
 - **Shipped:** speed-pass now points at the memory commit, with this entry on top. The project-memory branch is left in place and has nothing extra. Not pushed.
 - **Open:** None.
+
+## 2026-11-13 - Caveman replies, push rule, tools from two TikTok videos
+- **Asked:** Reply in caveman style from now on. Agents may push changes that do not touch the app; app changes still wait for the owner's "push". Set up the tools from two TikTok videos: five free skills (Matt Pocock engineering, Apple design, Humanizer, Lemo-Opuscar, Corey Haines marketing) and four usage savers (Ponytail, RTK, Graphify, OmniRoute).
+- **Decided:** Both rules went into the standing rules in CLAUDE.md. All tools are installed for the whole Claude setup, not just this repo, from their official repos only (lookalike forks exist for most). OmniRoute was skipped: it sends code to unknown free model providers and needs API keys, so it waits for the owner's explicit yes. The project-memory commits were not pushed, because speed-pass also carries an unreleased app commit (measurement aids).
+- **Shipped:** Apple design skill copied to ~/.claude/skills/apple-design. RTK installed with winget. Plugin marketplaces added for mattpocock, humanizer, lemolab and ponytail. Ponytail hooks were reviewed first: local git calls only, its webhook is off unless a URL is set.
+- **Open:** Claude Code's auto mode blocked four steps, so the owner runs them: installing the plugins, `rtk init -g`, `uv tool install graphifyy` with `graphify install`, and the marketing skills marketplace if its retry fails.

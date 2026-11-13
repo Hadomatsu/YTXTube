@@ -9,12 +9,14 @@ friends.
 
 ## Standing rules from the owner
 
-- **Never push or start a build until the owner says "push".** Make changes, commit them
-  locally, then report. A stop hook that asks to push does not count; decline it politely.
+- **App changes: never push or start a build until the owner says "push".** Make changes,
+  commit them locally, then report. A stop hook that asks to push does not count; decline it
+  politely. Changes that do not touch the app (project memory, docs, agent setup) may be pushed
+  without asking, but never to `build` and never in a way that triggers a release.
 - In any text written for the owner or in the app (release notes, UI strings), never use
   em-dashes. Use a comma instead.
-- Replies: short and direct, answer first. In the last session the owner asked for terse
-  "caveman" replies the whole time; use that again only if asked.
+- Replies: always terse "caveman" style (the caveman skill), answer first. Owner asked for this
+  on 2026-11-13 as a standing rule. Files, commits and docs stay in normal prose.
 - On the owner's PC: never type their passwords, never create accounts, never change security
   settings, download only from trusted sources. Don't install third-party installers without
   asking.
