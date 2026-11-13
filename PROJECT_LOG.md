@@ -26,3 +26,9 @@ Each entry records what was asked, what was decided and why, and what shipped.
 - **Decided:** Both rules went into the standing rules in CLAUDE.md. All tools are installed for the whole Claude setup, not just this repo, from their official repos only (lookalike forks exist for most). OmniRoute was skipped: it sends code to unknown free model providers and needs API keys, so it waits for the owner's explicit yes. The project-memory commits were not pushed, because speed-pass also carries an unreleased app commit (measurement aids).
 - **Shipped:** Apple design skill copied to ~/.claude/skills/apple-design. RTK installed with winget. Plugin marketplaces added for mattpocock, humanizer, lemolab and ponytail. Ponytail hooks were reviewed first: local git calls only, its webhook is off unless a URL is set.
 - **Open:** Claude Code's auto mode blocked four steps, so the owner runs them: installing the plugins, `rtk init -g`, `uv tool install graphifyy` with `graphify install`, and the marketing skills marketplace if its retry fails.
+
+## 2026-11-13 - OmniRoute installed after all
+- **Asked:** Install OmniRoute anyway. The owner is not worried about free providers seeing code and needs the reroute because tokens run out.
+- **Decided:** Installed the npm package `omniroute` 3.8.53, checked against the maintainer diegosouza.pw (the repo now lives at cheaper-inference/OmniRoute). **Why:** the owner's explicit choice after hearing the risks.
+- **Shipped:** OmniRoute installed globally and its server started on http://localhost:20128.
+- **Open:** The owner signs in to the dashboard and changes the default password, connects the Claude subscription and free providers, then runs `omniroute configure claude`. The server only runs while started, so Claude breaks if it is pointed at OmniRoute while OmniRoute is off.
