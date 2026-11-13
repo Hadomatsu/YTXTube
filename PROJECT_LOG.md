@@ -14,3 +14,9 @@ Each entry records what was asked, what was decided and why, and what shipped.
 - **Decided:** Files live at the repo root, with card briefs in `briefs/`. `CLAUDE.md` stays the place for house rules and the code map, and BRAIN.md links to it instead of copying it. **Why:** one source for each kind of fact. The roadmap was seeded from `perf/perf-notes.md`, the five perf audits and the known open issue in `CLAUDE.md`. The work went on a new branch `project-memory`, made from `speed-pass`, so `speed-pass` itself is unchanged.
 - **Shipped:** BRAIN.md, PROJECT_LOG.md, ROADMAP.md, six briefs, and one line at the top of CLAUDE.md. Committed locally, not pushed.
 - **Open:** The uncommitted speed pass edits are still in the working tree, untouched. origin is a public repo, so these files become public when pushed.
+
+## 2026-11-13 - Memory files moved onto speed-pass
+- **Asked:** Update speed-pass so it includes the project memory commit.
+- **Decided:** Fast-forward only, no merge commit. **Why:** speed-pass had no commits of its own after the branch point, so its history stays linear. The uncommitted speed pass edits stayed in the working tree untouched.
+- **Shipped:** speed-pass now points at the memory commit, with this entry on top. The project-memory branch is left in place and has nothing extra. Not pushed.
+- **Open:** None.
