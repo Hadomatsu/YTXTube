@@ -1,0 +1,13 @@
+# Baseline Profile, hand-written: precompile all of the app's own code ahead of time.
+# A generated profile needs a scripted run on a phone, and that run kept hanging on UiAutomator.
+# Libraries such as Compose ship their own profiles, which the build merges in automatically.
+HSPLcom/tensei/ytxtube/**;->**(**)**
+Lcom/tensei/ytxtube/**;
+# Libraries that ship no profile of their own but run on every video open or every frame:
+# the YouTube extractor, the video player and the glass effects.
+HSPLorg/schabi/newpipe/**;->**(**)**
+Lorg/schabi/newpipe/**;
+HSPLandroidx/media3/**;->**(**)**
+Landroidx/media3/**;
+HSPLcom/kyant/**;->**(**)**
+Lcom/kyant/**;

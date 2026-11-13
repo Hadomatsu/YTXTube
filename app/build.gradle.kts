@@ -127,6 +127,9 @@ dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs_nio:2.1.5")
 
     implementation(composeBom)
+    // Installs the Baseline Profile (src/main/baseline-prof.txt plus the libraries' own) on first
+    // start, so sideloaded APKs get precompiled code too, not only Play installs.
+    implementation("androidx.profileinstaller:profileinstaller:1.4.1")
     implementation("androidx.core:core-ktx:1.19.0")
     implementation("androidx.activity:activity-compose:1.13.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.9.4")
