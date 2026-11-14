@@ -16,7 +16,7 @@ Headings are columns, bullets are cards. `[[briefs/slug]]` opens the card's full
 ## In progress
 
 ## Done
-- Faster video opens (about 1 s sooner), refused streams switch at once, two minutes of video ahead on Wi-Fi (not released yet)
+- 2.6.22: faster video opens (about 1 s sooner), refused streams switch at once, two minutes of video ahead on Wi-Fi
 - [[briefs/landscape-scroll-and-swipe-down]] Swipe down on the video fixed; landscape first screen ends at comments, More videos on scrolling (not released yet)
 - 2.6.20: hold captions to move them anywhere (snap to the middle, reset in the caption panel); landscape unfolded video page ends at comments with Subscribe in the action row; glass Subscribe
 - 2.6.19: endless Home (topic feeds after the main feed), endless "More videos", small glass subscribe button on Shorts
