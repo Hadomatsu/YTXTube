@@ -55,7 +55,6 @@ import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.FastForward
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.material.icons.rounded.ThumbDown
 import androidx.compose.material.icons.rounded.ThumbUp
 import androidx.compose.material.icons.rounded.VolumeOff
@@ -923,40 +922,49 @@ fun ShortsScreen(
                             .fillMaxSize()
                             .pointerInput(index == page) {
                                 if (index != page) return@pointerInput
-                                // Hold anywhere on the Short for 2x speed. Letting go of a hold is
-                                // not a tap, so it no longer pauses the Short.
-                                var heldFast = false
-                                detectTapGestures(
-                                    // With the comments open, a tap anywhere on the Short puts
-                                    // them away (and does not pause).
-                                    onTap = {
-                                        when {
-                                            heldFast -> Unit
-                                            commentsOpen -> commentsOpen = false
-                                            else -> togglePlayback()
-                                        }
-                                    },
-                                    onPress = {
-                                        heldFast = false
-                                        var activated = false
-                                        val holdJob = scope.launch {
-                                            kotlinx.coroutines.delay(220)
-                                            activated = true
-                                            heldFast = true
-                                            is2xSpeed = true
-                                            exo.setPlaybackSpeed(2.0f)
-                                        }
-                                        try {
-                                            tryAwaitRelease()
-                                        } finally {
-                                            holdJob.cancel()
+                                // Hold anywhere on the Short for 2x speed, until the finger lifts:
+                                // once 2x is on, moving the finger neither ends it nor swipes to the
+                                // next Short (the moves are taken here, away from the pager).
+                                // Letting go of a hold is not a tap, so it does not pause the Short.
+                                awaitEachGesture {
+                                    val down = awaitFirstDown()
+                                    down.consume()
+                                    var activated = false
+                                    val holdJob = scope.launch {
+                                        kotlinx.coroutines.delay(220)
+                                        activated = true
+                                        is2xSpeed = true
+                                        exo.setPlaybackSpeed(2.0f)
+                                    }
+                                    try {
+                                        while (true) {
+                                            val ev = awaitPointerEvent()
+                                            val ch = ev.changes.firstOrNull { it.id == down.id } ?: break
                                             if (activated) {
-                                                exo.setPlaybackSpeed(1.0f)
-                                                is2xSpeed = false
+                                                ev.changes.forEach { it.consume() }
+                                                if (!ch.pressed) break
+                                            } else if (!ch.pressed) {
+                                                // A tap. With the comments open it puts them away
+                                                // (and does not pause).
+                                                if (!ch.isConsumed) {
+                                                    if (commentsOpen) commentsOpen = false else togglePlayback()
+                                                }
+                                                break
+                                            } else {
+                                                // The pager sees each move after this; once it takes
+                                                // one, this is a swipe, not a hold.
+                                                val after = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Final)
+                                                if (after.changes.any { it.isConsumed }) break
                                             }
                                         }
+                                    } finally {
+                                        holdJob.cancel()
+                                        if (activated) {
+                                            exo.setPlaybackSpeed(1.0f)
+                                            is2xSpeed = false
+                                        }
                                     }
-                                )
+                                }
                             },
                     )
 

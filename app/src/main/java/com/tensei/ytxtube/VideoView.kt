@@ -568,8 +568,16 @@ fun VideoContent(
                             Haptics.perform(currentView, HapticFeedbackConstants.CONFIRM)
                             controlsVisible = false
                             burstActive = false
-                            waitForUpOrCancellation()?.consume()
-                            state.endHoldSpeed()
+                            // The faster speed lasts until the finger lifts, however it moves. Every
+                            // move is taken here, so the page behind never starts a drag that ends it.
+                            try {
+                                do {
+                                    val ev = awaitPointerEvent()
+                                    ev.changes.forEach { it.consume() }
+                                } while (ev.changes.any { it.pressed })
+                            } finally {
+                                state.endHoldSpeed()
+                            }
                         } else {
                             waitForUpOrCancellation()?.consume()
                         }
