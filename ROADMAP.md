@@ -15,7 +15,7 @@ Headings are columns, bullets are cards. `[[briefs/slug]]` opens the card's full
 ## In progress
 
 ## Done
-- Hold for 2x keeps going while the finger moves (video and Shorts), search page and video page cards in glass (not released yet)
+- 2.6.17: hold for 2x stays on while the finger moves, glass search bar and filters, glass cards on the video page
 - 2.6.16: smoother and faster
 - (in 2.6.16) Speed pass: hidden glass, Baseline Profile, Home feed from disk (cold start 295 to 243 ms, Home on screen 1.0-1.8 s to 0.35 s, comments and mini player jank 18-28 % to 3-5 %)
 - 2.6.15: endless Shorts, tap to refresh
