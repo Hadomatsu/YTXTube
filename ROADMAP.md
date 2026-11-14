@@ -3,6 +3,7 @@
 Headings are columns, bullets are cards. `[[briefs/slug]]` opens the card's full brief in `briefs/slug.md`.
 
 ## Backlog
+- Extraction makes 4 visitor_id requests per video, one after another (about 150 ms); could reuse one
 - Speed pass items 5 to 8 (small gains): Shorts screen grab at swipe release, seen-Shorts list written per swipe, startup work off the main thread, Coil and compose fixes. Item 4 ([[briefs/faster-video-start]]) measured at 4 ms and dropped. Shorts glass needs a look decision first.
 - [[briefs/stuck-after-throttled-stream]] After a throttled stream, no video opens until the app is force-closed
 - [[briefs/live-just-ended]] Opening a live that only just ended fails
@@ -15,6 +16,7 @@ Headings are columns, bullets are cards. `[[briefs/slug]]` opens the card's full
 ## In progress
 
 ## Done
+- Faster video opens (about 1 s sooner), refused streams switch at once, two minutes of video ahead on Wi-Fi (not released yet)
 - [[briefs/landscape-scroll-and-swipe-down]] Swipe down on the video fixed; landscape first screen ends at comments, More videos on scrolling (not released yet)
 - 2.6.20: hold captions to move them anywhere (snap to the middle, reset in the caption panel); landscape unfolded video page ends at comments with Subscribe in the action row; glass Subscribe
 - 2.6.19: endless Home (topic feeds after the main feed), endless "More videos", small glass subscribe button on Shorts
