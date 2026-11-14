@@ -180,6 +180,7 @@ class PlaybackService : MediaSessionService() {
         super.onCreate()
 
         val sources = YouTubeMediaSourceFactory(this)
+        val roomy = !NetworkSpeed.onMobileData()
         val player = ExoPlayer.Builder(this, SyncedRenderersFactory(this))
             .setMediaSourceFactory(sources)
             .setBandwidthMeter(PlaybackBandwidth.get())
@@ -215,10 +216,20 @@ class PlaybackService : MediaSessionService() {
                     // so a slow stream pauses once instead of stuttering every second while
                     // the quality steps down.
                     .setAllocator(androidx.media3.exoplayer.upstream.DefaultAllocator(true, 64 * 1024))
-                    .setBufferDurationsMs(30_000, 50_000, 250, 2_000)
+                    // On Wi-Fi (or a cable) keep two minutes ahead, refilled from 50 s, so a fast
+                    // connection is used while it is there: no stalls, and skipping ahead lands
+                    // in video that is already loaded. On mobile data the old 30 to 50 s, so an
+                    // abandoned video wastes little data.
+                    // shortcut: chosen when the service starts, not when the network changes.
+                    .setBufferDurationsMs(
+                        if (roomy) 50_000 else 30_000,
+                        if (roomy) 120_000 else 50_000,
+                        250,
+                        2_000,
+                    )
                     .setBackBuffer(10_000, false)
-                    // A memory ceiling so a 4K stream cannot fill the app's memory: about 50 s
-                    // of 1080p60 fits, 4K stops a little earlier.
+                    // A memory ceiling so a 4K stream cannot fill the app's memory: two minutes
+                    // of 1080p60 fit, 4K stops at about 40 s.
                     .setTargetBufferBytes(96 * 1024 * 1024)
                     .setPrioritizeTimeOverSizeThresholds(false)
                     .build(),
