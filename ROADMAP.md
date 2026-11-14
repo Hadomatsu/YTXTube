@@ -3,14 +3,13 @@
 Headings are columns, bullets are cards. `[[briefs/slug]]` opens the card's full brief in `briefs/slug.md`.
 
 ## Backlog
-- Speed pass items 5 to 8 (small gains): Shorts screen grab at swipe release, seen-Shorts list written per swipe, startup work off the main thread, Coil and compose fixes. Item 4 measured at 4 ms and dropped. Shorts glass needs a look decision first.
+- Speed pass items 5 to 8 (small gains): Shorts screen grab at swipe release, seen-Shorts list written per swipe, startup work off the main thread, Coil and compose fixes. Item 4 ([[briefs/faster-video-start]]) measured at 4 ms and dropped. Shorts glass needs a look decision first.
 - [[briefs/stuck-after-throttled-stream]] After a throttled stream, no video opens until the app is force-closed
 - [[briefs/live-just-ended]] Opening a live that only just ended fails
 - [[briefs/startup-off-main]] Move startup work off the main thread
 - Compose recomposition fixes from `perf/audit-compose.md` (smaller wins, frames are GPU bound)
 
 ## Next
-- [[briefs/faster-video-start]] Start playback before the details are post-processed
 - [[briefs/one-glass-language]] One glass look: search page and video page cards done; screen-by-screen check of the rest still open
 
 ## In progress
