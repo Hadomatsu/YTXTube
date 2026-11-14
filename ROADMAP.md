@@ -15,7 +15,9 @@ Headings are columns, bullets are cards. `[[briefs/slug]]` opens the card's full
 ## In progress
 
 ## Done
-- [[briefs/one-glass-language]] One glass look: dropdown menus and live chat are glass sheets now (not released yet)
+- Endless Home (topic feeds after the main feed) and endless "More videos" under a video (not released yet)
+- 2.6.18: glass menus everywhere
+- [[briefs/one-glass-language]] One glass look: dropdown menus and live chat are glass sheets (in 2.6.18)
 - 2.6.17: hold for 2x stays on while the finger moves, glass search bar and filters, glass cards on the video page
 - 2.6.16: smoother and faster
 - (in 2.6.16) Speed pass: hidden glass, Baseline Profile, Home feed from disk (cold start 295 to 243 ms, Home on screen 1.0-1.8 s to 0.35 s, comments and mini player jank 18-28 % to 3-5 %)
