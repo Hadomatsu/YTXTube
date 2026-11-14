@@ -1,6 +1,7 @@
-YTXTube Custom 2.6.19: Home and More videos never end
+YTXTube Custom 2.6.20: move the captions, better landscape
 
-- Home keeps loading forever: after your main feed it goes on with your own topics (New to you and your interests), never with popular filler
-- The videos under a video keep loading as you scroll, instead of stopping after about 20
-- On Shorts the Subscribe button is a small glass circle that covers less of the video, with a little animation when you subscribe or unsubscribe
-- The channel name and title on Shorts sit a bit lower
+- Hold the captions and drag them anywhere on the video; they stay there for every video
+- While you drag, the captions snap to the middle of the video when you get close, with a thin guide line
+- Captions back in their normal place: hold the CC button and tap the round arrow
+- Unfolded and sideways, the video page ends at the comments, and Subscribe sits at the right of the Like, Save, Download and Share buttons
+- The Subscribe button on the video page is glass, like the buttons next to it
