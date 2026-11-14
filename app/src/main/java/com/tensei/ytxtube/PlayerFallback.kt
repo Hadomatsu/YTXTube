@@ -29,27 +29,37 @@ object PlayerFallback {
         "/watch" in url
 
     /** The rescued player response, used for caption tracks when the extractor returns none. */
-    internal fun playerResponse(videoId: String): JSONObject? {
-        val cached = cache[videoId]
-        if (cached != null && System.currentTimeMillis() - cached.at < CACHE_MS) return cached.answer
-        return fetchFallback(videoId)
+    internal fun playerResponse(videoId: String): JSONObject? = rescue(videoId)
+
+    /** Fetches the rescue ahead of the extractor needing it (see [Ahead]). */
+    fun warm(videoId: String) {
+        rescue(videoId)
     }
 
-    
+    private val inflight = ConcurrentHashMap<String, java.util.concurrent.FutureTask<JSONObject?>>()
 
-
+    /** One rescue per video at a time: a second asker waits for the first instead of asking again. */
+    private fun rescue(videoId: String): JSONObject? {
+        val cached = cache[videoId]
+        if (cached != null && System.currentTimeMillis() - cached.at < CACHE_MS) return cached.answer
+        val mine = java.util.concurrent.FutureTask { fetchFallback(videoId) }
+        val running = inflight.putIfAbsent(videoId, mine)
+        val task = running ?: mine.also { it.run() }
+        return try {
+            task.get()
+        } catch (_: java.util.concurrent.ExecutionException) {
+            null
+        } finally {
+            if (running == null) inflight.remove(videoId, mine)
+        }
+    }
 
     fun substitute(url: String, requestBody: ByteArray?, responseText: String?): String? {
         if (responseText == null || !isBlocked(responseText)) return responseText
 
         val videoId = videoIdFrom(requestBody) ?: videoIdFromUrl(url) ?: return responseText
 
-        val cached = cache[videoId]
-        val answer = if (cached != null && System.currentTimeMillis() - cached.at < CACHE_MS) {
-            cached.answer
-        } else {
-            fetchFallback(videoId) ?: return responseText
-        }
+        val answer = rescue(videoId) ?: return responseText
 
         return when {
             "/reel" in url -> JSONObject().put("playerResponse", answer).toString()

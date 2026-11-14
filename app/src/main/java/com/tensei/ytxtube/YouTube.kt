@@ -520,6 +520,7 @@ object StreamCache {
     fun getOrLoad(id: String): StreamInfo {
         get(id)?.let { return it }
         val mine = FutureTask {
+            Ahead.start(id)
             try {
                 StreamInfo.getInfo(ServiceList.YouTube, YouTube.watchUrl(id)).also {
                     entries[id] = Entry(it, System.currentTimeMillis())
