@@ -128,3 +128,9 @@ Each entry records what was asked, what was decided and why, and what shipped.
 - **Decided:** Captions: long press then drag, saved as the centre's share of the video size (so it holds in every video and in fullscreen), kept on the video, snapping to the middle across and up/down within 22 dp with a guide line and a tick. Holding the captions does not start 2x and is not a player swipe. A reset button in the caption size panel, shown only once moved, because otherwise there was no way back. The first version lost the drag at once because the captions switched to a different composable when moved; one CaptionLines now serves every placement. Landscape: "big screen" means landscape with smallest width at least 600 dp (unfolded foldables, tablets). Subscribe is glass in every layout, moved only in landscape.
 - **Shipped:** fe4de8c (captions), the landscape commit after it. Local, not pushed. 2.6.19 was released before these.
 - **Open:** The owner's captions were left near the middle by the test: hold the CC button and tap the round-arrow reset. Portrait unfolded not re-checked after the landscape change. Release these.
+
+## 2026-11-14 - 2.6.20 released
+- **Asked:** Release the movable captions and the landscape video page.
+- **Decided:** Released as 2.6.20 after the usual checks (no em-dashes, no personal data in the push).
+- **Shipped:** v2.6.20 on ytxtube-build with YTXTube.apk.
+- **Open:** The owner resets the test caption position (hold CC, round arrow). Portrait unfolded not re-checked after the landscape change. Earlier open items stay: TV layout not wired to endless "More videos", Shorts glass look decision, stuck-video bug, folded measurements.
