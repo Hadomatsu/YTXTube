@@ -2040,12 +2040,14 @@ private fun StatusIconsOverVideo(state: PlayerState) {
 /** The backdrop the player page's glass buttons use, when the page has its picture background. */
 internal val LocalPlayerGlass = androidx.compose.runtime.staticCompositionLocalOf<Backdrop?> { null }
 
-/** A soft see-through card for the player page (comments, queue) over the picture background. */
+/**
+ * A card on the player page (comments, queue): glass like the action pills over the picture
+ * background, a solid card without it.
+ */
 @Composable
-internal fun playerCardColor(fallback: Color): Color {
-    if (LocalPlayerGlass.current == null) return fallback
-    val dark = ThemeSettings.mode == "amoled" || isDarkTheme()
-    return if (dark) Color.White.copy(alpha = 0.08f) else Color.White.copy(alpha = 0.45f)
+internal fun Modifier.playerCard(shape: androidx.compose.ui.graphics.Shape, fallback: Color): Modifier {
+    val glass = LocalPlayerGlass.current
+    return if (glass != null) glassControl(glass, shape) else clip(shape).background(fallback)
 }
 
 /** Flex mode's background: the video's picture, heavily blurred, darkened (or lightened). */

@@ -23,6 +23,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -142,6 +143,9 @@ fun CollapsingHeaderLayout(
 
                     alpha = if (headerPx > 0) 1f - 0.5f * (-offset.value / headerPx).coerceIn(0f, 1f) else 1f
                 }
+                // Slid fully away it is not drawn at all: off screen, its glass would otherwise still
+                // re-render over the scrolling content every frame.
+                .drawWithContent { if (headerPx == 0 || offset.value > 0.5f - headerPx) drawContent() }
                 .background(c.surface),
         ) {
             CompositionLocalProvider(LocalGlassBackdrop provides headerBackdrop) { header() }

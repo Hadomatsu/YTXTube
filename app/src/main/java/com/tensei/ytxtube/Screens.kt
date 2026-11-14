@@ -1085,18 +1085,23 @@ fun SearchScreen(
         }, 120)
         state.submit()
     }
+    val draft = state.query.isNotBlank() &&
+        (state.submitted.isEmpty() || state.query.trim() != state.submitted.trim())
+    // The filters sit in the header under the search bar, glass like Home's topics, once a search has run.
+    val showFilters = !draft && state.submitted.isNotEmpty() && state.error == null && !(state.loading && !state.hasResults)
     Box(Modifier.fillMaxSize().background(c.surface).overlayTouchBlock()) {
 
     CollapsingHeaderLayout(
         resetKey = scrollToTop to state.generation,
         header = {
+          Column {
             BackScreenHeader(onBack = onBack) {
                 Row(
                     modifier = Modifier
                         .weight(1f)
                         .height(48.dp)
-                        .clip(CircleShape)
-                        .background(c.surfaceContainerHigh)
+                        // Glass like the back button beside it.
+                        .glassControl(LocalGlassBackdrop.current, CircleShape)
                         .padding(start = 16.dp, end = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -1153,10 +1158,10 @@ fun SearchScreen(
                     }
                 }
             }
+            if (showFilters) SearchFilterRow(state)
+          }
         },
     ) { top ->
-        val draft = state.query.isNotBlank() &&
-            (state.submitted.isEmpty() || state.query.trim() != state.submitted.trim())
         Box(Modifier.fillMaxSize()) {
         Box(Modifier.padding(top = if (!draft && state.hasResults && state.error == null) 0.dp else top)) {
         when {
@@ -1334,7 +1339,6 @@ fun SearchScreen(
                 }
             }
             !state.hasResults -> Column {
-                SearchFilterRow(state)
                 EmptyState(
                     icon = Icons.Rounded.History,
                     title = "Nothing found",
@@ -1346,7 +1350,6 @@ fun SearchScreen(
                 val list = rememberScrollToTop(scrollToTop)
                 LaunchedEffect(state.generation) { list.scrollToItem(0) }
                 LazyColumn(state = list, contentPadding = contentPadding.withTop(top)) {
-                item(key = "filters") { SearchFilterRow(state) }
                 items(state.channels, key = { "ch-" + it.id }) { channel -> SearchChannelRow(channel) }
                 items(state.playlists, key = { "pl-" + it.id }) { playlist -> SearchPlaylistRow(playlist) }
                 items(FeedFilters.withoutBlocked(state.results), key = { it.id }) { video ->
@@ -1376,7 +1379,7 @@ private fun SearchFilterRow(state: SearchState) {
         Modifier
             .fillMaxWidth()
             .horizontalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+            .padding(horizontal = 16.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         FilterChipMenu(f.type.label, f.type != SearchType.VIDEOS, SearchType.entries, { it.label }) {
@@ -1416,22 +1419,27 @@ private fun <T> FilterChipMenu(
     optionLabel: (T) -> String,
     onPick: (T) -> Unit,
 ) {
-    val c = MaterialTheme.colorScheme
     var open by remember { mutableStateOf(false) }
+    // Same chip as Home's topics: a set filter solid, the others glass.
+    val dark = isDarkTheme() || ThemeSettings.mode == "amoled"
+    val ink = when {
+        active -> if (dark) Color.Black else Color.White
+        dark -> Color.White
+        else -> Color(0xFF0F0F0F)
+    }
     Box {
         Row(
             Modifier
-                .clip(CircleShape)
-                .background(if (active) c.onSurface else c.surfaceContainerHigh)
-                .pressable { open = true }
+                .topicChip(active)
+                .pressable(pressedScale = 0.94f) { open = true }
                 .padding(start = 14.dp, end = 8.dp, top = 7.dp, bottom = 7.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(label, color = if (active) c.surface else c.onSurface, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            Text(label, color = ink, fontSize = 14.sp, fontWeight = FontWeight.Bold)
             Icon(
                 Icons.Rounded.ArrowDropDown,
                 null,
-                tint = if (active) c.surface else c.onSurfaceVariant,
+                tint = ink,
                 modifier = Modifier.size(18.dp),
             )
         }
