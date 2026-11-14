@@ -1050,7 +1050,9 @@ fun ShortsScreen(
                     // would otherwise re-render four glass buttons each on every frame.
                     val topBarShown by remember(index, page) {
                         derivedStateOf {
-                            index == page || (pager.isScrollInProgress && (index - pager.currentPage).absoluteValue <= 1)
+                            // currentPage too: `page` follows the pager a frame late when a swipe ends.
+                            index == page || index == pager.currentPage ||
+                                (pager.isScrollInProgress && (index - pager.currentPage).absoluteValue <= 1)
                         }
                     }
                     if (!inPip && topBarShown) {
