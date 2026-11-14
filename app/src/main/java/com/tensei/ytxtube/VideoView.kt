@@ -254,6 +254,8 @@ fun VideoContent(
     val coordsHolder = remember { arrayOfNulls<LayoutCoordinates>(1) }
     // Where the captions are on screen while shown: holding them moves them instead of 2x speed.
     val captionRect = remember { arrayOfNulls<androidx.compose.ui.geometry.Rect>(1) }
+    // True while the captions are being dragged: their moves are not a swipe of the player.
+    val captionDragging = remember { booleanArrayOf(false) }
     fun toggleControls() { controlsVisible = !controlsVisible; touched() }
     fun seekStep(side: Int) {
         val moved = state.seekBy(side * SeekStepMs)
@@ -410,8 +412,9 @@ fun VideoContent(
                         val change = event.changes.firstOrNull { it.pressed }
                         // Two fingers is a pinch to zoom, never a swipe.
                         if (event.changes.count { it.pressed } > 1) pinching = true
-                        // A move the captions took (being dragged) is not a swipe of the player.
-                        if (change != null && !pinching && !change.isConsumed) {
+                        // A drag of the captions is not a swipe of the player. (Not isConsumed: the
+                        // player consumes the touch itself, so every swipe looked taken and none worked.)
+                        if (change != null && !pinching && !captionDragging[0]) {
                             val totalDy = downY - change.position.y
                             val totalDx = down.position.x - change.position.x
                             val verticalIntent = abs(totalDy) > abs(totalDx) * 1.5f
@@ -990,6 +993,7 @@ fun VideoContent(
                 .pointerInput(rootSize) {
                     detectDragGesturesAfterLongPress(
                         onDragStart = {
+                            captionDragging[0] = true
                             Haptics.perform(currentView, HapticFeedbackConstants.LONG_PRESS)
                             rawAt[0] = captionBox.center.x
                             rawAt[1] = captionBox.center.y
@@ -1014,10 +1018,11 @@ fun VideoContent(
                                 CaptionPreference.updatePosition(Offset(at.x / rootSize.width, at.y / rootSize.height))
                             }
                             dragAt = null
+                            captionDragging[0] = false
                             snapX = false
                             snapY = false
                         },
-                        onDragCancel = { dragAt = null; snapX = false; snapY = false },
+                        onDragCancel = { dragAt = null; captionDragging[0] = false; snapX = false; snapY = false },
                     )
                 }
             if (dragAt != null && snapX) {

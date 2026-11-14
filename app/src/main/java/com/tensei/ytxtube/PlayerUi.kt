@@ -140,6 +140,7 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.layout.onSizeChanged
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.launch
 import kotlin.math.exp
@@ -426,13 +427,16 @@ fun PlayerScreen(
 
 
             // Landscape on a big screen (an unfolded foldable, a tablet: sideways and at least 600 dp
-            // on its short side): there is little room under the video, so the page ends at the
-            // comments ("More videos" would only peek in at the bottom) and Subscribe moves into the
-            // action row. Portrait unfolded has the room and keeps the full page.
+            // on its short side): there is little room under the video, so the first screen ends at
+            // the comments ("More videos" would only peek in at the bottom; they come on scrolling)
+            // and Subscribe moves into the action row. Portrait unfolded has the room as it is.
             val landscapeWide = screenConfig.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE &&
                 screenConfig.smallestScreenWidthDp >= 600
             // "More videos" loads on near its end, like the home feed.
             val relatedList = androidx.compose.foundation.lazy.rememberLazyListState()
+            // Measured, so the gap below the comments fills exactly the rest of the first screen.
+            var listHeightPx by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+            var infoHeightPx by remember { androidx.compose.runtime.mutableIntStateOf(0) }
             val relatedNearEnd by remember {
                 derivedStateOf {
                     val info = relatedList.layoutInfo
@@ -441,13 +445,14 @@ fun PlayerScreen(
             }
             val relatedCount = details?.related?.size ?: 0
             LaunchedEffect(relatedNearEnd, relatedCount, state.relatedMoreLoading) {
-                if (showDetails && !landscapeWide && relatedNearEnd && relatedCount > 0 && !state.relatedMoreLoading) state.loadMoreRelated()
+                if (showDetails && relatedNearEnd && relatedCount > 0 && !state.relatedMoreLoading) state.loadMoreRelated()
             }
             if (!showDetails) Spacer(Modifier.weight(1f)) else
             LazyColumn(
                 state = relatedList,
                 modifier = Modifier
                     .weight(1f)
+                    .onSizeChanged { listHeightPx = it.height }
                     .zIndex(0f)
                     .nestedScroll(morph.nestedScroll)
                     .graphicsLayer {
@@ -464,11 +469,19 @@ fun PlayerScreen(
                     },
                 contentPadding = PaddingValues(bottom = bottom + 32.dp),
             ) {
-                item(key = "info") { VideoDetailsBlock(state, item, details, c, descriptionOpen, { descriptionOpen = !descriptionOpen }, isLiveStream, subscribeInActions = landscapeWide) }
-                val related = if (landscapeWide) emptyList() else FeedFilters.withoutBlocked(details?.related.orEmpty())
-                if (landscapeWide) {
-                    // Ends at the comments card (see landscapeWide).
-                } else if (related.isNotEmpty()) {
+                item(key = "info") {
+                    Box(Modifier.onSizeChanged { infoHeightPx = it.height }) {
+                        VideoDetailsBlock(state, item, details, c, descriptionOpen, { descriptionOpen = !descriptionOpen }, isLiveStream, subscribeInActions = landscapeWide)
+                    }
+                }
+                val related = FeedFilters.withoutBlocked(details?.related.orEmpty())
+                if (landscapeWide && related.isNotEmpty()) {
+                    item(key = "landscapeGap") {
+                        val gapPx = (listHeightPx - infoHeightPx).coerceAtLeast(0)
+                        Spacer(Modifier.height(with(LocalDensity.current) { gapPx.toDp() }))
+                    }
+                }
+                if (related.isNotEmpty()) {
                     item(key = "moreTitle") { SectionTitle("More videos") }
                     val relatedColumns = HomeGrid.columns(screenConfig.screenWidthDp.toFloat())
                     if (relatedColumns > 1) {
