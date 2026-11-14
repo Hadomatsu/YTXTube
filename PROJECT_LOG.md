@@ -134,3 +134,9 @@ Each entry records what was asked, what was decided and why, and what shipped.
 - **Decided:** Released as 2.6.20 after the usual checks (no em-dashes, no personal data in the push).
 - **Shipped:** v2.6.20 on ytxtube-build with YTXTube.apk.
 - **Open:** The owner resets the test caption position (hold CC, round arrow). Portrait unfolded not re-checked after the landscape change. Earlier open items stay: TV layout not wired to endless "More videos", Shorts glass look decision, stuck-video bug, folded measurements.
+
+## 2026-11-14 - Owner report after 2.6.20, for tomorrow
+- **Asked:** Landscape was misunderstood: the page should end at the comments on the first screen, but scrolling should still show More videos. Also, swiping down on the video no longer goes back to Home. The owner is out of tokens; fix tomorrow.
+- **Decided:** Not investigated now, to save the owner's tokens. Written up with suspects in `briefs/landscape-scroll-and-swipe-down.md`, card at the top of "Next".
+- **Shipped:** Brief and card only.
+- **Open:** Both fixes, first thing next session.

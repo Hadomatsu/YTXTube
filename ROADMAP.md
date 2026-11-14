@@ -10,6 +10,7 @@ Headings are columns, bullets are cards. `[[briefs/slug]]` opens the card's full
 - Compose recomposition fixes from `perf/audit-compose.md` (smaller wins, frames are GPU bound)
 
 ## Next
+- [[briefs/landscape-scroll-and-swipe-down]] Landscape: end at comments but scroll on to More videos; swipe down on the video broken (do first)
 - Check on the phone: live chat glass sheet (needs a live video), settings choice sheets, second captions sheet, Downloads menu
 
 ## In progress
