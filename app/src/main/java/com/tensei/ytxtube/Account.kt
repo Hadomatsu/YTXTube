@@ -1711,18 +1711,38 @@ object InnerTube {
 
     private val anonSeenVideoIds = LinkedHashSet<String>()
 
+    /** Home's next-page token once the topic feeds ran out too: start again from a fresh first page. */
+    private const val HOME_AGAIN = "home_again"
+    private const val HOME_TOPIC = "home_topic:"
+
     suspend fun homeFeed(next: String? = null): FeedPage = withContext(Dispatchers.IO) {
-        // Signed in: this is the real personalised FEwhat_to_watch feed.
+        // Signed in: this is the real personalised FEwhat_to_watch feed, and it never ends. When
+        // YouTube's next-page token runs out, Home starts over from a fresh first page, which brings
+        // new picks (the list leaves out the ones already shown). Never popular filler.
         if (Account.signedIn && (next == null || !next.startsWith("anon_feed:"))) {
-            val body = if (next != null) JSONObject().put("continuation", next)
+            // After the main feed: YouTube's own topic feeds for the account (the chips on Home,
+            // "New to you" and your interests), one after the other. Token "home_topic:<i>[:<token>]".
+            if (next != null && next.startsWith(HOME_TOPIC)) {
+                val parts = next.removePrefix(HOME_TOPIC).split(":", limit = 2)
+                val i = parts[0].toIntOrNull() ?: 0
+                // shortcut: English chip titles; "All" is the main feed and "Watched" is your own history.
+                val chip = HomeTopics.chips.filterNot { it.title.equals("All", ignoreCase = true) || it.title.equals("Watched", ignoreCase = true) }.getOrNull(i)
+                    ?: return@withContext FeedPage(emptyList(), HOME_AGAIN)
+                val page = parseFeed(post("browse", JSONObject().put("continuation", parts.getOrNull(1) ?: chip.token)))
+                return@withContext FeedPage(page.videos, page.next?.let { "$HOME_TOPIC$i:$it" } ?: "$HOME_TOPIC${i + 1}")
+            }
+            val again = next == HOME_AGAIN
+            val body = if (next != null && !again) JSONObject().put("continuation", next)
                        else JSONObject().put("browseId", "FEwhat_to_watch")
-            val root = runCatching { post("browse", body) }.getOrNull()
+            // A later page that fails is an error the list retries, not a switch to popular videos.
+            val root = if (next == null) runCatching { post("browse", body) }.getOrNull() else post("browse", body)
             // The first page carries YouTube's own topic chips (e.g. "Bloons Tower Defense").
             if (next == null && root != null) runCatching { parseTopicChips(root) }.onSuccess { HomeTopics.update(it) }
             val personal = root?.let { runCatching { parseFeed(it) }.getOrNull() }
             if (personal != null && (personal.videos.isNotEmpty() || personal.next != null)) {
-                return@withContext personal
+                return@withContext FeedPage(personal.videos, personal.next ?: "${HOME_TOPIC}0")
             }
+            if (next != null) return@withContext FeedPage(emptyList(), "${HOME_TOPIC}0")
         }
 
         // Signed out (or the personalised request failed/ended): load unlimited infinite feed

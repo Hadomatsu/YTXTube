@@ -128,8 +128,14 @@ class FeedState(
                     videos = videos + added
                     if (freshOnRefresh) added.forEach { v -> shown += v.id }
                     next = page.next
+                    // Nothing new on this page: the list asks again at once, so pace it a little.
+                    if (added.isEmpty()) kotlinx.coroutines.delay(800)
                 }
-                .onFailure { error = friendly(it) }
+                .onFailure {
+                    error = friendly(it)
+                    // The list retries when this load ends; wait first, so a dead network is not hammered.
+                    kotlinx.coroutines.delay(3_000)
+                }
             loading = false
         }
     }
@@ -282,7 +288,9 @@ fun FeedList(
             last >= list.layoutInfo.totalItemsCount - 4
         }
     }
-    LaunchedEffect(nearEnd, listVideos.size) { if (nearEnd && listVideos.isNotEmpty()) feed.loadMore() }
+    // Also re-run when a load finishes: a page that adds nothing new (repeats, or all filtered out)
+    // leaves the list as it was, and the next page must still be asked for.
+    LaunchedEffect(nearEnd, listVideos.size, feed.loading) { if (nearEnd && !feed.loading && listVideos.isNotEmpty()) feed.loadMore() }
     val pinchView = androidx.compose.ui.platform.LocalView.current
     PullToRefresh(enabled = pullToRefresh, refreshing = feed.refreshing, onRefresh = feed::refresh, topPadding = indicatorTop) {
     BoxWithConstraints(Modifier.fillMaxSize()) {
