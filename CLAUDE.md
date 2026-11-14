@@ -78,6 +78,10 @@ uploads `YTXTube.apk`.
   is signed with a different key and will not install over it.
 - `adb logcat` for crashes and errors, `adb shell dumpsys gfxinfo com.tensei.ytxtube.custom`
   for frame times.
+- Seeing the app: `adb screencap` is black on the owner's phone. `perf/shot.sh <out.png>` (local
+  only) records two seconds with scrcpy, no window, and saves the last frame through PyAV. Never take
+  desktop screenshots or use the owner's mouse: they game on the PC while testing. Turning the phone
+  to landscape is the owner's job (it is a system setting).
 - Local builds don't need a version bump; only real releases do.
 
 ## App facts
