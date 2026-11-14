@@ -129,6 +129,7 @@ import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
@@ -424,6 +425,12 @@ fun PlayerScreen(
             }
 
 
+            // Landscape on a big screen (an unfolded foldable, a tablet: sideways and at least 600 dp
+            // on its short side): there is little room under the video, so the page ends at the
+            // comments ("More videos" would only peek in at the bottom) and Subscribe moves into the
+            // action row. Portrait unfolded has the room and keeps the full page.
+            val landscapeWide = screenConfig.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE &&
+                screenConfig.smallestScreenWidthDp >= 600
             // "More videos" loads on near its end, like the home feed.
             val relatedList = androidx.compose.foundation.lazy.rememberLazyListState()
             val relatedNearEnd by remember {
@@ -434,7 +441,7 @@ fun PlayerScreen(
             }
             val relatedCount = details?.related?.size ?: 0
             LaunchedEffect(relatedNearEnd, relatedCount, state.relatedMoreLoading) {
-                if (showDetails && relatedNearEnd && relatedCount > 0 && !state.relatedMoreLoading) state.loadMoreRelated()
+                if (showDetails && !landscapeWide && relatedNearEnd && relatedCount > 0 && !state.relatedMoreLoading) state.loadMoreRelated()
             }
             if (!showDetails) Spacer(Modifier.weight(1f)) else
             LazyColumn(
@@ -457,9 +464,11 @@ fun PlayerScreen(
                     },
                 contentPadding = PaddingValues(bottom = bottom + 32.dp),
             ) {
-                item(key = "info") { VideoDetailsBlock(state, item, details, c, descriptionOpen, { descriptionOpen = !descriptionOpen }, isLiveStream) }
-                val related = FeedFilters.withoutBlocked(details?.related.orEmpty())
-                if (related.isNotEmpty()) {
+                item(key = "info") { VideoDetailsBlock(state, item, details, c, descriptionOpen, { descriptionOpen = !descriptionOpen }, isLiveStream, subscribeInActions = landscapeWide) }
+                val related = if (landscapeWide) emptyList() else FeedFilters.withoutBlocked(details?.related.orEmpty())
+                if (landscapeWide) {
+                    // Ends at the comments card (see landscapeWide).
+                } else if (related.isNotEmpty()) {
                     item(key = "moreTitle") { SectionTitle("More videos") }
                     val relatedColumns = HomeGrid.columns(screenConfig.screenWidthDp.toFloat())
                     if (relatedColumns > 1) {
@@ -711,24 +720,33 @@ private fun SubscribeButton(subscribed: Boolean, onClick: () -> Unit) {
 
 
     val radius by animateDpAsState(if (subscribed) 14.dp else 18.dp, if (reduced) tween(0) else spring(dampingRatio = 0.6f, stiffness = 500f), label = "subShape")
+    // Liquid glass like the action pills over the picture background; solid without it.
+    val glass = LocalPlayerGlass.current
+    val ink = when {
+        glass != null -> c.onSurface
+        subscribed -> c.onSecondaryContainer
+        else -> c.surface
+    }
     Row(
         modifier = Modifier
             .squishOn(subscribed)
             .height(34.dp)
             .pressable(onClick = onClick)
-            .clip(RoundedCornerShape(radius))
-            .background(if (subscribed) c.secondaryContainer else c.onSurface)
+            .then(
+                if (glass != null) Modifier.glassControl(glass, RoundedCornerShape(radius))
+                else Modifier.clip(RoundedCornerShape(radius)).background(if (subscribed) c.secondaryContainer else c.onSurface),
+            )
             .animateContentSize(spring(dampingRatio = 0.7f, stiffness = 500f))
             .padding(horizontal = if (subscribed) 10.dp else 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (subscribed) {
-            FlourishIcon(Icons.Rounded.NotificationsActive, null, active = subscribed, kind = Flourish.Ring, tint = c.onSecondaryContainer, size = 15.dp)
+            FlourishIcon(Icons.Rounded.NotificationsActive, null, active = subscribed, kind = Flourish.Ring, tint = ink, size = 15.dp)
             Spacer(Modifier.width(5.dp))
         }
         Text(
             if (subscribed) I18n.t("subscribed", "Subscribed") else I18n.t("subscribe", "Subscribe"),
-            color = if (subscribed) c.onSecondaryContainer else c.surface,
+            color = ink,
             fontWeight = FontWeight.Bold, fontSize = 12.5.sp,
         )
     }
@@ -739,7 +757,24 @@ private fun SubscribeButton(subscribed: Boolean, onClick: () -> Unit) {
 
 
 @Composable
-private fun PlayerActions(state: PlayerState) {
+private fun PlayerActions(state: PlayerState, withSubscribe: Boolean = false) {
+    // Landscape unfolded: Subscribe sits at the right end of this row, the pills scroll beside it.
+    if (withSubscribe) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            // Clipped here, so the pills never scroll in under the glass Subscribe button.
+            Box(Modifier.weight(1f).clipToBounds()) { PlayerActionPills(state) }
+            state.accountState?.subscribed?.let { subscribed ->
+                Spacer(Modifier.width(8.dp))
+                Box(Modifier.padding(top = 10.dp)) { SubscribeButton(subscribed, onClick = state::toggleSubscribe) }
+            }
+        }
+    } else {
+        PlayerActionPills(state)
+    }
+}
+
+@Composable
+private fun PlayerActionPills(state: PlayerState) {
     val context = LocalContext.current
     val item = state.current
     Row(
@@ -1962,6 +1997,8 @@ private fun VideoDetailsBlock(
     descriptionOpen: Boolean,
     onToggleDescription: () -> Unit,
     isLiveStream: Boolean,
+    /** Landscape unfolded: Subscribe goes to the right end of the action row. */
+    subscribeInActions: Boolean = false,
 ) {
     Column(Modifier.padding(horizontal = 20.dp)) {
         Spacer(Modifier.height(18.dp))
@@ -2027,11 +2064,13 @@ private fun VideoDetailsBlock(
                     }
                 }
             }
-            state.accountState?.subscribed?.let { subscribed ->
-                SubscribeButton(subscribed, onClick = state::toggleSubscribe)
+            if (!subscribeInActions) {
+                state.accountState?.subscribed?.let { subscribed ->
+                    SubscribeButton(subscribed, onClick = state::toggleSubscribe)
+                }
             }
         }
-        PlayerActions(state)
+        PlayerActions(state, withSubscribe = subscribeInActions)
         QueueCard(state, onOpen = { state.sheet = PlayerSheet.Queue })
         CommentsCard(
             state.comments,
