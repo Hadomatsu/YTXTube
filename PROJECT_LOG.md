@@ -104,3 +104,9 @@ Each entry records what was asked, what was decided and why, and what shipped.
 - **Decided:** Released as 2.6.17 with plain release notes. Checked first that the push carried no em-dashes and no personal data.
 - **Shipped:** v2.6.17 on ytxtube-build with YTXTube.apk (hold for 2x stays on while the finger moves, glass search bar and filters, glass comments and queue cards).
 - **Open:** Screen-by-screen glass check of the rest of the app; speed items 5 to 8 (small); a decision on the Shorts glass look if Shorts should get smoother; the stuck-after-throttled-stream bug; folded measurements.
+
+## 2026-11-14 - Screen check for the glass look
+- **Asked:** Check the rest of the screens for anything that does not match the glass look.
+- **Decided:** Searched the code for stock Material pieces (screenshots of the app come out black on this phone). The mismatches were four stock dropdown menus (search filters, settings choice rows, the second captions language, the Downloads "More options" menu) and live chat's stock bottom sheet, while the app's own choices (quality, speed, audio track) open as glass sheets. **Why sheets, not restyled dropdowns:** a dropdown is a separate window, so it can not blur the app behind it; the app-wide GlassSheet layer is drawn over everything, the fullscreen player included. A small GlassChoiceSheet reuses the player's TrackRow so choices look the same everywhere. Left alone: text-only buttons in the app's colours (the download banner's VIEW, the update dialog's Cancel), and Material switches and sliders in settings.
+- **Shipped:** 5bc2b64 (local, not pushed). Checked on the phone: the Length search filter opens a titled glass sheet and picking an option applies it.
+- **Open:** Not checked on the phone: live chat (no live video in the feed, and searching for one would add to the owner's search history), the settings choice sheets, the second captions sheet, the Downloads menu.
