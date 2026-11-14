@@ -2227,26 +2227,13 @@ private fun CaptionSizePill(
                     .pressable { menu = true; onChange() }
                     .padding(horizontal = 10.dp, vertical = 7.dp),
             )
-            androidx.compose.material3.DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                androidx.compose.material3.DropdownMenuItem(
-                    text = { Text("Off") },
-                    onClick = {
-                        menu = false
-                        CaptionPreference.updateSecondLanguage(null)
-                        onSecondChanged()
-                        onChange()
-                    },
-                )
-                CaptionPreference.secondChoices.forEach { (code, name) ->
-                    androidx.compose.material3.DropdownMenuItem(
-                        text = { Text(name) },
-                        onClick = {
-                            menu = false
-                            CaptionPreference.updateSecondLanguage(code)
-                            onSecondChanged()
-                            onChange()
-                        },
-                    )
+            if (menu) {
+                val choices = CaptionPreference.secondChoices
+                val current = choices.indexOfFirst { it.first == CaptionPreference.secondLanguage } + 1
+                GlassChoiceSheet("Second captions", listOf("Off") + choices.map { it.second }, current, onDismiss = { menu = false }) { i ->
+                    CaptionPreference.updateSecondLanguage(if (i == 0) null else choices[i - 1].first)
+                    onSecondChanged()
+                    onChange()
                 }
             }
         }

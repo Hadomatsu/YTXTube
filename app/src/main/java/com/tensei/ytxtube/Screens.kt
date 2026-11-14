@@ -1382,18 +1382,18 @@ private fun SearchFilterRow(state: SearchState) {
             .padding(horizontal = 16.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        FilterChipMenu(f.type.label, f.type != SearchType.VIDEOS, SearchType.entries, { it.label }) {
+        FilterChipMenu("Type", f.type.label, f.type != SearchType.VIDEOS, SearchType.entries, f.type, { it.label }) {
             state.updateFilter(f.copy(type = it))
         }
         if (f.type == SearchType.VIDEOS) {
-            FilterChipMenu(if (f.date == SearchDate.ANY) "Upload date" else f.date.label, f.date != SearchDate.ANY, SearchDate.entries, { it.label }) {
+            FilterChipMenu("Upload date", if (f.date == SearchDate.ANY) "Upload date" else f.date.label, f.date != SearchDate.ANY, SearchDate.entries, f.date, { it.label }) {
                 state.updateFilter(f.copy(date = it))
             }
-            FilterChipMenu(if (f.length == SearchLength.ANY) "Length" else f.length.label, f.length != SearchLength.ANY, SearchLength.entries, { it.label }) {
+            FilterChipMenu("Length", if (f.length == SearchLength.ANY) "Length" else f.length.label, f.length != SearchLength.ANY, SearchLength.entries, f.length, { it.label }) {
                 state.updateFilter(f.copy(length = it))
             }
         }
-        FilterChipMenu(if (f.sort == SearchSort.RELEVANCE) "Sort by" else f.sort.label, f.sort != SearchSort.RELEVANCE, SearchSort.entries, { it.label }) {
+        FilterChipMenu("Sort by", if (f.sort == SearchSort.RELEVANCE) "Sort by" else f.sort.label, f.sort != SearchSort.RELEVANCE, SearchSort.entries, f.sort, { it.label }) {
             state.updateFilter(f.copy(sort = it))
         }
         if (!f.isDefault) {
@@ -1413,9 +1413,11 @@ private fun SearchFilterRow(state: SearchState) {
 
 @Composable
 private fun <T> FilterChipMenu(
+    title: String,
     label: String,
     active: Boolean,
     options: List<T>,
+    selected: T,
     optionLabel: (T) -> String,
     onPick: (T) -> Unit,
 ) {
@@ -1443,15 +1445,9 @@ private fun <T> FilterChipMenu(
                 modifier = Modifier.size(18.dp),
             )
         }
-        androidx.compose.material3.DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            options.forEach { option ->
-                androidx.compose.material3.DropdownMenuItem(
-                    text = { Text(optionLabel(option)) },
-                    onClick = {
-                        open = false
-                        onPick(option)
-                    },
-                )
+        if (open) {
+            GlassChoiceSheet(title, options.map(optionLabel), options.indexOf(selected), onDismiss = { open = false }) {
+                onPick(options[it])
             }
         }
     }

@@ -57,6 +57,8 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.verticalScroll
 import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
@@ -213,6 +215,29 @@ fun GlassSheet(onDismiss: () -> Unit, content: @Composable ColumnScope.() -> Uni
     DisposableEffect(entry) {
         GlassSheets.open.add(entry)
         onDispose { GlassSheets.open.remove(entry) }
+    }
+}
+
+/** A short list of choices in a glass sheet: the app's own menu, used instead of a dropdown. */
+@Composable
+fun GlassChoiceSheet(title: String, options: List<String>, selected: Int, onDismiss: () -> Unit, onPick: (Int) -> Unit) {
+    GlassSheet(onDismiss = onDismiss) {
+        androidx.compose.material3.Text(
+            title,
+            fontWeight = androidx.compose.ui.text.font.FontWeight.ExtraBold,
+            fontSize = 18.sp,
+            modifier = Modifier.padding(horizontal = 24.dp).padding(bottom = 8.dp),
+        )
+        Column(
+            Modifier
+                .verticalScroll(androidx.compose.foundation.rememberScrollState())
+                .padding(horizontal = 16.dp)
+                .padding(bottom = 16.dp),
+        ) {
+            options.forEachIndexed { i, label ->
+                TrackRow(label, null, i == selected, null) { onDismiss(); onPick(i) }
+            }
+        }
     }
 }
 

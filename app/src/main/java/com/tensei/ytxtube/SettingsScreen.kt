@@ -2460,22 +2460,7 @@ private fun SettingsChoiceRow(
                 Text(options.getOrElse(selected) { "" }, color = c.primary, fontWeight = FontWeight.SemiBold, fontSize = 12.5.sp)
             }
         }
-        androidx.compose.material3.DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            options.forEachIndexed { i, label ->
-                androidx.compose.material3.DropdownMenuItem(
-                    text = {
-                        Text(label, fontWeight = if (i == selected) FontWeight.Bold else FontWeight.Normal)
-                    },
-                    trailingIcon = if (i == selected) {
-                        { Icon(Icons.Rounded.Check, contentDescription = null, tint = c.primary) }
-                    } else null,
-                    onClick = {
-                        open = false
-                        onSelect(i)
-                    },
-                )
-            }
-        }
+        if (open) GlassChoiceSheet(title, options, selected, onDismiss = { open = false }, onPick = onSelect)
     }
 }
 

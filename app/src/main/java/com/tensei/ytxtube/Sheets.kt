@@ -112,15 +112,15 @@ fun VideoOptionsSheet(video: VideoItem, player: PlayerState, onDismiss: () -> Un
 }
 
 @Composable
-private fun OptionRow(icon: ImageVector, label: String, onClick: () -> Unit) {
-    val c = MaterialTheme.colorScheme
+internal fun OptionRow(icon: ImageVector, label: String, color: Color = Color.Unspecified, onClick: () -> Unit) {
+    val ink = if (color != Color.Unspecified) color else MaterialTheme.colorScheme.onSurface
     Row(
         Modifier.fillMaxWidth().pressable(pressedScale = 0.98f, onClick = onClick).padding(horizontal = 24.dp, vertical = 15.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(icon, null, tint = c.onSurface)
+        Icon(icon, null, tint = ink)
         Spacer(Modifier.width(18.dp))
-        Text(label, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+        Text(label, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = ink)
     }
 }
 

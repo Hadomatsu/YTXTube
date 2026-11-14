@@ -24,6 +24,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.MusicNote
@@ -386,25 +389,16 @@ private fun DownloadRow(task: DownloadTask, onOpen: (() -> Unit)?) {
                 ) {
                     Icon(Icons.Rounded.MoreVert, "More options", tint = c.onSurfaceVariant, modifier = Modifier.size(20.dp))
                 }
-                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                if (menu) GlassSheet(onDismiss = { menu = false }) {
                     when (task.status) {
-                        DownloadStatus.Downloading, DownloadStatus.Queued, DownloadStatus.Processing -> DropdownMenuItem(
-                            text = { Text("Pause") },
-                            onClick = { menu = false; Downloads.pause(task) },
-                        )
-                        DownloadStatus.Paused, DownloadStatus.Failed -> DropdownMenuItem(
-                            text = { Text("Resume") },
-                            onClick = { menu = false; Downloads.resume(task) },
-                        )
-                        DownloadStatus.Complete -> DropdownMenuItem(
-                            text = { Text("Play offline") },
-                            onClick = { menu = false; onOpen?.invoke() },
-                        )
+                        DownloadStatus.Downloading, DownloadStatus.Queued, DownloadStatus.Processing ->
+                            OptionRow(Icons.Rounded.Pause, "Pause") { menu = false; Downloads.pause(task) }
+                        DownloadStatus.Paused, DownloadStatus.Failed ->
+                            OptionRow(Icons.Rounded.PlayArrow, "Resume") { menu = false; Downloads.resume(task) }
+                        DownloadStatus.Complete ->
+                            OptionRow(Icons.Rounded.PlayArrow, "Play offline") { menu = false; onOpen?.invoke() }
                     }
-                    DropdownMenuItem(
-                        text = { Text("Delete", color = c.error) },
-                        onClick = { menu = false; Downloads.remove(task) },
-                    )
+                    OptionRow(Icons.Rounded.Delete, "Delete", color = c.error) { menu = false; Downloads.remove(task) }
                 }
             }
         }

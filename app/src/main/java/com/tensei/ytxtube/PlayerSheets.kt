@@ -299,7 +299,7 @@ private fun SpeedChip(
 }
 
 @Composable
-private fun TrackRow(
+internal fun TrackRow(
     title: String,
     detail: String?,
     selected: Boolean,
