@@ -615,7 +615,8 @@ private class StreamRecoverer(
             }
             return
         }
-        // Retried quietly up to three times in a row; a stream that plays on for a while after
+        // Retried quietly up to four times in a row (first from the same extraction, then three
+        // fresh ones); a stream that plays on for a while after
         // a retry starts the count again, so a long video can recover as often as it needs.
         attempts = if (id == lastId && position < lastPositionMs + PROGRESS_MS) attempts + 1 else 1
         if (attempts > MAX_ATTEMPTS) {
@@ -628,6 +629,20 @@ private class StreamRecoverer(
         StreamRecovery.markHandled(id)
         lastId = id
         lastPositionMs = position
+        // The same extraction usually holds the stream from another of YouTube's apps: switch to
+        // it straight away (about 2 s sooner), and ask YouTube again only if that one fails too.
+        val cached = StreamCache.get(id)
+        if (attempts == 1 && cached != null && !usesRefused(cached)) {
+            Log.w("YTXTube", "switching $id to another client's stream at ${position / 1000}s")
+            StreamRecovery.failed = null
+            StreamRecovery.recovering = id
+            main.post {
+                StreamRecovery.recovering = null
+                if (player.currentMediaItem?.mediaId != id || player.playerError == null) return@post
+                resume(item, position)
+            }
+            return
+        }
         Log.i("YTXTube", "re-extracting $id without ${client ?: "the refused stream"} and resuming at ${position / 1000}s")
         StreamRecovery.failed = null
         StreamRecovery.recovering = id
@@ -654,6 +669,13 @@ private class StreamRecoverer(
 
 
 
+    private fun usesRefused(info: org.schabi.newpipe.extractor.stream.StreamInfo): Boolean {
+        val picked = StreamSelection.pick(info)
+        val streams = listOfNotNull(picked.video, picked.audio, picked.muxed) +
+            StreamSelection.autoLadder(info, NetworkSpeed.linkHeight())
+        return streams.any { StreamHealth.isRefused(it.content) }
+    }
+
     private fun resume(item: MediaItem, positionMs: Long) {
         val index = player.currentMediaItemIndex
         player.addMediaSource(index + 1, sources.createMediaSource(item))
@@ -666,7 +688,7 @@ private class StreamRecoverer(
         // A stream that played this much after the last refusal counts as a new problem, so the
         // video is silently recovered again; only one that dies straight away gives up.
         const val PROGRESS_MS = 10_000L
-        const val MAX_ATTEMPTS = 3
+        const val MAX_ATTEMPTS = 4
     }
 }
 
@@ -872,6 +894,18 @@ private class YouTubeMediaSourceFactory(context: Context) : MediaSource.Factory 
     private val dataSourceFactory: DataSource.Factory = StreamRequests.factory(context)
     private val fallback = DefaultMediaSourceFactory(dataSourceFactory)
 
+    /**
+     * A link YouTube refused (HTTP 403) stays refused, so it goes to [StreamRecoverer] at once
+     * instead of being asked for three more times over about three seconds.
+     */
+    private val loadErrors = object : androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy() {
+        override fun getRetryDelayMsFor(info: LoadErrorHandlingPolicy.LoadErrorInfo): Long =
+            if ((info.exception as? androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException)?.responseCode == 403) C.TIME_UNSET
+            else super.getRetryDelayMsFor(info)
+    }
+    private fun dashSource() = DashMediaSource.Factory(dataSourceFactory).setLoadErrorHandlingPolicy(loadErrors)
+    private fun progressiveSource() = ProgressiveMediaSource.Factory(dataSourceFactory).setLoadErrorHandlingPolicy(loadErrors)
+
     override fun setDrmSessionManagerProvider(provider: DrmSessionManagerProvider): MediaSource.Factory =
         apply { fallback.setDrmSessionManagerProvider(provider) }
 
@@ -917,11 +951,11 @@ private class YouTubeMediaSourceFactory(context: Context) : MediaSource.Factory 
                     runCatching {
                         val xml = YoutubeProgressiveDashManifestCreator.fromProgressiveStreamingUrl(premium.url, itagItem, info.duration)
                         val manifest = DashManifestParser().parse(Uri.parse(premium.url), ByteArrayInputStream(xml.toByteArray()))
-                        DashMediaSource.Factory(dataSourceFactory).createMediaSource(manifest, mediaItem)
+                        dashSource().createMediaSource(manifest, mediaItem)
                     }.onFailure { Log.w("YTXTube", "premium audio manifest failed for ${mediaItem.mediaId}: ${it.message}") }
                         .getOrNull()
                 }
-                dash ?: ProgressiveMediaSource.Factory(dataSourceFactory)
+                dash ?: progressiveSource()
                     .createMediaSource(mediaItem.buildUpon().setUri(premium.url).build())
             } else {
                 source(fallback, info.duration, mediaItem)
@@ -994,7 +1028,7 @@ private class YouTubeMediaSourceFactory(context: Context) : MediaSource.Factory 
             C.TIME_UNSET, C.TIME_UNSET, C.TIME_UNSET, C.TIME_UNSET, null, null, null, null,
             listOf(Period("0", 0, listOf(AdaptationSet(0, C.TRACK_TYPE_VIDEO, representations, emptyList(), emptyList(), emptyList())))),
         )
-        return DashMediaSource.Factory(dataSourceFactory).createMediaSource(manifest, mediaItem)
+        return dashSource().createMediaSource(manifest, mediaItem)
     }
 
     private fun source(stream: Stream, durationSec: Long, mediaItem: MediaItem): MediaSource {
@@ -1004,12 +1038,12 @@ private class YouTubeMediaSourceFactory(context: Context) : MediaSource.Factory 
             val dash = runCatching {
                 val xml = YoutubeProgressiveDashManifestCreator.fromProgressiveStreamingUrl(url, itag, durationSec)
                 val manifest = DashManifestParser().parse(Uri.parse(url), ByteArrayInputStream(xml.toByteArray()))
-                DashMediaSource.Factory(dataSourceFactory).createMediaSource(manifest, mediaItem)
+                dashSource().createMediaSource(manifest, mediaItem)
             }.getOrNull()
             if (dash != null) return dash
         }
 
-        return ProgressiveMediaSource.Factory(dataSourceFactory)
+        return progressiveSource()
             .createMediaSource(mediaItem.buildUpon().setUri(url).build())
     }
 }
