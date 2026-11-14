@@ -84,6 +84,23 @@ uploads `YTXTube.apk`.
   to landscape is the owner's job (it is a system setting).
 - Local builds don't need a version bump; only real releases do.
 
+## How a session works here
+
+- Git has no identity on this PC: commit with `git -c user.name=Claude -c user.email=noreply@anthropic.com commit ...`
+  (also for the `commit-tree` in the release steps).
+- `gh` is not installed: watch a release run with the public API,
+  `curl -s "https://api.github.com/repos/Hadomatsu/ytxtube-build/actions/runs?head_sha=$c"`, and check
+  `.../releases/latest` for the tag and `YTXTube.apk`.
+- Before every push: no em-dashes in RELEASE_NOTES.md, and no owner name, device serial or local IP in
+  the diff (`git diff origin/main..HEAD`). The repos are public.
+- Phone over wireless adb usually reconnects by itself (mDNS, check `adb devices`); pair only if not.
+  Local test scripts in `perf/` (git-excluded): `measure-start.sh`, `measure-scroll.sh` (logs playback
+  state, redoes a round if the app falls to the home screen), `measure-open.sh`, `inapp.sh` (brings the
+  app back), `tap.sh` (tap by text), `shot.sh` (screenshot), `trace.sh` + `analyze.py` (Perfetto).
+- Speed changes: measure the old and the new build in the same session with the same script, video
+  confirmed playing. Never tap Subscribe, Like or anything that changes the owner's account in tests.
+- One change per commit; tell the owner in plain words what they will see, and what was not checked.
+
 ## App facts
 
 - Package `com.tensei.ytxtube.custom` (flavor `yt`), namespace `com.tensei.ytxtube`.
