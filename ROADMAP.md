@@ -15,7 +15,7 @@ Headings are columns, bullets are cards. `[[briefs/slug]]` opens the card's full
 ## In progress
 
 ## Done
-- Endless Home (topic feeds after the main feed) and endless "More videos" under a video (not released yet)
+- 2.6.19: endless Home (topic feeds after the main feed), endless "More videos", small glass subscribe button on Shorts
 - 2.6.18: glass menus everywhere
 - [[briefs/one-glass-language]] One glass look: dropdown menus and live chat are glass sheets (in 2.6.18)
 - 2.6.17: hold for 2x stays on while the finger moves, glass search bar and filters, glass cards on the video page
