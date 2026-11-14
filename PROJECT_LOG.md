@@ -62,3 +62,33 @@ Each entry records what was asked, what was decided and why, and what shipped.
 - **Decided:** Matt Pocock setup is now a global always-on rule in ~/.claude/CLAUDE.md with fixed answers (local markdown tracker in `.scratch/`, default triage labels, single-context docs), so no questions are asked. YTXTube got it now. OmniRoute auto-start was blocked twice by Claude Code's auto mode, so it stays manual; `claude-free` starts OmniRoute on demand, so nothing breaks. **Why no automatic limit switch:** Claude Code has no hook that fires on a usage limit and moves a running session to another model, so the fallback stays one command.
 - **Shipped:** docs/agents/issue-tracker.md, domain.md and triage-labels.md; an Agent skills block in CLAUDE.md; the global setup rule.
 - **Open:** None for these steps.
+
+## 2026-11-13 - Speed pass session 1 ended, handoff written
+- **Asked:** Remember the speed-pass state and write a handoff for the next conversation, including the newly installed skills.
+- **Decided:** The handoff lives in `perf/HANDOFF-SPEED-2.md` (local only) with a copy in Downloads, because `perf/` already holds every number and script. The Baseline Profile generation failed twice (first run crawled on UiAutomator idle waits, fixed with shell input; second run lost the wireless adb link after 16 minutes), so items 1 and 2 of the plan stay uncommitted and unbuilt in the tree. **Why not committed:** item 2 is not compiled or measured yet, and the rule is one measured improvement per commit.
+- **Shipped:** `perf/HANDOFF-SPEED-2.md`, session memory updated (`ytxtube-speed-pass`, `honor-magic-v5-adb-quirks`).
+- **Open:** Reconnect adb, rerun `:app:generateYtReleaseBaselineProfile` in a terminal tab, then build and measure the hidden-glass change, then plan items 3 to 8. Folded measurements still need the owner to fold the phone. Benchmark copies `com.tensei.ytxtube.custom.benchmark` and `com.tensei.ytxtube.baselineprofile` are still installed on the phone (harmless).
+
+## 2026-11-13 - Speed pass session 2 paused before any work
+- **Asked:** Continue the speed pass from `perf/HANDOFF-SPEED-2.md`. When testing, if the app drops to the phone's home screen (video then plays in picture-in-picture), bring the app back and carry on instead of swiping on the home screen. Then the owner paused: only about 10 percent of the Claude limit was left.
+- **Decided:** Stop and wait for the limit reset (about 9:50) rather than run builds and phone tests on the free Gemini fallback, which is not proven end to end. **Why:** the build, profile run, measurements and review need far more than what was left, and a half-finished run gives no usable numbers.
+- **Shipped:** Nothing. Phone check only: adb was already connected through mDNS, and connecting by the port typed in chat was refused, so that port was not needed. Her app is still 2.6.15.
+- **Open:** Next session adds a foreground guard to `perf/measure-*.sh` (check `dumpsys window` focus before each swipe, `am start` the app back if it left, redo that run), then follows the handoff: compile-check item 2 and build it without item 1, measure, review, commit; then the profile run.
+
+## 2026-11-13 - Two owner requests written down for the next session
+- **Asked:** Note for later, not to build now: holding the video for 2x must keep going when the finger moves, and the whole app must use one glass look (search bar and topic chips are mixed, comments should be glass too).
+- **Decided:** Written as two briefs with roadmap cards in "Next", plus a section in the local handoff `perf/HANDOFF-SPEED-2.md` so the session after the limit reset finds them. **Why:** The owner is out of usage until about 9:50 pm. The next session asks her whether these come before or after speed pass items 3 to 8. The glass brief carries a speed warning, because glass layers are what drop frames.
+- **Shipped:** `briefs/hold-speed-keeps-going.md`, `briefs/one-glass-language.md`, two roadmap cards, handoff section 7. No app code changed.
+- **Open:** Both requests, next session.
+
+## 2026-11-13 - Correction: which comments part should be glass
+- **Asked:** The owner clarified the glass request. She means the small comments card on the video page (the rectangle that says Comments and shows one comment, before tapping it), not the full comment panel that opens.
+- **Decided:** This corrects the previous entry. The brief and handoff now name the small card. **Why:** one small card costs little, so the earlier warning about the comment panel's frame drops no longer applies; a quick frame check before and after is enough.
+- **Shipped:** `briefs/one-glass-language.md` and `perf/HANDOFF-SPEED-2.md` section 7 updated. No app code changed.
+- **Open:** Same as before, next session.
+
+## 2026-11-14 - Speed pass items 1 to 3 shipped as 2.6.16
+- **Asked:** Continue the speed pass; when the current items are done, release ("push") and carry on with the rest. Bring the app back if a test drops it to the home screen. The two owner requests (hold for 2x, one glass look) come after the speed work.
+- **Decided:** Every change was measured against the old build in the same session with the same scripts, because the first baseline's Shorts numbers came from different swipe settings and one old-build round was fake (stream stuck buffering). The scripts now log playback state per round and bring the app back from picture-in-picture. The Baseline Profile generator hung on UiAutomator a third time, so it was dropped for a hand-written profile (all app code plus NewPipe, Media3, Kyant), verified on the phone (80,303 profile entries, status speed-profile). A review subagent read the whole release diff: no blockers, one one-frame Shorts top bar blink, fixed. The owner's first name was replaced with "the owner" in docs before they went public.
+- **Shipped:** bbb2ffc hidden glass (comments over video 23-28 % janky to about 5 %, Home with mini player 18-21 % to 3-5 %, Shorts 15-19 % to 13-17 %), d344065 Baseline Profile (cold start 295 to 243 ms), d4e222c Home feed from disk (Home on screen 1.0-1.8 s to 0.35 s), 2b66d2a Shorts top bar fix, then 2.6.16 released.
+- **Open:** Speed items 4 to 8 (faster video start first; it needs care because the player reads HDR and premium audio info set during the details step). Folded measurements. New card: no video opens after a throttled stream until a force-stop. Then the two owner requests.

@@ -1,6 +1,7 @@
-YTXTube Custom 2.6.15: endless Shorts, tap to refresh
+YTXTube Custom 2.6.16: smoother and faster
 
-- Shorts are endless now: they come from YouTube's For You Shorts feed for you, without subscriptions or random Shorts, and keep loading however long you scroll
-- You can scroll back through the last 20 Shorts, older ones are let go (like TikTok)
-- Tap the Shorts tab while on Shorts to refresh it
-- Tap Home while on Home to go to the top and refresh
+- Scrolling the comments while a video plays is much smoother
+- Scrolling Home while the mini player plays is much smoother
+- Swiping through Shorts is a little smoother
+- Home shows your videos right away when you open the app, then swaps in the fresh feed
+- The app opens faster, and gets up to speed sooner after each update
