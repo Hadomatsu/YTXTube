@@ -11,6 +11,10 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.togetherWith
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.PersonAdd
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -1166,10 +1170,13 @@ fun ShortsScreen(
                                 .padding(
                                     start = 16.dp,
                                     end = if (sideOpen) sidePanelWidth + 24.dp else 82.dp,
-                                    bottom = bottomSpace + 20.dp,
+                                    // Close to the nav bar, so less of the video is covered.
+                                    bottom = bottomSpace + 8.dp,
                                 ),
                             item = item,
                             info = info,
+                            backdrop = backdrop,
+                            glass = glass,
                             subscribed = subscribed,
                             onSubscribe = {
                                 if (!requireSignIn()) return@ShortsDetails
@@ -1548,6 +1555,8 @@ private fun ShortsDetails(
     subscribed: Boolean,
     onSubscribe: () -> Unit,
     onOpenChannel: () -> Unit,
+    backdrop: Backdrop,
+    glass: GlassSpec,
 ) {
     val channel = info?.uploaderName?.ifBlank { null } ?: item.channel.ifBlank { "YouTube" }
     Column(modifier) {
@@ -1571,27 +1580,37 @@ private fun ShortsDetails(
                     .weight(1f, fill = false)
                     .pressable(onClick = onOpenChannel),
             )
-            if (!subscribed) {
-                Spacer(Modifier.width(10.dp))
-                Box(
-                    Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(Color.White)
-                        .pressable(onClick = onSubscribe)
-                        .padding(horizontal = 12.dp, vertical = 6.dp),
-                ) {
-                    Text(I18n.t("subscribe", "Subscribe"), color = Color.Black, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                }
-            } else {
-                Spacer(Modifier.width(10.dp))
-                Box(
-                    Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .border(1.dp, Color.White.copy(alpha = 0.35f), RoundedCornerShape(8.dp))
-                        .pressable(onClick = onSubscribe)
-                        .padding(horizontal = 12.dp, vertical = 6.dp),
-                ) {
-                    Text(I18n.t("subscribed", "Subscribed"), color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.width(8.dp))
+            // A small glass circle instead of a wide pill, so it covers less of the video. The
+            // icon spins and pops between "add" and a check when you subscribe or unsubscribe.
+            Box(
+                Modifier
+                    .size(32.dp)
+                    .pressable(pressedScale = 0.88f, onClick = onSubscribe)
+                    .clip(CircleShape)
+                    .liquidGlass(backdrop, glass),
+                contentAlignment = Alignment.Center,
+            ) {
+                androidx.compose.animation.AnimatedContent(
+                    targetState = subscribed,
+                    transitionSpec = {
+                        val pop = spring<Float>(dampingRatio = 0.5f, stiffness = 520f)
+                        (androidx.compose.animation.scaleIn(pop, initialScale = 0.3f) + androidx.compose.animation.fadeIn(tween(140)))
+                            .togetherWith(androidx.compose.animation.scaleOut(tween(140), targetScale = 0.3f) + androidx.compose.animation.fadeOut(tween(120)))
+                    },
+                    label = "subscribeIcon",
+                ) { on ->
+                    // Spins in only when it changes (the first icon on a Short is just there).
+                    val spin by transition.animateFloat(
+                        transitionSpec = { spring(dampingRatio = 0.55f, stiffness = 420f) },
+                        label = "subscribeSpin",
+                    ) { state -> if (state == androidx.compose.animation.EnterExitState.PreEnter) -120f else 0f }
+                    Icon(
+                        if (on) Icons.Rounded.Check else Icons.Rounded.PersonAdd,
+                        contentDescription = if (on) I18n.t("subscribed", "Subscribed") else I18n.t("subscribe", "Subscribe"),
+                        tint = Color.White,
+                        modifier = Modifier.size(18.dp).graphicsLayer { rotationZ = spin },
+                    )
                 }
             }
         }
