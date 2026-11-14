@@ -1,8 +1,5 @@
-YTXTube Custom 2.6.17: hold for 2x stays on, more glass
+YTXTube Custom 2.6.18: glass menus everywhere
 
-- Hold a video or a Short for the faster speed and it now stays fast until you lift your finger, even if your finger moves
-- While you hold, moving your finger no longer seeks the video or swipes to the next Short
-- The search bar is glass now, like the back button next to it
-- The search filters (Type, Upload date, Length, Sort by) sit under the search bar in the same style as Home's topics
-- The comments card and the Up next card on the video page are glass, like the buttons above them
-- Scrolling search results stays smooth with the glass on top
+- The search filters, the choices in Settings and the second captions language now open in a glass sheet from the bottom, like the quality and speed choices
+- The menu on a download (Pause, Resume, Play offline, Delete) is a glass sheet too
+- Live chat opens in a glass sheet, like the comments
