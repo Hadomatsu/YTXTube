@@ -97,12 +97,27 @@ object CaptionPreference {
         prefs?.edit()?.putFloat("captions_scale", scale)?.apply()
     }
 
+    /**
+     * Where you dragged the captions to (hold them, then move): their centre as a share of the
+     * video's width and height, kept for every video. Null: the normal place.
+     */
+    var position by mutableStateOf<androidx.compose.ui.geometry.Offset?>(null)
+        private set
+
+    fun updatePosition(value: androidx.compose.ui.geometry.Offset?) {
+        position = value?.let { androidx.compose.ui.geometry.Offset(it.x.coerceIn(0f, 1f), it.y.coerceIn(0f, 1f)) }
+        prefs?.edit()?.putFloat("captions_x", position?.x ?: -1f)?.putFloat("captions_y", position?.y ?: -1f)?.apply()
+    }
+
     fun init(context: Context) {
         prefs = context.getSharedPreferences("playback", Context.MODE_PRIVATE)
         scale = (prefs?.getFloat("captions_scale", 1f) ?: 1f).coerceIn(0.6f, 2.5f)
         enabled = prefs?.getBoolean(KEY_ENABLED, false) == true
         languageTag = prefs?.getString(KEY_LANGUAGE, "en")?.ifBlank { "en" } ?: "en"
         secondLanguage = prefs?.getString("captions_second", "")?.ifBlank { null }
+        val x = prefs?.getFloat("captions_x", -1f) ?: -1f
+        val y = prefs?.getFloat("captions_y", -1f) ?: -1f
+        position = if (x in 0f..1f && y in 0f..1f) androidx.compose.ui.geometry.Offset(x, y) else null
     }
 
     fun set(on: Boolean) {

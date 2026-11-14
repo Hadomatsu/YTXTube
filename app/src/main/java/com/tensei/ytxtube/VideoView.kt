@@ -146,6 +146,9 @@ import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.boundsInParent
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.material.icons.rounded.RestartAlt
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
@@ -249,6 +252,8 @@ fun VideoContent(
     val currentSwipeEnd by androidx.compose.runtime.rememberUpdatedState(onSwipeEnd)
     // The video moves while it is dragged, so the finger is followed in window coordinates.
     val coordsHolder = remember { arrayOfNulls<LayoutCoordinates>(1) }
+    // Where the captions are on screen while shown: holding them moves them instead of 2x speed.
+    val captionRect = remember { arrayOfNulls<androidx.compose.ui.geometry.Rect>(1) }
     fun toggleControls() { controlsVisible = !controlsVisible; touched() }
     fun seekStep(side: Int) {
         val moved = state.seekBy(side * SeekStepMs)
@@ -392,6 +397,7 @@ fun VideoContent(
                 // A swipe down from the very top of the screen is for the phone's status bar and
                 // notifications, so it never drags the player down.
                 val fromTopEdge = toWindow(down.position).y <= topEdgePx(currentView)
+                val onCaptions = captionRect[0]?.contains(toWindow(down.position)) == true
 
                 // 0 = not a swipe, 1 = brightness, 2 = volume, 3 = vertical swipe (fullscreen),
                 // 4 = vertical swipe on the player below the video (not fullscreen).
@@ -404,7 +410,8 @@ fun VideoContent(
                         val change = event.changes.firstOrNull { it.pressed }
                         // Two fingers is a pinch to zoom, never a swipe.
                         if (event.changes.count { it.pressed } > 1) pinching = true
-                        if (change != null && !pinching) {
+                        // A move the captions took (being dragged) is not a swipe of the player.
+                        if (change != null && !pinching && !change.isConsumed) {
                             val totalDy = downY - change.position.y
                             val totalDx = down.position.x - change.position.x
                             val verticalIntent = abs(totalDy) > abs(totalDx) * 1.5f
@@ -564,7 +571,7 @@ fun VideoContent(
 
                     if (elapsed >= holdSpeedMs - 80L) {
                         seekWindow?.cancel()
-                        if (!state.scrubDragging && state.beginHoldSpeed()) {
+                        if (!state.scrubDragging && !onCaptions && state.beginHoldSpeed()) {
                             Haptics.perform(currentView, HapticFeedbackConstants.CONFIRM)
                             controlsVisible = false
                             burstActive = false
@@ -964,42 +971,105 @@ fun VideoContent(
                 else -> 15.sp
             } * CaptionPreference.scale
             val density = androidx.compose.ui.platform.LocalDensity.current
+            // Hold the captions, then drag them anywhere on the video; let go and they stay there,
+            // for every video after it too (CaptionPreference.position).
+            var dragAt by remember { mutableStateOf<Offset?>(null) }
+            var captionBox by remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
+            // Like moving a picture in a document: near the middle of the video (across, or up and
+            // down) the captions snap onto it and a thin guide line shows; keep moving and they let go.
+            var snapX by remember { mutableStateOf(false) }
+            var snapY by remember { mutableStateOf(false) }
+            val rawAt = remember { floatArrayOf(0f, 0f) }
+            val snapPx = with(density) { 22.dp.toPx() }
+            androidx.compose.runtime.DisposableEffect(Unit) { onDispose { captionRect[0] = null } }
+            val movable = Modifier
+                .onGloballyPositioned {
+                    captionBox = it.boundsInParent()
+                    captionRect[0] = it.boundsInWindow()
+                }
+                .pointerInput(rootSize) {
+                    detectDragGesturesAfterLongPress(
+                        onDragStart = {
+                            Haptics.perform(currentView, HapticFeedbackConstants.LONG_PRESS)
+                            rawAt[0] = captionBox.center.x
+                            rawAt[1] = captionBox.center.y
+                            dragAt = captionBox.center
+                        },
+                        onDrag = { change, amount ->
+                            change.consume()
+                            rawAt[0] = (rawAt[0] + amount.x).coerceIn(0f, rootSize.width.toFloat())
+                            rawAt[1] = (rawAt[1] + amount.y).coerceIn(0f, rootSize.height.toFloat())
+                            val midX = rootSize.width / 2f
+                            val midY = rootSize.height / 2f
+                            val nowX = abs(rawAt[0] - midX) < snapPx
+                            val nowY = abs(rawAt[1] - midY) < snapPx
+                            if ((nowX && !snapX) || (nowY && !snapY)) Haptics.perform(currentView, HapticFeedbackConstants.CLOCK_TICK)
+                            snapX = nowX
+                            snapY = nowY
+                            dragAt = Offset(if (nowX) midX else rawAt[0], if (nowY) midY else rawAt[1])
+                        },
+                        onDragEnd = {
+                            val at = dragAt
+                            if (at != null && rootSize.width > 0 && rootSize.height > 0) {
+                                CaptionPreference.updatePosition(Offset(at.x / rootSize.width, at.y / rootSize.height))
+                            }
+                            dragAt = null
+                            snapX = false
+                            snapY = false
+                        },
+                        onDragCancel = { dragAt = null; snapX = false; snapY = false },
+                    )
+                }
+            if (dragAt != null && snapX) {
+                Box(Modifier.align(Alignment.Center).fillMaxHeight().width(1.dp).background(Color.White.copy(alpha = 0.6f)))
+            }
+            if (dragAt != null && snapY) {
+                Box(Modifier.align(Alignment.Center).fillMaxWidth().height(1.dp).background(Color.White.copy(alpha = 0.6f)))
+            }
+            val placed = dragAt ?: CaptionPreference.position?.let { Offset(it.x * rootSize.width, it.y * rootSize.height) }
             // Unfolded fullscreen letterboxes the picture: the captions then go into the black bar
             // that is already below it (just under the picture), and nothing is added. Anywhere
             // else, or when the bar is too thin, they sit on the picture.
             val barTopPx = captionBarTop(rootSize, state.videoAspect, fullscreen && !state.zoomToFill && state.videoZoom <= 1.05f)
             val blockPx = captionBlockHeightPx(captionSize, density)
             val gapPx = with(density) { 10.dp.toPx() }
-            val fitsInBar = barTopPx != null &&
+            val inBar = placed == null && barTopPx != null &&
                 rootSize.height - barTopPx >= blockPx + gapPx * 2f
-            if (fitsInBar && barTopPx != null) {
-                CaptionLines(
-                    text = captionText,
-                    second = state.captionText2,
-                    fontSize = captionSize,
-                    plates = false,
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .offset { IntOffset(0, (barTopPx + gapPx).roundToInt()) }
-                        .padding(horizontal = 16.dp),
-                )
-            } else {
-                val captionLift by animateDpAsState(
-                    targetValue = if (controlsVisible) EdgeScrubTimeRowBottomPad + EdgeScrubTimeRowHeight + 10.dp else 28.dp,
-                    animationSpec = if (reduced) tween(0) else tween(200, easing = Motion.Emphasized),
-                    label = "captionLift",
-                )
-                CaptionLines(
-                    text = captionText,
-                    second = state.captionText2,
-                    fontSize = captionSize,
-                    plates = true,
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(horizontal = 16.dp)
-                        .padding(bottom = captionLift),
-                )
+            val captionLift by animateDpAsState(
+                targetValue = if (controlsVisible) EdgeScrubTimeRowBottomPad + EdgeScrubTimeRowHeight + 10.dp else 28.dp,
+                animationSpec = if (reduced) tween(0) else tween(200, easing = Motion.Emphasized),
+                label = "captionLift",
+            )
+            // One CaptionLines for every placement, so a drag that moves them out of their normal
+            // place is not cut off by the captions being drawn somewhere else.
+            val placement = when {
+                placed != null -> Modifier
+                    .align(Alignment.TopStart)
+                    // Centred on the chosen spot, and always wholly on the video.
+                    .layout { measurable, constraints ->
+                        val p = measurable.measure(constraints)
+                        layout(p.width, p.height) {
+                            val x = (placed.x - p.width / 2f).coerceIn(0f, (rootSize.width - p.width).coerceAtLeast(0).toFloat())
+                            val y = (placed.y - p.height / 2f).coerceIn(0f, (rootSize.height - p.height).coerceAtLeast(0).toFloat())
+                            p.place(x.roundToInt(), y.roundToInt())
+                        }
+                    }
+                inBar && barTopPx != null -> Modifier
+                    .align(Alignment.TopCenter)
+                    .offset { IntOffset(0, (barTopPx + gapPx).roundToInt()) }
+                    .padding(horizontal = 16.dp)
+                else -> Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(horizontal = 16.dp)
+                    .padding(bottom = captionLift)
             }
+            CaptionLines(
+                text = captionText,
+                second = state.captionText2,
+                fontSize = captionSize,
+                plates = !inBar,
+                modifier = placement.then(movable),
+            )
         }
         }
 
@@ -2235,6 +2305,13 @@ private fun CaptionSizePill(
                     onSecondChanged()
                     onChange()
                 }
+            }
+        }
+        // Captions that were dragged somewhere else: one tap puts them back in their normal place.
+        if (CaptionPreference.position != null) {
+            GlassButton(Icons.Rounded.RestartAlt, "Captions back to their normal place", true, size = 34.dp, iconSize = 19.dp, tinted = false) {
+                CaptionPreference.updatePosition(null)
+                onChange()
             }
         }
         GlassButton(Icons.Rounded.Close, "Close", true, size = 34.dp, iconSize = 18.dp, tinted = false) {
