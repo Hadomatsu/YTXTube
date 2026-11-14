@@ -10,12 +10,12 @@ Headings are columns, bullets are cards. `[[briefs/slug]]` opens the card's full
 - Compose recomposition fixes from `perf/audit-compose.md` (smaller wins, frames are GPU bound)
 
 ## Next
-- [[briefs/landscape-scroll-and-swipe-down]] Landscape: end at comments but scroll on to More videos; swipe down on the video broken (do first)
 - Check on the phone: live chat glass sheet (needs a live video), settings choice sheets, second captions sheet, Downloads menu
 
 ## In progress
 
 ## Done
+- [[briefs/landscape-scroll-and-swipe-down]] Swipe down on the video fixed; landscape first screen ends at comments, More videos on scrolling (not released yet)
 - 2.6.20: hold captions to move them anywhere (snap to the middle, reset in the caption panel); landscape unfolded video page ends at comments with Subscribe in the action row; glass Subscribe
 - 2.6.19: endless Home (topic feeds after the main feed), endless "More videos", small glass subscribe button on Shorts
 - 2.6.18: glass menus everywhere

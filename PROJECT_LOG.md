@@ -140,3 +140,9 @@ Each entry records what was asked, what was decided and why, and what shipped.
 - **Decided:** Not investigated now, to save the owner's tokens. Written up with suspects in `briefs/landscape-scroll-and-swipe-down.md`, card at the top of "Next".
 - **Shipped:** Brief and card only.
 - **Open:** Both fixes, first thing next session.
+
+## 2026-11-15 - Swipe down fixed, landscape scrolls on to More videos
+- **Asked:** Make the two fixes from the brief written the night before.
+- **Decided:** Reproduced first: neither a slow swipe nor a fast flick on the video went to the mini player. Cause: 2.6.20's caption change skipped swipe detection for moves marked consumed, and the player consumes the touch itself, so every swipe looked taken. A flag that is true only while the captions are dragged replaces it. Landscape: More videos are back, after a gap that fills exactly the rest of the first screen (measured list height minus measured details block), so the first screen ends at the comments and scrolling brings the videos; this adapts to any big screen. **Why a measured gap:** a fixed number would be wrong on other foldables and when the description is open.
+- **Shipped:** f174c67, local, not pushed. Checked on the phone in portrait: slow swipe and fast flick go to the mini player, a caption drag keeps the player open.
+- **Open:** Landscape needs the owner's eyes (the phone has to be turned). The test moved the owner's captions a little; the reset button in the caption panel puts them back.
