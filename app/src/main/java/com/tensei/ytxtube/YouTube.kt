@@ -295,6 +295,21 @@ object YouTube {
     suspend fun fallbackRelated(id: String, title: String): List<VideoItem> =
         withContext(Dispatchers.IO) { fetchFallbackRelated(id, title) }
 
+    /**
+     * One page of "More videos" for [id] from YouTube's watch-next list, or the page after it with
+     * [continuation]. Only the related list is read: the same answer also holds the comments, with
+     * their own next-page token.
+     */
+    suspend fun relatedPage(id: String, continuation: String?): FeedPage = withContext(Dispatchers.IO) {
+        val body = if (continuation != null) org.json.JSONObject().put("continuation", continuation)
+            else org.json.JSONObject().put("videoId", id)
+        val root = InnerTube.postAny("next", body)
+        var related: org.json.JSONObject? = null
+        root.walk { key, obj -> if (related == null && key == "secondaryResults") related = obj }
+        val page = InnerTube.parseFeed(related ?: root)
+        FeedPage(page.videos.filter { it.id != id }, page.next)
+    }
+
     private suspend fun fetchFallbackRelated(id: String, title: String): List<VideoItem> {
         val parsed = runCatching {
             val next = InnerTube.postAny("next", org.json.JSONObject().put("videoId", id))

@@ -424,8 +424,21 @@ fun PlayerScreen(
             }
 
 
+            // "More videos" loads on near its end, like the home feed.
+            val relatedList = androidx.compose.foundation.lazy.rememberLazyListState()
+            val relatedNearEnd by remember {
+                derivedStateOf {
+                    val info = relatedList.layoutInfo
+                    (info.visibleItemsInfo.lastOrNull()?.index ?: 0) >= info.totalItemsCount - 4
+                }
+            }
+            val relatedCount = details?.related?.size ?: 0
+            LaunchedEffect(relatedNearEnd, relatedCount, state.relatedMoreLoading) {
+                if (showDetails && relatedNearEnd && relatedCount > 0 && !state.relatedMoreLoading) state.loadMoreRelated()
+            }
             if (!showDetails) Spacer(Modifier.weight(1f)) else
             LazyColumn(
+                state = relatedList,
                 modifier = Modifier
                     .weight(1f)
                     .zIndex(0f)
@@ -470,6 +483,13 @@ fun PlayerScreen(
                         // thumbnail next to the title.
                         items(related, key = { "rel-" + it.id }) { video ->
                             VideoCard(video, onClick = { onOpen(video) })
+                        }
+                    }
+                    if (state.relatedMoreLoading) {
+                        item(key = "relatedMore") {
+                            Box(Modifier.fillMaxWidth().padding(vertical = 20.dp), Alignment.Center) {
+                                CircularProgressIndicator(color = c.primary, strokeWidth = 3.dp, modifier = Modifier.size(26.dp))
+                            }
                         }
                     }
                 } else if (state.loading || state.relatedLoading) {

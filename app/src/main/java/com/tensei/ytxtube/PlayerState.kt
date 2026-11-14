@@ -403,6 +403,47 @@ class PlayerState(private val scope: CoroutineScope) {
     var relatedLoading by mutableStateOf(false)
         private set
 
+    /** True while another page of "More videos" loads at the end of the list. */
+    var relatedMoreLoading by mutableStateOf(false)
+        private set
+    private var relatedMoreJob: Job? = null
+    /** Where "More videos" goes on: YouTube's next-page token, or "vid:<id>" for that video's own list. */
+    private var relatedNext: String? = null
+
+    /**
+     * "More videos" never ends: the watch-next list page by page, and when YouTube's list for this
+     * video runs out, the list of the last video in it, and so on.
+     */
+    fun loadMoreRelated() {
+        val id = details?.item?.id ?: return
+        if (relatedMoreLoading || relatedLoading) return
+        relatedMoreLoading = true
+        relatedMoreJob = scope.launch {
+            val token = relatedNext
+            val page = runCatching {
+                if (token != null && token.startsWith("vid:")) YouTube.relatedPage(token.removePrefix("vid:"), null)
+                else YouTube.relatedPage(id, token)
+            }.getOrNull()
+            val shown = details?.takeIf { it.item.id == id }
+            if (shown == null) { relatedMoreLoading = false; return@launch }
+            if (page == null) {
+                delay(3_000) // the list asks again when this ends: not in a tight loop offline
+            } else {
+                val have = shown.related.mapTo(HashSet()) { it.id }.apply { add(id) }
+                val added = page.videos.filter { have.add(it.id) }
+                if (added.isNotEmpty()) {
+                    added.forEach { known[it.id] = it }
+                    details = shown.copy(related = shown.related + added)
+                } else {
+                    delay(800)
+                }
+                // Nothing new from the last one's list: go on from another video in the list.
+                relatedNext = page.next ?: (added.lastOrNull() ?: shown.related.randomOrNull())?.id?.let { "vid:$it" }
+            }
+            relatedMoreLoading = false
+        }
+    }
+
     /** The related videos could not be loaded after a few tries; the UI offers a retry. */
     var relatedFailed by mutableStateOf(false)
         private set
@@ -630,6 +671,9 @@ class PlayerState(private val scope: CoroutineScope) {
         relatedJob?.cancel()
         relatedLoading = false
         relatedFailed = false
+        relatedMoreJob?.cancel()
+        relatedMoreLoading = false
+        relatedNext = null
         captionFallbackFor = null
         captionFallbackRunning = false
         accountState = null
@@ -1489,6 +1533,9 @@ class PlayerState(private val scope: CoroutineScope) {
         relatedJob?.cancel()
         relatedLoading = false
         relatedFailed = false
+        relatedMoreJob?.cancel()
+        relatedMoreLoading = false
+        relatedNext = null
         controller?.run { stop(); clearMediaItems() }
         queue = emptyList()
         expanded = false
