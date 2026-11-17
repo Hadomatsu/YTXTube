@@ -1,5 +1,4 @@
-YTXTube Custom 2.6.22: videos open faster
+YTXTube Custom 2.6.23: no more ghost videos on Home
 
-- Videos start about a second sooner after you tap them, and switching to another video is quicker too
-- When YouTube refuses a video stream, playback switches to another one right away instead of hanging for several seconds
-- On Wi-Fi, two minutes of video are loaded ahead (was under a minute), so fewer pauses and skipping ahead lands on video that is already loaded
+- Home no longer shows a second, see-through feed under the videos when the fresh feed arrives (most visible unfolded): no dim flash, no rows stuck on screen while scrolling
+- A video you mark Not interested now disappears at once instead of fading, and the videos below still slide up
