@@ -162,5 +162,11 @@ Each entry records what was asked, what was decided and why, and what shipped.
 ## 2026-11-17 - Ghost cards on Home
 - **Asked:** From a screen recording (unfolded Home): fix the bug, the owner does not know how to make it happen again.
 - **Decided:** Frame by frame, the recording shows two Home feeds at once: the screen starts dim, and rows of other videos stay drawn see-through under the real cards, some stuck near the top for over 3 s while the owner scrolls. Cause: the feed cards faded in and out (`animateItem`). Home first shows the feed saved on disk, then the fresh one replaces it (also on a refresh), so every card is new at once; Compose kept the old cards drawn from a snapshot while they faded, and some of those snapshots got stuck. Cards now only slide, never fade. **Why not keep the fade for small changes:** the stuck snapshots come from the fade-out itself, and a removed card ("Not interested") now just disappears while the cards below slide up.
-- **Shipped:** a138a77, local, not pushed. Made in a cloud session (no phone, no Android SDK): not built and not tried on the phone.
+- **Shipped:** a138a77, released in 2.6.23. Made in a cloud session (no phone, no Android SDK): not built and not tried on the phone.
 - **Open:** Owner checks unfolded Home after the release, especially right after opening the app and after tapping Home again.
+
+## 2026-11-17 - 2.6.23 released
+- **Asked:** "Push" the ghost cards fix.
+- **Decided:** Released as 2.6.23 from a cloud session (the owner's PC was off) after the usual checks (no em-dashes in the notes, no personal data in the push). The source repo is now attached to cloud sessions too, so both repos stay in step from there.
+- **Shipped:** v2.6.23 on ytxtube-build with YTXTube.apk (build run succeeded).
+- **Open:** The fix was never built or run before the release; the owner checks unfolded Home (right after opening the app, and after tapping Home again).
