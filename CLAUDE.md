@@ -149,6 +149,7 @@ uploads `YTXTube.apk`.
 ## Rules learned the hard way
 
 - A glass element must never sample a backdrop layer it is inside of.
+- Feed cards must not fade in or out (`animateItem` fade specs): a whole new feed replaces every card at once and the fading snapshots of the old ones got stuck on screen.
 - A frosted panel needs a solid base colour under the blur, or the sharp page shows through.
 - Panels that reach the bottom of the screen fade their bright edge before the bottom, or the
   phone's rounded corners cut it off.
