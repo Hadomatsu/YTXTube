@@ -339,11 +339,15 @@ fun FeedList(
     LazyColumn(state = list, contentPadding = contentPadding, modifier = pinchModifier) {
         header()
         topSection?.invoke(this, columns)
+        // Cards slide into place but never fade in or out. When a whole new feed replaces the old
+        // one (the fresh Home feed after the copy saved on disk, a refresh), every card is new:
+        // with fading, the old cards stayed drawn see-through under the new ones, some stuck for
+        // seconds even while scrolling, and the screen went dim while the new ones faded in.
         if (columns > 1) {
             items(rows, key = { row -> row.first().id }) { row ->
                 Row(
                     modifier = Modifier
-                        .animateItem()
+                        .animateItem(fadeInSpec = null, fadeOutSpec = null)
                         .fillMaxWidth()
                         .padding(start = HomeGrid.EDGE_DP.dp, end = HomeGrid.EDGE_DP.dp, bottom = 16.dp),
                     horizontalArrangement = Arrangement.spacedBy(HomeGrid.GAP_DP.dp),
@@ -361,7 +365,7 @@ fun FeedList(
                 VideoCard(
                     video,
                     onClick = { onOpen(video) },
-                    modifier = Modifier.animateItem(),
+                    modifier = Modifier.animateItem(fadeInSpec = null, fadeOutSpec = null),
                 )
             }
         }
