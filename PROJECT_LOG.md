@@ -170,3 +170,9 @@ Each entry records what was asked, what was decided and why, and what shipped.
 - **Decided:** Released as 2.6.23 from a cloud session (the owner's PC was off) after the usual checks (no em-dashes in the notes, no personal data in the push). The source repo is now attached to cloud sessions too, so both repos stay in step from there.
 - **Shipped:** v2.6.23 on ytxtube-build with YTXTube.apk (build run succeeded).
 - **Open:** The fix was never built or run before the release; the owner checks unfolded Home (right after opening the app, and after tapping Home again).
+
+## 2026-11-18 - Upright fullscreen when folded, 2.6.24 released
+- **Asked:** Make fullscreen possible folded and in portrait, and push directly.
+- **Decided:** On a phone (folded) the fullscreen button and the swipe up forced landscape, so upright fullscreen was impossible with rotation lock on. Fullscreen now keeps the screen the way the phone is held, like unfolded already did, and fullscreen on a phone gets a rotate button (top row) that turns the screen to landscape and back, also with rotation lock on (`OrientationController.rotate`). **Why a button and not "follow the sensor":** the owner uses rotation lock; a sensor-driven fullscreen would flip when lying on the side. No button on big screens (Android ignores an app's rotation there) or for vertical videos. The owner was asked which of three designs, the question went unanswered, then "push directly": this one was picked as the recommended option.
+- **Shipped:** 32ea411, released as v2.6.24 on ytxtube-build with YTXTube.apk (build run succeeded). Made in a cloud session: not built or run before the release.
+- **Open:** Owner tries it folded: fullscreen upright, the rotate button both ways, exit from landscape. Friends who expect the button to turn the screen sideways now tap rotate; revisit if anyone minds.

@@ -142,6 +142,7 @@ uploads `YTXTube.apk`.
   (drag, fling, long press all work). Right click runs an item's long-press action
   (`onMouseRightClick`, wired into `pressable`), the wheel turns Shorts one per notch
   (`wheelTurnsPages`), moving the mouse over the video shows the controls (`VideoView.kt`).
+- `Fullscreen.kt`: `OrientationController` (fullscreen keeps the way the phone is held; on phones a rotate button forces landscape or upright), system bars, picture-in-picture.
 - `GlassSheet.kt` (`frostedGlass`, `glassControl`, glass sheets), `Glass.kt`, `GlassNavBar.kt`.
 - `Theme.kt`: `ThemeSettings` (dark, AMOLED, "Colours in the video screen" for AMOLED).
   `SettingsScreen.kt`: settings.
