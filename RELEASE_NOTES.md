@@ -1,4 +1,5 @@
-YTXTube Custom 2.6.23: no more ghost videos on Home
+YTXTube Custom 2.6.24: upright fullscreen when folded
 
-- Home no longer shows a second, see-through feed under the videos when the fresh feed arrives (most visible unfolded): no dim flash, no rows stuck on screen while scrolling
-- A video you mark Not interested now disappears at once instead of fading, and the videos below still slide up
+- Folded, the fullscreen button now keeps the video upright (it used to always turn the screen sideways), the same as unfolded
+- In fullscreen on the folded screen, a new rotate button at the top turns the video to landscape and back, even with rotation lock on
+- Turning the phone with auto-rotate on still switches between upright and landscape fullscreen
