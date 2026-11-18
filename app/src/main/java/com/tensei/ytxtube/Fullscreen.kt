@@ -3,6 +3,7 @@ package com.tensei.ytxtube
 import android.app.Activity
 import android.app.PictureInPictureParams
 import android.content.pm.ActivityInfo
+import android.content.res.Configuration
 import android.content.pm.PackageManager
 import android.util.Rational
 import androidx.activity.ComponentActivity
@@ -60,7 +61,16 @@ class OrientationController(private val activity: Activity) {
     private fun autoRotateOn() =
         Settings.System.getInt(activity.contentResolver, Settings.System.ACCELEROMETER_ROTATION, 0) == 1
 
-    fun enterFullscreen() { forced = Forced.Landscape }
+    /**
+     * The rotate button in fullscreen on a phone: landscape if the screen is upright, upright if
+     * it is landscape, even with rotation lock on. Turning the phone the same way hands control
+     * back to the sensor (see the listener above).
+     */
+    fun rotate() {
+        val landscapeNow = activity.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+        forced = if (landscapeNow) Forced.Portrait else Forced.Landscape
+        apply()
+    }
 
     /** Leave the player's forced orientation and follow the device again. */
     fun exitFullscreen() {

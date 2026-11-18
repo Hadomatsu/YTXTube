@@ -555,8 +555,9 @@ fun YtxTubeApp() {
             showFullscreen -> exitFullscreen()
             // A vertical video fills the portrait screen instead of being letterboxed in landscape.
             player.portraitVideo -> player.portraitFullscreen = true
-            isTabletOrTv -> player.fullscreen = true
-            else -> orientation.enterFullscreen()
+            // Fullscreen keeps the screen the way the phone is held, folded or unfolded. On a
+            // phone the rotate button in fullscreen turns it to landscape and back.
+            else -> player.fullscreen = true
         }
     }
 
@@ -1149,7 +1150,12 @@ fun YtxTubeApp() {
                             translationY = size.height * 0.04f * (1f - p) + d * 96.dp.toPx()
                         },
                 ) {
-                    FullscreenPlayer(player, onExit = { exitFullscreen() })
+                    FullscreenPlayer(
+                        player,
+                        onExit = { exitFullscreen() },
+                        // Big screens (unfolded, tablets, TVs) ignore an app's rotation, so no button there.
+                        onRotate = if (isTabletOrTv || player.portraitVideo) null else ({ orientation.rotate() }),
+                    )
                 }
             }
         } else if (showPlayer) {

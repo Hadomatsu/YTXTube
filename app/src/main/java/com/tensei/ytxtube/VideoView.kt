@@ -95,6 +95,7 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material.icons.rounded.ZoomIn
+import androidx.compose.material.icons.rounded.ScreenRotation
 import androidx.compose.ui.composed
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
@@ -200,6 +201,8 @@ fun VideoContent(
     // finger (in pixels, down is positive) and the release velocity to whoever owns that morph.
     onSwipeDrag: ((Float) -> Unit)? = null,
     onSwipeEnd: ((Float) -> Unit)? = null,
+    /** Fullscreen on a phone: turns the screen between upright and landscape. */
+    onRotate: (() -> Unit)? = null,
 ) {
 
 
@@ -789,6 +792,13 @@ fun VideoContent(
                         Spacer(Modifier.weight(1f))
                     }
 
+                    if (fullscreen && onRotate != null) {
+                        GlassButton(Icons.Rounded.ScreenRotation, "Rotate screen", enabled, size = 32.dp, iconSize = 18.dp, backdrop = videoBackdrop) {
+                            touched()
+                            onRotate()
+                        }
+                        Spacer(Modifier.width(6.dp))
+                    }
 
                     GlassButton(
                         if (state.zoomToFill) Icons.Rounded.AspectRatio else Icons.Rounded.CropFree,
@@ -1291,13 +1301,14 @@ fun Modifier.aspectFit(aspect: Float, cover: Boolean = false) = layout { measura
 
 
 @Composable
-fun FullscreenPlayer(state: PlayerState, onExit: () -> Unit) {
+fun FullscreenPlayer(state: PlayerState, onExit: () -> Unit, onRotate: (() -> Unit)? = null) {
     VideoContent(
         state = state,
         fullscreen = true,
         onCollapse = onExit,
         onToggleFullscreen = onExit,
         modifier = Modifier.fillMaxSize(),
+        onRotate = onRotate,
     )
 }
 
