@@ -8,6 +8,7 @@ import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.os.Build
+import android.os.SystemClock
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Immutable
@@ -20,6 +21,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import kotlin.math.roundToInt
 import androidx.window.layout.FoldingFeature
 import androidx.window.layout.WindowInfoTracker
@@ -35,6 +37,8 @@ data class FoldState(
     val hingeEnd: Int? = null,
     /** Where the posture came from, shown in Settings: "WindowManager", "hinge sensor" or "none". */
     val source: String = "none",
+    /** What WindowManager itself says ("flat", "half open" or "nothing"), shown in Settings. */
+    val windowManager: String = "nothing",
 )
 
 /**
@@ -50,6 +54,16 @@ object HingeSensor {
         private set
     var present by mutableStateOf(false)
         internal set
+
+    /**
+     * The screen went off (the app stopped): the last angle is no longer known. Without this, a
+     * reading from before the screen went off kept deciding the layout after it came back on,
+     * which could show flex mode on a flat open phone.
+     */
+    internal fun forget() {
+        halfOpen = false
+        shownAngle = null
+    }
 
     internal fun onAngle(angle: Float) {
         val rounded = (angle / 5f).roundToInt() * 5
@@ -116,17 +130,28 @@ object FlexMode {
             "none" -> "no fold information from this phone"
             else -> "from ${s.source}"
         }
-        return "Now: $pose$angle ($from)"
+        // Both sources side by side, so a wrong flex mode can be traced to the one that is off.
+        return "Now: $pose$angle ($from, WindowManager says ${s.windowManager})"
     }
 }
 
 /** Watches the fold while the app is open and keeps [FlexMode.state] up to date. */
 @Composable
 fun TrackFoldPosture(activity: Activity) {
-    val feature by produceState<FoldingFeature?>(null, activity) {
-        runCatching {
-            WindowInfoTracker.getOrCreate(activity).windowLayoutInfo(activity).collect { info ->
-                value = info.displayFeatures.filterIsInstance<FoldingFeature>().firstOrNull()
+    // Listened to only while the app is on screen, and asked afresh each time it comes back (the
+    // screen turned on again, say): a subscription kept across a screen off could keep reporting
+    // the fold as it was before, so flat showed flex mode and half open did not.
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    val feature by produceState<FoldingFeature?>(null, activity, lifecycle) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            try {
+                WindowInfoTracker.getOrCreate(activity).windowLayoutInfo(activity).collect { info ->
+                    value = info.displayFeatures.filterIsInstance<FoldingFeature>().firstOrNull()
+                }
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+            } finally {
+                value = null
             }
         }
     }
@@ -138,6 +163,11 @@ fun TrackFoldPosture(activity: Activity) {
     val halfOpenBySensor = HingeSensor.halfOpen
 
     val f = feature
+    val wmSays = when {
+        f == null -> "nothing"
+        f.state == FoldingFeature.State.HALF_OPENED -> "half open"
+        else -> "flat"
+    }
     val state = when {
         f != null && f.state == FoldingFeature.State.HALF_OPENED -> {
             val across = f.orientation == FoldingFeature.Orientation.HORIZONTAL
@@ -146,6 +176,7 @@ fun TrackFoldPosture(activity: Activity) {
                 hingeStart = if (across) f.bounds.top else f.bounds.left,
                 hingeEnd = if (across) f.bounds.bottom else f.bounds.right,
                 source = "WindowManager",
+                windowManager = wmSays,
             )
         }
         halfOpenBySensor && innerScreen -> {
@@ -157,6 +188,7 @@ fun TrackFoldPosture(activity: Activity) {
                 hingeStart = f?.let { if (across) it.bounds.top else it.bounds.left },
                 hingeEnd = f?.let { if (across) it.bounds.bottom else it.bounds.right },
                 source = "hinge sensor",
+                windowManager = wmSays,
             )
         }
         else -> FoldState(
@@ -166,6 +198,7 @@ fun TrackFoldPosture(activity: Activity) {
                 HingeSensor.present -> "hinge sensor"
                 else -> "none"
             },
+            windowManager = wmSays,
         )
     }
     // Equal states are not published again, so nothing redraws until the posture really changes.
@@ -180,8 +213,16 @@ private fun ListenToHinge(context: Context) {
         val sm = context.getSystemService(Context.SENSOR_SERVICE) as? SensorManager
         val sensor = if (Build.VERSION.SDK_INT >= 30) sm?.getDefaultSensor(Sensor.TYPE_HINGE_ANGLE) else null
         HingeSensor.present = sensor != null
+        // When the listener starts, Android may first hand over the last reading it kept, from
+        // before the screen went off. That one is skipped; the next real reading decides.
+        var startedAt = 0L
+        var firstAfterStart = false
         val listener = object : SensorEventListener {
             override fun onSensorChanged(event: SensorEvent) {
+                if (firstAfterStart) {
+                    firstAfterStart = false
+                    if (event.timestamp < startedAt - STALE_READING_NS) return
+                }
                 event.values.firstOrNull()?.let(HingeSensor::onAngle)
             }
 
@@ -190,6 +231,8 @@ private fun ListenToHinge(context: Context) {
         var registered = false
         fun start() {
             if (sensor != null && sm != null && !registered) {
+                startedAt = SystemClock.elapsedRealtimeNanos()
+                firstAfterStart = true
                 registered = sm.registerListener(listener, sensor, SensorManager.SENSOR_DELAY_UI)
             }
         }
@@ -202,7 +245,10 @@ private fun ListenToHinge(context: Context) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_START -> start()
-                Lifecycle.Event.ON_STOP -> stop()
+                Lifecycle.Event.ON_STOP -> {
+                    stop()
+                    HingeSensor.forget()
+                }
                 else -> Unit
             }
         }
@@ -214,3 +260,6 @@ private fun ListenToHinge(context: Context) {
         }
     }
 }
+
+/** A first reading this much older than the listener's start is one kept from before. */
+private const val STALE_READING_NS = 500_000_000L
