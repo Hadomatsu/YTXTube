@@ -1,5 +1,5 @@
-YTXTube Custom 2.6.24: upright fullscreen when folded
+YTXTube Custom 2.6.25: videos keep playing when YouTube refuses a stream, flex mode fix
 
-- Folded, the fullscreen button now keeps the video upright (it used to always turn the screen sideways), the same as unfolded
-- In fullscreen on the folded screen, a new rotate button at the top turns the video to landscape and back, even with rotation lock on
-- Turning the phone with auto-rotate on still switches between upright and landscape fullscreen
+- Videos no longer stop about a minute in with "YouTube refused the stream (HTTP 403 · IOS)": the app switches to another stream right away, sometimes at a lower quality
+- After turning the screen off and on with a video open, flex mode no longer shows when the phone is flat open, or stays away when it is half open
+- Settings, Flex mode now also shows what the phone's fold report says, to help track down any flex mode mix-up
