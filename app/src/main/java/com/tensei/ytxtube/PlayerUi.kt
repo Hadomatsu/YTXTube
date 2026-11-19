@@ -428,10 +428,12 @@ fun PlayerScreen(
 
             // Landscape on a big screen (an unfolded foldable, a tablet: sideways and at least 600 dp
             // on its short side): there is little room under the video, so the first screen ends at
-            // the comments ("More videos" would only peek in at the bottom; they come on scrolling)
-            // and Subscribe moves into the action row. Portrait unfolded has the room as it is.
-            val landscapeWide = screenConfig.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE &&
-                screenConfig.smallestScreenWidthDp >= 600
+            // the comments ("More videos" would only peek in at the bottom; they come on scrolling).
+            // Portrait unfolded has the room as it is.
+            val bigScreen = screenConfig.smallestScreenWidthDp >= 600
+            val landscapeWide = screenConfig.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE && bigScreen
+            // On a big screen Subscribe sits at the right end of the action row, upright or sideways
+            // alike; folded it stays on the channel row, where the narrow action row has no room.
             // "More videos" loads on near its end, like the home feed.
             val relatedList = androidx.compose.foundation.lazy.rememberLazyListState()
             // Measured, so the gap below the comments fills exactly the rest of the first screen.
@@ -471,7 +473,7 @@ fun PlayerScreen(
             ) {
                 item(key = "info") {
                     Box(Modifier.onSizeChanged { infoHeightPx = it.height }) {
-                        VideoDetailsBlock(state, item, details, c, descriptionOpen, { descriptionOpen = !descriptionOpen }, isLiveStream, subscribeInActions = landscapeWide)
+                        VideoDetailsBlock(state, item, details, c, descriptionOpen, { descriptionOpen = !descriptionOpen }, isLiveStream, subscribeInActions = bigScreen)
                     }
                 }
                 val related = FeedFilters.withoutBlocked(details?.related.orEmpty())
@@ -771,7 +773,7 @@ private fun SubscribeButton(subscribed: Boolean, onClick: () -> Unit) {
 
 @Composable
 private fun PlayerActions(state: PlayerState, withSubscribe: Boolean = false) {
-    // Landscape unfolded: Subscribe sits at the right end of this row, the pills scroll beside it.
+    // Big screen (unfolded): Subscribe sits at the right end of this row, the pills scroll beside it.
     if (withSubscribe) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             // Clipped here, so the pills never scroll in under the glass Subscribe button.
@@ -2010,7 +2012,7 @@ private fun VideoDetailsBlock(
     descriptionOpen: Boolean,
     onToggleDescription: () -> Unit,
     isLiveStream: Boolean,
-    /** Landscape unfolded: Subscribe goes to the right end of the action row. */
+    /** Big screen (unfolded, upright or sideways): Subscribe goes to the right end of the action row. */
     subscribeInActions: Boolean = false,
 ) {
     Column(Modifier.padding(horizontal = 20.dp)) {
