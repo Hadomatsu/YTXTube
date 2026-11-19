@@ -91,8 +91,9 @@ object PlaybackStats {
 /**
  * Learns which YouTube client's streams get cut off. A video's streams come from several of
  * YouTube's apps (Android, visionOS, iOS); when one of them is refused mid-video (HTTP 403, often a
- * minute or so in), streams from that client are left out for a few hours wherever another
- * client offers the same thing, so the next videos do not stop the same way. Kept across restarts.
+ * minute or so in), streams from that client are left out for a few hours whenever another
+ * client offers any stream (even at a lower height), so the next videos do not stop the same
+ * way. Kept across restarts.
  */
 object StreamHealth {
     private const val HOLD_MS = 3 * 60 * 60 * 1000L

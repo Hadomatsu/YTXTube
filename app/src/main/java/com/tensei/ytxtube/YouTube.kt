@@ -789,12 +789,14 @@ object StreamSelection {
      * If HDR is unavailable at the chosen height, the same height in SDR is the fallback.
      */
     private fun usableVideos(info: StreamInfo, allowHdr: Boolean): List<VideoStream> {
-        // Per height, streams from a client YouTube has been cutting off are left out when
-        // another client has that height too, so the quality stays the same.
-        val all = info.videoOnlyStreams
-            .filter { it.isUrl && it.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP && it.height > 0 }
-            .groupBy { it.tier() }
-            .flatMap { (_, sameHeight) -> StreamHealth.avoidRefused(sameHeight) }
+        // Streams from a client YouTube has been cutting off are left out whenever another client
+        // has any stream, even if that means a lower height. Keeping them for heights only they
+        // offer (the iOS-only 4K, say) picked the refused stream again after every retry, so the
+        // video stopped about a minute in with "YouTube refused the stream".
+        val all = StreamHealth.avoidRefused(
+            info.videoOnlyStreams
+                .filter { it.isUrl && it.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP && it.height > 0 },
+        )
         if (allowHdr) return all
         val sdr = all.filterNot(HdrSupport::isHdrCodec)
         return sdr.ifEmpty { all }
@@ -851,10 +853,9 @@ object StreamSelection {
 
 
         val audio = selectAudio(info)
-        val muxedCandidates = info.videoStreams
-            .filter { it.isUrl && it.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP }
-            .groupBy { it.tier() }
-            .flatMap { (_, sameHeight) -> StreamHealth.avoidRefused(sameHeight) }
+        val muxedCandidates = StreamHealth.avoidRefused(
+            info.videoStreams.filter { it.isUrl && it.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP },
+        )
         val muxed = when {
             chosen != null -> {
                 muxedCandidates.filter { it.tier() <= chosen }
