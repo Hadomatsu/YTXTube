@@ -16,6 +16,7 @@ Headings are columns, bullets are cards. `[[briefs/slug]]` opens the card's full
 ## In progress
 
 ## Done
+- 2.6.25: refused streams switch to another client at any height; flex mode reads the fold afresh after screen off
 - 2.6.24: upright fullscreen when folded, rotate button in fullscreen on phones
 - 2.6.23: no ghost videos on Home when the fresh feed arrives (cards no longer fade)
 - 2.6.22: faster video opens (about 1 s sooner), refused streams switch at once, two minutes of video ahead on Wi-Fi
