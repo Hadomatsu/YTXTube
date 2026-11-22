@@ -472,7 +472,14 @@ fun PlayerScreen(
                 contentPadding = PaddingValues(bottom = bottom + 32.dp),
             ) {
                 item(key = "info") {
-                    Box(Modifier.onSizeChanged { infoHeightPx = it.height }) {
+                    // Sideways the first screen ends at the comments: the space under them matches
+                    // the 20 dp at the sides (above the navigation bar), so the card does not sit
+                    // on the bottom edge. Inside the measured box, so the gap below allows for it.
+                    Box(
+                        Modifier
+                            .onSizeChanged { infoHeightPx = it.height }
+                            .padding(bottom = if (landscapeWide) bottom + 20.dp else 0.dp),
+                    ) {
                         VideoDetailsBlock(state, item, details, c, descriptionOpen, { descriptionOpen = !descriptionOpen }, isLiveStream, subscribeInActions = bigScreen)
                     }
                 }
