@@ -1,3 +1,5 @@
-YTXTube Custom 2.6.26: Subscribe next to the actions when unfolded
+YTXTube Custom 2.6.27: caption size buttons, fewer stalls at one minute
 
-- Unfolded and held upright, the Subscribe button now sits at the right end of the Like, Save, Download and Share row, the same place as when the phone is sideways (folded it stays next to the channel name)
+- The caption size panel (hold the CC button) no longer closes when a tap lands just beside A- or A+, and those two buttons are a little bigger
+- Videos stall at the one minute mark far less often: once YouTube cuts off a stream that early, the app keeps away from that kind of stream for a few days instead of a few hours
+- If a video still cannot be recovered, you now get the "Try again" button instead of a spinner that never ends
