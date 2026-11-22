@@ -1,5 +1,6 @@
-YTXTube Custom 2.6.27: caption size buttons, fewer stalls at one minute
+YTXTube Custom 2.6.28: no more stalls at the one minute mark
 
+- Videos no longer stall or stop at the one minute mark: the app no longer uses the copy of the video that YouTube makes for its iPhone app, which YouTube cuts off after about a minute. Videos play from the other copies at the best quality they offer
+- HDR is gone: it only ever came from that iPhone copy
 - The caption size panel (hold the CC button) no longer closes when a tap lands just beside A- or A+, and those two buttons are a little bigger
-- Videos stall at the one minute mark far less often: once YouTube cuts off a stream that early, the app keeps away from that kind of stream for a few days instead of a few hours
-- If a video still cannot be recovered, you now get the "Try again" button instead of a spinner that never ends
+- If a video still cannot be played, you now get the "Try again" button instead of a spinner that never ends

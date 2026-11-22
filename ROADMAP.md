@@ -16,6 +16,7 @@ Headings are columns, bullets are cards. `[[briefs/slug]]` opens the card's full
 ## In progress
 
 ## Done
+- 2.6.28: iPhone copy skipped (no stalls at one minute), no HDR, caption size pill taps, "Try again" instead of an endless spinner
 - 2.6.26: Subscribe at the end of the action row when unfolded, upright too
 - 2.6.25: refused streams switch to another client at any height; flex mode reads the fold afresh after screen off
 - 2.6.24: upright fullscreen when folded, rotate button in fullscreen on phones
