@@ -200,3 +200,9 @@ Each entry records what was asked, what was decided and why, and what shipped.
 - **Decided:** StreamHealth treats client IOS as always avoided: never picked while a video has any other copy (video, audio and Shorts' muxed fallback), used only when nothing else exists. HdrFormats (the extra iPhone request for HDR renditions) is switched off, so no HDR rows in the quality list and one request less per video. Quality picking itself is unchanged: the best height the quality setting allows among the remaining copies. Lives keep their HLS playlist. **Why no real fix for the iPhone copy:** its streaming check is made by Apple's device checks inside the real iPhone app; an Android app cannot produce it. 2.6.27 was still building and was cancelled by this push, so 2.6.28's notes carry its changes too.
 - **Shipped:** v2.6.28 (with 2.6.27's caption pill and give-up fixes). Cloud session: not built locally or tried on the phone.
 - **Open:** Owner watches long videos past the first minute and checks the quality list (no HDR rows, top height as before on most videos).
+
+## 2026-11-22 - Space under the comments sideways, 2.6.29 released
+- **Asked:** (screenshot, unfolded sideways, a live) More padding under the comments block, bigger or the same as at the sides. Then "push".
+- **Decided:** Sideways on a big screen the info block (which ends with the comments card) gets 20 dp plus the navigation bar inset below it, inside the measured box, so the "first screen ends at the comments" gap allows for it. Upright unchanged. Also the live chat card's "Chat is live — tap to join" became "Chat is live, tap to join the conversation." (the owner's no em-dash rule; the only UI string that had one). 2.6.28 (iPhone copy skipped) was released just before.
+- **Shipped:** b8b8d9f (space), 038cef8 (chat text), v2.6.29. Cloud session: not tried on the phone.
+- **Open:** Owner checks the video page sideways.
