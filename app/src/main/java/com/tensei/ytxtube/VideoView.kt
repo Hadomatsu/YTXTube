@@ -2262,6 +2262,19 @@ private fun CaptionSizePill(
     Row(
         modifier
             .clip(shape)
+            // A tap that misses the buttons (the pill's edge, the size label) stays on the pill.
+            // It used to fall through to the video, which took it as "hide the controls", and the
+            // pill closed with them, so a slightly off tap on A- or A+ shut the pill instead.
+            // Only touches no button took are kept here, so the buttons work exactly as before.
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = true).consume()
+                    do {
+                        val event = awaitPointerEvent()
+                        event.changes.forEach { it.consume() }
+                    } while (event.changes.any { it.pressed })
+                }
+            }
             .then(
                 if (backdrop != null) {
                     Modifier.liquidGlass(
@@ -2281,7 +2294,8 @@ private fun CaptionSizePill(
             .padding(horizontal = 4.dp, vertical = 3.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        GlassButton(Icons.Rounded.Remove, "Smaller captions", true, size = 34.dp, iconSize = 20.dp, tinted = false) {
+        // A- and A+ are a little bigger than the other buttons: they are tapped over and over.
+        GlassButton(Icons.Rounded.Remove, "Smaller captions", true, size = 40.dp, iconSize = 22.dp, tinted = false) {
             CaptionPreference.updateScale(CaptionPreference.scale - 0.1f)
             onChange()
         }
@@ -2293,7 +2307,7 @@ private fun CaptionSizePill(
             textAlign = TextAlign.Center,
             modifier = Modifier.widthIn(min = 52.dp),
         )
-        GlassButton(Icons.Rounded.Add, "Bigger captions", true, size = 34.dp, iconSize = 20.dp, tinted = false) {
+        GlassButton(Icons.Rounded.Add, "Bigger captions", true, size = 40.dp, iconSize = 22.dp, tinted = false) {
             CaptionPreference.updateScale(CaptionPreference.scale + 0.1f)
             onChange()
         }
