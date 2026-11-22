@@ -327,7 +327,7 @@ fun CommentsCard(state: CommentsState, onOpen: () -> Unit, live: Boolean = false
         Spacer(Modifier.height(4.dp))
         if (live) {
             Text(
-                "Chat is live — tap to join the conversation.",
+                "Chat is live, tap to join the conversation.",
                 color = c.onSurfaceVariant,
                 fontSize = 12.sp,
             )
