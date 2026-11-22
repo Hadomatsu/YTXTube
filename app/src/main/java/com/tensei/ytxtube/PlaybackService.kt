@@ -632,6 +632,14 @@ private class StreamRecoverer(
         attempts = if (id == lastId && position < lastPositionMs + PROGRESS_MS) attempts + 1 else 1
         if (attempts > MAX_ATTEMPTS) {
             Log.w("YTXTube", "stream refused $attempts times in a row for $id; giving up")
+            // Say so on screen. The earlier tries marked this video as being taken care of, so
+            // without this the screen kept hiding the error and showed a spinner for good.
+            val status = (error.cause as? androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException)?.responseCode
+            StreamRecovery.failed = id to (
+                "YouTube refused the stream" +
+                    (status?.let { " (HTTP $it" + (client?.let { c -> " · $c" } ?: "") + ")" } ?: "") +
+                    ". Try again."
+                )
             return
         }
         // Streams from the client YouTube just cut off are avoided from now on where another

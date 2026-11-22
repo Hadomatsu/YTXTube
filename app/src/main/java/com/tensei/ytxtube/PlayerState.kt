@@ -1669,6 +1669,7 @@ class PlayerState(private val scope: CoroutineScope) {
 
             // The service quietly recovers refused streams; only one it gave up on is shown.
             if (e.errorCode == PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS &&
+                StreamRecovery.failed?.first != current?.id &&
                 (StreamRecovery.recovering == current?.id || StreamRecovery.recentlyHandled(current?.id))
             ) {
                 isBuffering = true
