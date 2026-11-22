@@ -97,7 +97,19 @@ object PlaybackStats {
  */
 object StreamHealth {
     private const val HOLD_MS = 3 * 60 * 60 * 1000L
+    /**
+     * A link refused within its first hour was cut off because of its client (YouTube stops the
+     * iOS streams about a minute in): that client is left out for days, not hours, so videos do
+     * not stall at the one minute mark again every few hours.
+     */
+    private const val CUT_OFF_HOLD_MS = 3 * 24 * 60 * 60 * 1000L
+    private const val FRESH_LINK_MS = 60 * 60 * 1000L
+    /** YouTube's stream links last about six hours ("expire" in the link). */
+    private const val LINK_LIFE_MS = 6 * 60 * 60 * 1000L
+    /** A link refused this close to its end simply ran out: its client is not to blame. */
+    private const val WORN_OUT_MS = 5 * 60 * 60 * 1000L
     private val clientParam = Regex("[?&]c=([A-Za-z0-9_]+)")
+    private val expireParam = Regex("[?&]expire=(\\d+)")
     private val refusedUntil = java.util.concurrent.ConcurrentHashMap<String, Long>()
     private var prefs: android.content.SharedPreferences? = null
 
@@ -112,10 +124,27 @@ object StreamHealth {
     /** Remembers that this stream's client was refused; returns the client's name. */
     fun markRefused(url: String?): String? {
         val client = clientOf(url) ?: return null
-        val until = System.currentTimeMillis() + HOLD_MS
+        val now = System.currentTimeMillis()
+        val age = linkAge(url, now)
+        val hold = when {
+            age == null -> HOLD_MS
+            age >= WORN_OUT_MS -> return client
+            age < FRESH_LINK_MS -> CUT_OFF_HOLD_MS
+            else -> HOLD_MS
+        }
+        // A later, shorter hold never cuts a longer one short.
+        val until = maxOf(now + hold, refusedUntil[client] ?: 0L)
         refusedUntil[client] = until
         prefs?.edit()?.putLong(client, until)?.apply()
         return client
+    }
+
+    /** The link was refused because it ran out (hours old), not because of its client. */
+    fun wornOut(url: String?): Boolean = (linkAge(url, System.currentTimeMillis()) ?: 0L) >= WORN_OUT_MS
+
+    private fun linkAge(url: String?, now: Long): Long? {
+        val expiresAt = url?.let { expireParam.find(it)?.groupValues?.get(1)?.toLongOrNull() } ?: return null
+        return LINK_LIFE_MS - (expiresAt * 1000 - now)
     }
 
     fun isRefused(url: String?): Boolean {

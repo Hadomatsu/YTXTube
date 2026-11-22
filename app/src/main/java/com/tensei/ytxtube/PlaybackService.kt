@@ -651,7 +651,8 @@ private class StreamRecoverer(
         // The same extraction usually holds the stream from another of YouTube's apps: switch to
         // it straight away (about 2 s sooner), and ask YouTube again only if that one fails too.
         val cached = StreamCache.get(id)
-        if (attempts == 1 && cached != null && !usesRefused(cached)) {
+        // A link that simply ran out is just as old in the same extraction: ask YouTube again.
+        if (attempts == 1 && cached != null && !usesRefused(cached) && !StreamHealth.wornOut(failedUrl)) {
             Log.w("YTXTube", "switching $id to another client's stream at ${position / 1000}s")
             StreamRecovery.failed = null
             StreamRecovery.recovering = id
