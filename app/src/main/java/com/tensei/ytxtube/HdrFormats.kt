@@ -29,6 +29,13 @@ import java.util.concurrent.TimeUnit
  */
 object HdrFormats {
 
+    /**
+     * Off: the HDR renditions come only from YouTube's iPhone app copy, which YouTube cuts off
+     * about a minute in (see [StreamHealth]), and the owner does not need HDR. With this off
+     * there is no extra iPhone request per video and no HDR rows in the quality list.
+     */
+    private const val ENABLED = false
+
     private const val TAG = "YTXTube"
     private const val MAX_AGE_MS = 45 * 60 * 1000L
     private const val EMPTY_AGE_MS = 10 * 60 * 1000L
@@ -71,7 +78,7 @@ object HdrFormats {
 
     /** Start the request while NewPipe is still extracting, so it costs no extra wall time. */
     fun prefetch(id: String) {
-        if (id.isBlank() || !available()) return
+        if (!ENABLED || id.isBlank() || !available()) return
         val now = System.currentTimeMillis()
         val cached = cache[id]
         if (cached != null && fresh(cached, now)) return
@@ -103,7 +110,7 @@ object HdrFormats {
      * that can display HDR are worth the extra player request; Shorts never call this.
      */
     fun install(id: String, info: StreamInfo) {
-        if (id.isBlank() || info.streamType != StreamType.VIDEO_STREAM) return
+        if (!ENABLED || id.isBlank() || info.streamType != StreamType.VIDEO_STREAM) return
         val existing = info.videoOnlyStreams
         if (existing.any { isHdr(it) }) return
         val tallest = existing.maxOfOrNull { it.height } ?: 0

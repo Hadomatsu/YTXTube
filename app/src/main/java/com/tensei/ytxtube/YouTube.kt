@@ -1013,7 +1013,7 @@ object StreamSelection {
                 .maxByOrNull { kotlin.math.max(it.averageBitrate, it.bitrate) }
         if (video != null && audio != null) return Picked(video, audio, null)
 
-        val muxedCandidates = info.videoStreams.filter { it.isUrl && it.height > 0 }
+        val muxedCandidates = StreamHealth.avoidRefused(info.videoStreams.filter { it.isUrl && it.height > 0 })
         val muxed = when {
             chosen != null -> {
                 muxedCandidates.filter { it.tier() <= chosen }.maxWithOrNull(muxedOrder())

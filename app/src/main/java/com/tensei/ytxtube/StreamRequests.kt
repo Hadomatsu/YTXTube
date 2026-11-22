@@ -108,6 +108,12 @@ object StreamHealth {
     private const val LINK_LIFE_MS = 6 * 60 * 60 * 1000L
     /** A link refused this close to its end simply ran out: its client is not to blame. */
     private const val WORN_OUT_MS = 5 * 60 * 60 * 1000L
+    /**
+     * YouTube's iPhone app copy ("IOS"): YouTube cuts it off about a minute in unless the request
+     * carries the iPhone app's own device check, which an Android app cannot make. It is never
+     * picked while a video has any other copy; the other copies offer the same heights in SDR.
+     */
+    private val ALWAYS_AVOIDED = setOf("IOS")
     private val clientParam = Regex("[?&]c=([A-Za-z0-9_]+)")
     private val expireParam = Regex("[?&]expire=(\\d+)")
     private val refusedUntil = java.util.concurrent.ConcurrentHashMap<String, Long>()
@@ -149,11 +155,12 @@ object StreamHealth {
 
     fun isRefused(url: String?): Boolean {
         val client = clientOf(url) ?: return false
+        if (client in ALWAYS_AVOIDED) return true
         val until = refusedUntil[client] ?: return false
         return until > System.currentTimeMillis()
     }
 
     /** The streams without the refused clients, or all of them when nothing else is left. */
     fun <T : org.schabi.newpipe.extractor.stream.Stream> avoidRefused(streams: List<T>): List<T> =
-        if (refusedUntil.isEmpty()) streams else streams.filterNot { isRefused(it.content) }.ifEmpty { streams }
+        streams.filterNot { isRefused(it.content) }.ifEmpty { streams }
 }
